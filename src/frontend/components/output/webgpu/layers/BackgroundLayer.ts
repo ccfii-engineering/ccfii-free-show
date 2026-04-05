@@ -136,6 +136,13 @@ function clearBackground(state: BackgroundLayerState, transitionId: string): voi
     state.dualState = { activeSlot: "a", slotAPath: "", slotBPath: "", transition: null }
 }
 
+function toFileUrl(path: string): string {
+    if (!path || path.startsWith("http") || path.startsWith("file://") || path.startsWith("blob:") || path.startsWith("data:")) return path
+    // Local filesystem path — Electron needs file:// protocol
+    if (path.startsWith("/")) return `file://${path}`
+    return path
+}
+
 function isVideoPath(path: string): boolean {
     const ext = path.split(".").pop()?.toLowerCase() || ""
     return ["mp4", "webm", "ogg", "mov", "avi", "mkv"].includes(ext)
@@ -143,7 +150,7 @@ function isVideoPath(path: string): boolean {
 
 function createHiddenVideoElement(path: string, loop: boolean, muted: boolean): HTMLVideoElement {
     const video = document.createElement("video")
-    video.src = path
+    video.src = toFileUrl(path)
     video.loop = loop
     video.muted = muted
     video.autoplay = true

@@ -12,16 +12,24 @@ export interface MediaSpriteConfig {
 
 const textureCache = new Map<string, Texture>()
 
+function toFileUrl(path: string): string {
+    if (!path || path.startsWith("http") || path.startsWith("file://") || path.startsWith("blob:") || path.startsWith("data:")) return path
+    if (path.startsWith("/")) return `file://${path}`
+    return path
+}
+
 export async function loadImageTexture(path: string): Promise<Texture> {
     const cached = textureCache.get(path)
     if (cached && !cached.destroyed) return cached
 
     try {
-        const texture = await Assets.load(path)
+        const fileUrl = toFileUrl(path)
+        console.log("MediaLayer: loading image:", fileUrl)
+        const texture = await Assets.load(fileUrl)
         textureCache.set(path, texture)
         return texture
-    } catch {
-        console.warn("MediaLayer: failed to load image:", path)
+    } catch (e) {
+        console.warn("MediaLayer: failed to load image:", path, e)
         return Texture.EMPTY
     }
 }
