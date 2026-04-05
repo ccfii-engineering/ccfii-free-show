@@ -62,7 +62,7 @@
     {#if $outputs[outputId]?.stageOutput}
         <StageLayout {outputId} stageId={$outputs[outputId].stageOutput} edit={false} />
     {:else if loaded}
-        <PixiTest />
+        <WebGPUOutput {outputId} style={getStyleResolution(resolution, width, height, "fit")} />
     {/if}
 
     <!-- black overlay for live preparation/changes -->

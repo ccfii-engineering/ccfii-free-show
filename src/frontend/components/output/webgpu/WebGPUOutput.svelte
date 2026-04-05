@@ -11,9 +11,11 @@
     import Overlay from "../layers/Overlay.svelte"
     import Overlays from "../layers/Overlays.svelte"
     import Draw from "../../draw/Draw.svelte"
-    import { Graphics } from "pixi.js"
-    import { initPixiApp, createStageContainers, resizeApp, destroyApp, createDefaultConfig } from "./PixiRenderer"
-    import { createLayerManager, updateStyleBackground, updateSlideBackground, updateSlideText, resizeAllLayers, destroyLayerManager, type LayerManagerState } from "./LayerManager"
+
+    // PixiJS and layer managers loaded dynamically to avoid static import issues
+    let pixiModule: any = null
+    let rendererModule: any = null
+    let layerManagerModule: any = null
 
     export let outputId = ""
     export let style = ""
@@ -28,7 +30,6 @@
     $: currentStyling = getCurrentStyle($styles, styleIdOverride || currentOutput.style)
     let currentStyle: Styles = { name: "" }
     $: if (JSON.stringify(currentStyling) !== JSON.stringify(currentStyle)) currentStyle = clone(currentStyling)
-    $: alignPosition = currentStyle?.aspectRatio?.alignPosition || "center"
 
     let layers: string[] = []
     let out: OutData = {}
@@ -55,8 +56,8 @@
             storedOverlays = JSON.stringify($overlays)
         }
     }
-    $: outOverlays = out.overlays?.filter((id) => !clonedOverlays?.[id]?.placeUnderSlide) || []
-    $: outUnderlays = out.overlays?.filter((id) => clonedOverlays?.[id]?.placeUnderSlide) || []
+    $: outOverlays = out.overlays?.filter((id: string) => !clonedOverlays?.[id]?.placeUnderSlide) || []
+    $: outUnderlays = out.overlays?.filter((id: string) => clonedOverlays?.[id]?.placeUnderSlide) || []
 
     // Layout & slide data
     let currentLayout: any[] = []
@@ -109,8 +110,8 @@
     // Effects
     $: effectsIds = clone(out.effects || [])
     $: allEffects = $effects
-    $: effectsUnderSlide = effectsIds.filter((id) => allEffects[id]?.placeUnderSlide === true)
-    $: effectsOverSlide = effectsIds.filter((id) => !allEffects[id]?.placeUnderSlide)
+    $: effectsUnderSlide = effectsIds.filter((id: string) => allEffects[id]?.placeUnderSlide === true)
+    $: effectsOverSlide = effectsIds.filter((id: string) => !allEffects[id]?.placeUnderSlide)
 
     $: overlaysActive = !!(layers.includes("overlays") && clonedOverlays)
     $: cropping = currentOutput.cropping || currentStyle.cropping
@@ -144,78 +145,82 @@
         })
     }
 
-    // --- PixiJS Integration ---
+    // --- PixiJS Integration (dynamic imports) ---
     let canvas: HTMLCanvasElement
-    let layerManager: LayerManagerState | null = null
+    let pixiApp: any = null
+    let layerManager: any = null
     let pixiReady = false
-    let initError = ""
+    let status = "Initializing..."
 
     // Hidden off-screen container for text rasterization
     let offscreenSlide: HTMLDivElement
-    let offscreenOverlays: HTMLDivElement
 
     onMount(async () => {
         if (!canvas) {
-            initError = "Canvas not available"
+            status = "ERROR: no canvas element"
             return
         }
 
-        // Always init with a safe default — resolution store is often 0x0 at mount time.
-        // We resize later when the resolution store updates.
-        const w = 1920
-        const h = 1080
-        console.log("WebGPUOutput: initializing PixiJS", w, "x", h)
-
         try {
-            const config = createDefaultConfig(w, h, !!currentOutput.transparent)
-            const app = await initPixiApp(canvas, config)
-            const containers = createStageContainers(app)
-            layerManager = createLayerManager(app, containers, config.width, config.height)
+            status = "Loading PixiJS..."
+            const PIXI = await import("pixi.js")
+
+            status = "Creating app..."
+            const app = new PIXI.Application()
+            await app.init({
+                canvas,
+                width: 1920,
+                height: 1080,
+                backgroundColor: 0x000000,
+                backgroundAlpha: currentOutput.transparent ? 0 : 1,
+                preference: "webgl",
+                antialias: true,
+                resolution: 1
+            })
+            pixiApp = app
+
+            status = "Setting up layers..."
+            rendererModule = await import("./PixiRenderer")
+            layerManagerModule = await import("./LayerManager")
+
+            const containers = rendererModule.createStageContainers(app)
+            layerManager = layerManagerModule.createLayerManager(app, containers, 1920, 1080)
             pixiReady = true
 
-            // DEBUG: draw a test rectangle so we can see if PixiJS is rendering
-            const testRect = new Graphics()
-            testRect.rect(100, 100, 400, 200)
-            testRect.fill(0xff0000)
-            app.stage.addChild(testRect)
-
-            console.log("WebGPUOutput: PixiJS ready, renderer type:", app.renderer.type, "canvas:", canvas.width, "x", canvas.height)
+            status = `Ready (${app.renderer.type === 0x02 ? "WebGPU" : "WebGL"})`
+            console.log("WebGPUOutput:", status)
         } catch (e) {
-            console.error("WebGPUOutput: PixiJS init failed:", e)
-            initError = String(e)
+            status = "FAILED: " + String(e)
+            console.error("WebGPUOutput init error:", e)
         }
     })
 
     onDestroy(() => {
-        if (layerManager) {
-            destroyLayerManager(layerManager)
-            destroyApp(layerManager.app)
+        if (layerManager && layerManagerModule) {
+            layerManagerModule.destroyLayerManager(layerManager)
+        }
+        if (pixiApp) {
+            pixiApp.destroy(true, { children: true, texture: true })
         }
     })
 
     // --- Reactive updates to PixiJS layers ---
 
-    // Style background
-    $: if (pixiReady && layerManager && styleBackground && actualSlide?.type !== "pdf") {
-        console.log("WebGPUOutput: updating style background:", styleBackgroundData?.path)
-        updateStyleBackground(layerManager, styleBackgroundData, transitions.media || {})
+    $: if (pixiReady && layerManager && layerManagerModule && styleBackground && actualSlide?.type !== "pdf") {
+        layerManagerModule.updateStyleBackground(layerManager, styleBackgroundData, transitions.media || {})
     }
 
-    // Slide background
-    $: if (pixiReady && layerManager && backgroundData) {
-        console.log("WebGPUOutput: updating slide background:", backgroundData?.path || backgroundData?.id)
-        updateSlideBackground(layerManager, backgroundData, transitions.media || {})
+    $: if (pixiReady && layerManager && layerManagerModule && backgroundData) {
+        layerManagerModule.updateSlideBackground(layerManager, backgroundData, transitions.media || {})
     }
 
-    // Slide text — rasterize from hidden DOM and upload to GPU
+    // Slide text rasterization
     $: slideKey = actualSlide ? JSON.stringify({ id: actualSlide.id, index: actualSlide.index, line: actualSlide.line }) : ""
-    $: if (pixiReady && layerManager && offscreenSlide && (slideKey || isSlideClearing)) {
-        // Wait for Svelte to render the text in the hidden container, then rasterize
+    $: if (pixiReady && layerManager && layerManagerModule && offscreenSlide && (slideKey || isSlideClearing)) {
         tick().then(() => {
             setTimeout(() => {
-                if (!layerManager) return
-                console.log("WebGPUOutput: rasterizing slide text, key:", slideKey, "clearing:", isSlideClearing)
-                updateSlideText(
+                if (!layerManager || !layerManagerModule) return
+                layerManagerModule.updateSlideText(
                     layerManager,
                     (actualSlide && !isSlideClearing) ? offscreenSlide : null,
                     slideKey,
@@ -226,27 +231,23 @@
         })
     }
 
-    // Resize — guard against 0 dimensions
-    $: if (pixiReady && layerManager && resolution) {
+    // Resize
+    $: if (pixiReady && pixiApp && layerManager && rendererModule && layerManagerModule && resolution) {
         const w = resolution.width || 1920
         const h = resolution.height || 1080
         if (w > 0 && h > 0) {
-            resizeApp(layerManager.app, w, h)
-            resizeAllLayers(layerManager, w, h)
+            rendererModule.resizeApp(pixiApp, w, h)
+            layerManagerModule.resizeAllLayers(layerManager, w, h)
         }
     }
-
 </script>
 
-<!-- FULL-SCREEN canvas — no Zoomed wrapper, PixiJS handles all sizing -->
+<!-- Full-screen output -->
 <div class="output-root" style="background: {backgroundColor};">
     <canvas bind:this={canvas} class="pixi-canvas" />
 
-    {#if initError}
-        <p class="init-error">PixiJS: {initError}</p>
-    {/if}
+    <p class="status-text">{status}</p>
 
-    <!-- Draw tool as DOM overlay -->
     {#if zoomActive}
         <Draw />
     {/if}
@@ -286,15 +287,15 @@
         height: 100%;
     }
 
-    .init-error {
+    .status-text {
         position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        color: red;
-        font-size: 32px;
+        top: 10px;
+        left: 10px;
+        color: #0f0;
         font-family: monospace;
+        font-size: 16px;
         z-index: 999;
+        pointer-events: none;
     }
 
     .offscreen-renderer {
