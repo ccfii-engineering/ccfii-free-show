@@ -12,6 +12,7 @@
     import Overlay from "../layers/Overlay.svelte"
     import Overlays from "../layers/Overlays.svelte"
     import Draw from "../../draw/Draw.svelte"
+    import { Graphics } from "pixi.js"
     import { initPixiApp, createStageContainers, resizeApp, destroyApp, createDefaultConfig } from "./PixiRenderer"
     import { createLayerManager, updateStyleBackground, updateSlideBackground, updateSlideText, resizeAllLayers, destroyLayerManager, type LayerManagerState } from "./LayerManager"
 
@@ -154,29 +155,16 @@
     let offscreenSlide: HTMLDivElement
     let offscreenOverlays: HTMLDivElement
 
-    // Defer PixiJS init until we have valid dimensions
-    let initAttempted = false
-
-    async function initPixi() {
-        if (initAttempted || pixiReady) return
+    onMount(async () => {
         if (!canvas) {
-            console.error("WebGPUOutput: canvas element not bound")
             initError = "Canvas not available"
             return
         }
 
-        // Get dimensions from resolution, canvas parent, or fallback
-        let w = resolution?.width || canvas.parentElement?.clientWidth || window.innerWidth || 1920
-        let h = resolution?.height || canvas.parentElement?.clientHeight || window.innerHeight || 1080
-
-        // Don't init with zero dimensions
-        if (w <= 0 || h <= 0) {
-            console.warn("WebGPUOutput: zero dimensions, retrying in 500ms. resolution:", resolution)
-            setTimeout(initPixi, 500)
-            return
-        }
-
-        initAttempted = true
+        // Always init with a safe default — resolution store is often 0x0 at mount time.
+        // We resize later when the resolution store updates.
+        const w = 1920
+        const h = 1080
         console.log("WebGPUOutput: initializing PixiJS", w, "x", h)
 
         try {
@@ -186,17 +174,17 @@
             layerManager = createLayerManager(app, containers, config.width, config.height)
             pixiReady = true
 
-            console.log("WebGPUOutput: PixiJS ready, canvas size:", canvas.width, "x", canvas.height)
+            // DEBUG: draw a test rectangle so we can see if PixiJS is rendering
+            const testRect = new Graphics()
+            testRect.rect(100, 100, 400, 200)
+            testRect.fill(0xff0000)
+            app.stage.addChild(testRect)
+
+            console.log("WebGPUOutput: PixiJS ready, renderer type:", app.renderer.type, "canvas:", canvas.width, "x", canvas.height)
         } catch (e) {
             console.error("WebGPUOutput: PixiJS init failed:", e)
             initError = String(e)
-            initAttempted = false
         }
-    }
-
-    onMount(() => {
-        // Small delay to let the output window finish laying out
-        setTimeout(initPixi, 200)
     })
 
     onDestroy(() => {
@@ -249,10 +237,6 @@
         }
     }
 
-    // Re-attempt init if resolution becomes available after mount
-    $: if (!pixiReady && !initAttempted && canvas && resolution?.width > 0 && resolution?.height > 0) {
-        initPixi()
-    }
 </script>
 
 <Zoomed id={outputId} background={backgroundColor} checkered={(preview || mirror) && backgroundColor === "transparent"} backgroundDuration={transitions.media?.type === "none" ? 0 : (transitions.media?.duration ?? 800)} align={alignPosition} center {style} {resolution} {mirror} {drawZoom} {cropping} bind:ratio>
