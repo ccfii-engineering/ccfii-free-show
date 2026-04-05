@@ -10,7 +10,7 @@ jobs:
       matrix:
         os:
           [
-            windows-latest,
+            blacksmith-4vcpu-windows-2025,
             macos-latest,
             ubuntu-latest
           ]
