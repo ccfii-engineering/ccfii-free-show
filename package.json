@@ -124,6 +124,7 @@
         "follow-redirects": "^1.15.11",
         "genius-lyrics": "^4.4.7",
         "grandiose": "github:ChurchApps/grandiose#bf9a400",
+        "html-to-image": "^1.11.13",
         "json-bible": "^1.1.3",
         "jzz": "^1.9.5",
         "libltc-wrapper": "github:bitfocus/libltc-wrapper#9637e39",
