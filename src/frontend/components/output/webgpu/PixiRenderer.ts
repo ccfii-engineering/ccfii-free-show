@@ -13,8 +13,8 @@ export interface StageContainers {
 
 export function createDefaultConfig(width: number, height: number, transparent: boolean): PixiOutputConfig {
     return {
-        width,
-        height,
+        width: width || 1920,
+        height: height || 1080,
         backgroundColor: transparent ? "transparent" : "#000000",
         transparent,
         preference: "webgpu"
@@ -23,17 +23,34 @@ export function createDefaultConfig(width: number, height: number, transparent: 
 
 export async function initPixiApp(canvas: HTMLCanvasElement, config: PixiOutputConfig): Promise<Application> {
     const app = new Application()
-    await app.init({
-        canvas,
-        width: config.width,
-        height: config.height,
-        backgroundColor: config.transparent ? 0x000000 : config.backgroundColor,
-        backgroundAlpha: config.transparent ? 0 : 1,
-        preference: config.preference,
-        antialias: true,
-        autoDensity: true,
-        resolution: window.devicePixelRatio || 1
-    })
+
+    try {
+        await app.init({
+            canvas,
+            width: config.width,
+            height: config.height,
+            backgroundColor: 0x000000,
+            backgroundAlpha: config.transparent ? 0 : 1,
+            preference: config.preference,
+            antialias: true,
+            resolution: 1
+        })
+        console.log("PixiJS initialized:", app.renderer.type === 0x02 ? "WebGPU" : "WebGL", `${config.width}x${config.height}`)
+    } catch (e) {
+        console.warn("PixiJS WebGPU init failed, falling back to WebGL:", e)
+        await app.init({
+            canvas,
+            width: config.width,
+            height: config.height,
+            backgroundColor: 0x000000,
+            backgroundAlpha: config.transparent ? 0 : 1,
+            preference: "webgl",
+            antialias: true,
+            resolution: 1
+        })
+        console.log("PixiJS initialized (WebGL fallback):", `${config.width}x${config.height}`)
+    }
+
     return app
 }
 

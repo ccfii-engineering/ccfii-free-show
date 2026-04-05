@@ -148,17 +148,35 @@
     let canvas: HTMLCanvasElement
     let layerManager: LayerManagerState | null = null
     let pixiReady = false
+    let initError = ""
 
     // Hidden off-screen container for text rasterization
     let offscreenSlide: HTMLDivElement
     let offscreenOverlays: HTMLDivElement
 
     onMount(async () => {
-        const config = createDefaultConfig(resolution.width || 1920, resolution.height || 1080, !!currentOutput.transparent)
-        const app = await initPixiApp(canvas, config)
-        const containers = createStageContainers(app)
-        layerManager = createLayerManager(app, containers, config.width, config.height)
-        pixiReady = true
+        if (!canvas) {
+            console.error("WebGPUOutput: canvas element not bound")
+            initError = "Canvas not available"
+            return
+        }
+
+        try {
+            const w = resolution.width || 1920
+            const h = resolution.height || 1080
+            console.log("WebGPUOutput: initializing PixiJS", w, "x", h)
+
+            const config = createDefaultConfig(w, h, !!currentOutput.transparent)
+            const app = await initPixiApp(canvas, config)
+            const containers = createStageContainers(app)
+            layerManager = createLayerManager(app, containers, config.width, config.height)
+            pixiReady = true
+
+            console.log("WebGPUOutput: PixiJS ready, canvas size:", canvas.width, "x", canvas.height)
+        } catch (e) {
+            console.error("WebGPUOutput: PixiJS init failed:", e)
+            initError = String(e)
+        }
     })
 
     onDestroy(() => {
@@ -172,41 +190,53 @@
 
     // Style background
     $: if (pixiReady && layerManager && styleBackground && actualSlide?.type !== "pdf") {
+        console.log("WebGPUOutput: updating style background:", styleBackgroundData?.path)
         updateStyleBackground(layerManager, styleBackgroundData, transitions.media || {})
     }
 
     // Slide background
     $: if (pixiReady && layerManager && backgroundData) {
+        console.log("WebGPUOutput: updating slide background:", backgroundData?.path || backgroundData?.id)
         updateSlideBackground(layerManager, backgroundData, transitions.media || {})
     }
 
     // Slide text — rasterize from hidden DOM and upload to GPU
     $: slideKey = actualSlide ? JSON.stringify({ id: actualSlide.id, index: actualSlide.index, line: actualSlide.line }) : ""
-    $: if (pixiReady && layerManager && offscreenSlide) {
+    $: if (pixiReady && layerManager && offscreenSlide && (slideKey || isSlideClearing)) {
         // Wait for Svelte to render the text in the hidden container, then rasterize
         tick().then(() => {
             setTimeout(() => {
+                if (!layerManager) return
+                console.log("WebGPUOutput: rasterizing slide text, key:", slideKey, "clearing:", isSlideClearing)
                 updateSlideText(
-                    layerManager!,
+                    layerManager,
                     (actualSlide && !isSlideClearing) ? offscreenSlide : null,
                     slideKey,
                     transitions.text || {},
                     isSlideClearing
                 )
-            }, 50)
+            }, 100)
         })
     }
 
     // Resize
     $: if (pixiReady && layerManager && resolution) {
-        resizeApp(layerManager.app, resolution.width || 1920, resolution.height || 1080)
-        resizeAllLayers(layerManager, resolution.width || 1920, resolution.height || 1080)
+        const w = resolution.width || 1920
+        const h = resolution.height || 1080
+        resizeApp(layerManager.app, w, h)
+        resizeAllLayers(layerManager, w, h)
     }
 </script>
 
 <Zoomed id={outputId} background={backgroundColor} checkered={(preview || mirror) && backgroundColor === "transparent"} backgroundDuration={transitions.media?.type === "none" ? 0 : (transitions.media?.duration ?? 800)} align={alignPosition} center {style} {resolution} {mirror} {drawZoom} {cropping} bind:ratio>
     <!-- PixiJS canvas — renders ALL layers (backgrounds, text, overlays, effects) -->
-    <canvas bind:this={canvas} class="pixi-canvas" />
+    <div class="pixi-wrapper">
+        <canvas bind:this={canvas} />
+    </div>
+
+    {#if initError}
+        <div class="init-error">PixiJS Error: {initError}</div>
+    {/if}
 
     <!-- Draw tool stays as DOM overlay (uses Canvas 2D, migrated separately) -->
     {#if zoomActive}
@@ -239,13 +269,31 @@
 </div>
 
 <style>
-    .pixi-canvas {
+    /* PixiJS manages canvas pixel dimensions internally via resolution.
+       The wrapper stretches to fill the Zoomed container so the canvas covers the output area. */
+    .pixi-wrapper {
         position: absolute;
         top: 0;
         left: 0;
         width: 100%;
         height: 100%;
         z-index: 0;
+    }
+
+    .pixi-wrapper canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+    }
+
+    .init-error {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: red;
+        font-size: 24px;
+        z-index: 999;
     }
 
     /* Off-screen renderer: positioned far off-screen, invisible, but fully painted by the browser.
