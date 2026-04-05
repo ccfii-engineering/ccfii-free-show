@@ -4,7 +4,7 @@
     import { OUTPUT } from "../types/Channels"
     import type { Resolution } from "../types/Settings"
     import { getResolution } from "./components/helpers/output"
-    import Output from "./components/output/Output.svelte"
+    import WebGPUOutput from "./components/output/webgpu/WebGPUOutput.svelte"
     import { getStyleResolution } from "./components/slide/getStyleResolution"
     import StageLayout from "./components/stage/StageLayout.svelte"
     import { currentWindow, livePrepare, outputs, special, styles } from "./stores"
@@ -60,7 +60,7 @@
     {#if $outputs[outputId]?.stageOutput}
         <StageLayout {outputId} stageId={$outputs[outputId].stageOutput} edit={false} />
     {:else if loaded}
-        <Output {outputId} style={getStyleResolution(resolution, width, height, "fit")} />
+        <WebGPUOutput {outputId} style={getStyleResolution(resolution, width, height, "fit")} />
     {/if}
 
     <!-- black overlay for live preparation/changes -->

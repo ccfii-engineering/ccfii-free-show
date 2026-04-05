@@ -77,6 +77,48 @@ export function custom(node: any, { type = "fade", duration = 500, easing = "sin
     return customTransition
 }
 
+// rAF-driven transitions — always work regardless of OS animation settings
+// Used by WebGPU output to bypass CSS @keyframes which break on Windows with animations disabled
+export function customTick(node: HTMLElement, { type = "fade", duration = 500, easing = "sine", delay = 0, custom: customData = {} }: any) {
+    const easingFn = easings.find((a) => a.value === easing)?.function || linear
+
+    return {
+        duration: type === "none" ? 0 : duration,
+        delay,
+        easing: easingFn,
+        tick(t: number) {
+            switch (type as TransitionType) {
+                case "fade":
+                    node.style.opacity = String(t)
+                    break
+                case "blur":
+                    node.style.opacity = String(t)
+                    node.style.filter = `blur(${(1 - t) * 10}px)`
+                    break
+                case "spin":
+                    node.style.opacity = String(t)
+                    node.style.transform = `rotate(${t * 360}deg)`
+                    break
+                case "scale":
+                    node.style.opacity = String(t)
+                    node.style.transform = `scale(${t})`
+                    break
+                case "slide": {
+                    const pos = (1 - t) * 100
+                    const direction = customData.direction || "left_right"
+                    if (direction === "left_right") node.style.transform = `translate(-${pos}%)`
+                    else if (direction === "right_left") node.style.transform = `translate(${pos}%)`
+                    else if (direction === "bottom_top") node.style.transform = `translateY(${pos}%)`
+                    else if (direction === "top_bottom") node.style.transform = `translateY(-${pos}%)`
+                    break
+                }
+                default:
+                    node.style.opacity = String(t)
+            }
+        }
+    }
+}
+
 export function updateTransition(data: API_transition) {
     transitionData.update((a) => {
         a[data.id || "text"] = {
