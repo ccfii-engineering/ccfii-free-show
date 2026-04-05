@@ -6,6 +6,7 @@
     import { getResolution } from "./components/helpers/output"
     import Output from "./components/output/Output.svelte"
     import WebGPUOutput from "./components/output/webgpu/WebGPUOutput.svelte"
+    import PixiTest from "./components/output/webgpu/PixiTest.svelte"
     import { getStyleResolution } from "./components/slide/getStyleResolution"
     import StageLayout from "./components/stage/StageLayout.svelte"
     import { currentWindow, livePrepare, outputs, special, styles } from "./stores"
@@ -61,7 +62,7 @@
     {#if $outputs[outputId]?.stageOutput}
         <StageLayout {outputId} stageId={$outputs[outputId].stageOutput} edit={false} />
     {:else if loaded}
-        <WebGPUOutput {outputId} style={getStyleResolution(resolution, width, height, "fit")} />
+        <PixiTest />
     {/if}
 
     <!-- black overlay for live preparation/changes -->
