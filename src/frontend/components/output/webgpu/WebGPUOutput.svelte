@@ -189,19 +189,30 @@
 
     // --- Reactive PixiJS updates ---
 
+    // Debug: update status with data flow info
+    $: if (pixiReady) {
+        const bgPath = backgroundData?.path || backgroundData?.id || "none"
+        const slideId = actualSlide?.id || "none"
+        const styleBg = styleBackground || "none"
+        status = `Ready (WebGL) | bg: ${bgPath} | slide: ${slideId} | styleBg: ${styleBg}`
+    }
+
     // Style background
     $: if (pixiReady && layerMgr && layerMgrMod && styleBackground) {
+        console.log("WebGPUOutput: style bg update:", styleBackgroundData)
         layerMgrMod.updateStyleBackground(layerMgr, styleBackgroundData, transitions?.media || {})
     }
 
-    // Slide background
-    $: if (pixiReady && layerMgr && layerMgrMod && backgroundData?.path) {
+    // Slide background — check both path and id
+    $: if (pixiReady && layerMgr && layerMgrMod && backgroundData && (backgroundData.path || backgroundData.id)) {
+        console.log("WebGPUOutput: slide bg update:", backgroundData)
         layerMgrMod.updateSlideBackground(layerMgr, backgroundData, transitions?.media || {})
     }
 
     // Slide text rasterization
     $: slideKey = actualSlide ? `${actualSlide.id}-${actualSlide.index}-${actualSlide.line}` : ""
     $: if (pixiReady && layerMgr && layerMgrMod && offscreenSlide && (slideKey || isSlideClearing)) {
+        console.log("WebGPUOutput: text raster, key:", slideKey, "clearing:", isSlideClearing)
         tick().then(() => {
             setTimeout(() => {
                 if (!layerMgr || !layerMgrMod) return
