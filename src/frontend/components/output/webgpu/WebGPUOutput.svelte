@@ -154,18 +154,32 @@
     let offscreenSlide: HTMLDivElement
     let offscreenOverlays: HTMLDivElement
 
-    onMount(async () => {
+    // Defer PixiJS init until we have valid dimensions
+    let initAttempted = false
+
+    async function initPixi() {
+        if (initAttempted || pixiReady) return
         if (!canvas) {
             console.error("WebGPUOutput: canvas element not bound")
             initError = "Canvas not available"
             return
         }
 
-        try {
-            const w = resolution.width || 1920
-            const h = resolution.height || 1080
-            console.log("WebGPUOutput: initializing PixiJS", w, "x", h)
+        // Get dimensions from resolution, canvas parent, or fallback
+        let w = resolution?.width || canvas.parentElement?.clientWidth || window.innerWidth || 1920
+        let h = resolution?.height || canvas.parentElement?.clientHeight || window.innerHeight || 1080
 
+        // Don't init with zero dimensions
+        if (w <= 0 || h <= 0) {
+            console.warn("WebGPUOutput: zero dimensions, retrying in 500ms. resolution:", resolution)
+            setTimeout(initPixi, 500)
+            return
+        }
+
+        initAttempted = true
+        console.log("WebGPUOutput: initializing PixiJS", w, "x", h)
+
+        try {
             const config = createDefaultConfig(w, h, !!currentOutput.transparent)
             const app = await initPixiApp(canvas, config)
             const containers = createStageContainers(app)
@@ -176,7 +190,13 @@
         } catch (e) {
             console.error("WebGPUOutput: PixiJS init failed:", e)
             initError = String(e)
+            initAttempted = false
         }
+    }
+
+    onMount(() => {
+        // Small delay to let the output window finish laying out
+        setTimeout(initPixi, 200)
     })
 
     onDestroy(() => {
@@ -219,12 +239,19 @@
         })
     }
 
-    // Resize
+    // Resize — guard against 0 dimensions
     $: if (pixiReady && layerManager && resolution) {
         const w = resolution.width || 1920
         const h = resolution.height || 1080
-        resizeApp(layerManager.app, w, h)
-        resizeAllLayers(layerManager, w, h)
+        if (w > 0 && h > 0) {
+            resizeApp(layerManager.app, w, h)
+            resizeAllLayers(layerManager, w, h)
+        }
+    }
+
+    // Re-attempt init if resolution becomes available after mount
+    $: if (!pixiReady && !initAttempted && canvas && resolution?.width > 0 && resolution?.height > 0) {
+        initPixi()
     }
 </script>
 
