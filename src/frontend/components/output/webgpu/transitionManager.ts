@@ -28,16 +28,7 @@ export interface ActiveTransition {
 
 const activeTransitions = new Map<string, ActiveTransition>()
 
-export function startTransition(
-    id: string,
-    type: TransitionType,
-    duration: number,
-    easing: string,
-    oldSprite: Sprite | Container | null,
-    newSprite: Sprite | Container,
-    direction?: string,
-    onComplete?: () => void
-): void {
+export function startTransition(id: string, type: TransitionType, duration: number, easing: string, oldSprite: Sprite | Container | null, newSprite: Sprite | Container, direction?: string, onComplete?: () => void): void {
     cancelTransition(id)
 
     if (type === "none" || duration <= 0) {
@@ -109,15 +100,8 @@ function tick(id: string, currentTime: number): void {
     transition.rafId = requestAnimationFrame((time) => tick(id, time))
 }
 
-function applyTransitionState(
-    type: TransitionType,
-    sprite: Sprite | Container,
-    t: number,
-    direction?: string,
-    mode?: "in" | "out"
-): void {
+function applyTransitionState(type: TransitionType, sprite: Sprite | Container, t: number, direction?: string, mode?: "in" | "out"): void {
     sprite.alpha = 1
-    sprite.scale.set(1, 1)
     sprite.rotation = 0
 
     switch (type) {
@@ -167,18 +151,12 @@ function completeTransition(id: string): void {
     if (transition.oldSprite) {
         transition.oldSprite.visible = false
         transition.oldSprite.alpha = 1
-        transition.oldSprite.scale.set(1, 1)
         transition.oldSprite.rotation = 0
-        transition.oldSprite.x = 0
-        transition.oldSprite.y = 0
         transition.oldSprite.filters = []
     }
 
     transition.newSprite.alpha = 1
-    transition.newSprite.scale.set(1, 1)
     transition.newSprite.rotation = 0
-    transition.newSprite.x = 0
-    transition.newSprite.y = 0
     transition.newSprite.filters = []
 
     transition.state.active = false

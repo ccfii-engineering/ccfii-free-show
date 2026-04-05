@@ -11,6 +11,12 @@ export interface BackgroundLayerState {
     dualState: DualSpriteState
     videoElementA: HTMLVideoElement | null
     videoElementB: HTMLVideoElement | null
+    fitA: string
+    fitB: string
+    sourceWidthA: number
+    sourceHeightA: number
+    sourceWidthB: number
+    sourceHeightB: number
     width: number
     height: number
 }
@@ -27,104 +33,201 @@ export function createBackgroundLayer(parentContainer: Container, width: number,
         dualState: { activeSlot: "a", slotAPath: "", slotBPath: "", transition: null },
         videoElementA: null,
         videoElementB: null,
+        fitA: "cover",
+        fitB: "cover",
+        sourceWidthA: 0,
+        sourceHeightA: 0,
+        sourceWidthB: 0,
+        sourceHeightB: 0,
         width,
         height
     }
 }
 
-export async function updateBackground(
-    state: BackgroundLayerState,
-    data: OutBackground | null,
-    transition: Transition,
-    transitionId: string
-): Promise<void> {
+export async function updateBackground(state: BackgroundLayerState, data: OutBackground | null, transition: Transition, transitionId: string): Promise<void> {
     if (!data || (!data.path && !data.id)) {
         clearBackground(state, transitionId)
         return
     }
 
     const newPath = data.path || data.id || ""
-    const currentPath = state.dualState.activeSlot === "a" ? state.dualState.slotAPath : state.dualState.slotBPath
 
-    if (newPath === currentPath && currentPath !== "") return
-
-    const loadIntoA = state.dualState.activeSlot !== "a"
     const isVideo = data.type === "video" || data.type === "media"
 
     let newTexture: Texture
     let videoElement: HTMLVideoElement | null = null
+    let srcW: number = 0
+    let srcH: number = 0
 
     if (isVideo && isVideoPath(newPath)) {
         videoElement = createHiddenVideoElement(newPath, data.loop ?? false, data.muted ?? true)
-        // Wait for video to be ready (including dimensions) before creating texture
         await waitForVideoReady(videoElement)
         newTexture = createVideoTexture(videoElement)
-        console.log("BackgroundLayer: video texture created for", newPath, "| texture size:", newTexture.width, "x", newTexture.height, "| video size:", videoElement.videoWidth, "x", videoElement.videoHeight)
+        srcW = videoElement.videoWidth
+        srcH = videoElement.videoHeight
+        console.log("BackgroundLayer: video texture created for", newPath, "| size:", srcW, "x", srcH)
     } else {
-        newTexture = await loadImageTexture(toFileUrl(newPath))
-        console.log("BackgroundLayer: image texture created for", newPath)
+        const loaded = await loadImageTexture(toFileUrl(newPath))
+        newTexture = loaded.texture
+        srcW = loaded.width
+        srcH = loaded.height
+        console.log("BackgroundLayer: image texture created for", newPath, "| size:", srcW, "x", srcH)
     }
 
-    const fit = data.fit || "cover"
+    const fit = data.fit || "contain"
 
-    if (loadIntoA) {
-        removeSprite(state.spriteA, state.container)
-        cleanupVideoElement(state.videoElementA)
+    // After async gap: cancel any in-progress transition and clean up stale state
+    cancelTransition(transitionId)
 
-        state.spriteA = createMediaSprite(newTexture, state.container, state.width, state.height, fit)
-        state.videoElementA = videoElement
-        state.dualState.slotAPath = newPath
+    // Determine which slot is currently "active" (the visible one)
+    const currentIsA = state.dualState.activeSlot === "a"
+    const currentPath = currentIsA ? state.dualState.slotAPath : state.dualState.slotBPath
+    const currentFit = currentIsA ? state.fitA : state.fitB
+    const currentSprite = currentIsA ? state.spriteA : state.spriteB
 
-        startTransition(
-            transitionId,
-            transition.type || "fade",
-            transition.duration ?? 800,
-            transition.easing || "sine",
-            state.spriteB,
-            state.spriteA,
-            transition.custom?.direction,
-            () => {
-                removeSprite(state.spriteB, state.container)
-                cleanupVideoElement(state.videoElementB)
-                state.spriteB = null
-                state.videoElementB = null
-                state.dualState.slotBPath = ""
-                state.dualState.activeSlot = "a"
+    console.log("BackgroundLayer: update request", {
+        transitionId,
+        newPath,
+        requestedFit: fit,
+        currentPath,
+        currentFit,
+        activeSlot: state.dualState.activeSlot,
+        width: state.width,
+        height: state.height,
+        sourceWidth: srcW,
+        sourceHeight: srcH
+    })
+
+    if (newPath === currentPath && currentPath !== "") {
+        if (currentSprite && currentFit !== fit) {
+            console.log("BackgroundLayer: reapplying fit to existing sprite", {
+                transitionId,
+                path: newPath,
+                previousFit: currentFit,
+                nextFit: fit,
+                width: state.width,
+                height: state.height,
+                sourceWidth: srcW || (currentIsA ? state.sourceWidthA : state.sourceWidthB),
+                sourceHeight: srcH || (currentIsA ? state.sourceHeightA : state.sourceHeightB)
+            })
+            applyFit(currentSprite, state.width, state.height, fit, srcW || (currentIsA ? state.sourceWidthA : state.sourceWidthB), srcH || (currentIsA ? state.sourceHeightA : state.sourceHeightB))
+
+            if (currentIsA) {
+                state.fitA = fit
+                state.sourceWidthA = srcW || state.sourceWidthA
+                state.sourceHeightA = srcH || state.sourceHeightA
+            } else {
+                state.fitB = fit
+                state.sourceWidthB = srcW || state.sourceWidthB
+                state.sourceHeightB = srcH || state.sourceHeightB
             }
-        )
-    } else {
+        } else {
+            console.log("BackgroundLayer: same path with unchanged fit, skipping sprite recreation", {
+                transitionId,
+                path: newPath,
+                fit
+            })
+        }
+        return
+    }
+
+    // Clean up the non-active slot (may have an orphaned sprite from a cancelled transition)
+    if (currentIsA) {
         removeSprite(state.spriteB, state.container)
         cleanupVideoElement(state.videoElementB)
+        state.spriteB = null
+        state.videoElementB = null
+        state.fitB = "cover"
+        state.sourceWidthB = 0
+        state.sourceHeightB = 0
+        state.dualState.slotBPath = ""
+    } else {
+        removeSprite(state.spriteA, state.container)
+        cleanupVideoElement(state.videoElementA)
+        state.spriteA = null
+        state.videoElementA = null
+        state.fitA = "cover"
+        state.sourceWidthA = 0
+        state.sourceHeightA = 0
+        state.dualState.slotAPath = ""
+    }
 
-        state.spriteB = createMediaSprite(newTexture, state.container, state.width, state.height, fit)
+    // Reset visual state of the current sprite (may be mid-transition)
+    if (currentSprite) {
+        currentSprite.alpha = 1
+        currentSprite.visible = true
+        currentSprite.rotation = 0
+        currentSprite.filters = []
+    }
+
+    // Create new sprite in the non-active slot
+    if (currentIsA) {
+        state.spriteB = createMediaSprite(newTexture, state.container, state.width, state.height, fit, srcW, srcH)
         state.videoElementB = videoElement
+        state.fitB = fit
+        state.sourceWidthB = srcW
+        state.sourceHeightB = srcH
         state.dualState.slotBPath = newPath
 
-        startTransition(
-            transitionId,
-            transition.type || "fade",
-            transition.duration ?? 800,
-            transition.easing || "sine",
-            state.spriteA,
-            state.spriteB,
-            transition.custom?.direction,
-            () => {
-                removeSprite(state.spriteA, state.container)
-                cleanupVideoElement(state.videoElementA)
-                state.spriteA = null
-                state.videoElementA = null
-                state.dualState.slotAPath = ""
-                state.dualState.activeSlot = "b"
-            }
-        )
+        startTransition(transitionId, transition.type || "fade", transition.duration ?? 800, transition.easing || "sine", state.spriteA, state.spriteB, transition.custom?.direction, () => {
+            removeSprite(state.spriteA, state.container)
+            cleanupVideoElement(state.videoElementA)
+            state.spriteA = null
+            state.videoElementA = null
+            state.fitA = "cover"
+            state.sourceWidthA = 0
+            state.sourceHeightA = 0
+            state.dualState.slotAPath = ""
+            state.dualState.activeSlot = "b"
+        })
+    } else {
+        state.spriteA = createMediaSprite(newTexture, state.container, state.width, state.height, fit, srcW, srcH)
+        state.videoElementA = videoElement
+        state.fitA = fit
+        state.sourceWidthA = srcW
+        state.sourceHeightA = srcH
+        state.dualState.slotAPath = newPath
+
+        startTransition(transitionId, transition.type || "fade", transition.duration ?? 800, transition.easing || "sine", state.spriteB, state.spriteA, transition.custom?.direction, () => {
+            removeSprite(state.spriteB, state.container)
+            cleanupVideoElement(state.videoElementB)
+            state.spriteB = null
+            state.videoElementB = null
+            state.fitB = "cover"
+            state.sourceWidthB = 0
+            state.sourceHeightB = 0
+            state.dualState.slotBPath = ""
+            state.dualState.activeSlot = "a"
+        })
     }
+
+    console.log("BackgroundLayer: created next sprite", {
+        transitionId,
+        path: newPath,
+        fit,
+        activeSlotAfterCreate: currentIsA ? "b" : "a",
+        width: state.width,
+        height: state.height,
+        sourceWidth: srcW,
+        sourceHeight: srcH
+    })
 }
 
 export function resizeBackground(state: BackgroundLayerState, width: number, height: number): void {
     state.width = width
     state.height = height
-    if (state.spriteA) applyFit(state.spriteA, width, height, "cover")
-    if (state.spriteB) applyFit(state.spriteB, width, height, "cover")
+    console.log("BackgroundLayer: resize", {
+        width,
+        height,
+        fitA: state.fitA,
+        fitB: state.fitB,
+        sourceWidthA: state.sourceWidthA,
+        sourceHeightA: state.sourceHeightA,
+        sourceWidthB: state.sourceWidthB,
+        sourceHeightB: state.sourceHeightB
+    })
+    if (state.spriteA) applyFit(state.spriteA, width, height, state.fitA, state.sourceWidthA || state.videoElementA?.videoWidth, state.sourceHeightA || state.videoElementA?.videoHeight)
+    if (state.spriteB) applyFit(state.spriteB, width, height, state.fitB, state.sourceWidthB || state.videoElementB?.videoWidth, state.sourceHeightB || state.videoElementB?.videoHeight)
 }
 
 function clearBackground(state: BackgroundLayerState, transitionId: string): void {
@@ -137,6 +240,12 @@ function clearBackground(state: BackgroundLayerState, transitionId: string): voi
     state.spriteB = null
     state.videoElementA = null
     state.videoElementB = null
+    state.fitA = "cover"
+    state.fitB = "cover"
+    state.sourceWidthA = 0
+    state.sourceHeightA = 0
+    state.sourceWidthB = 0
+    state.sourceHeightB = 0
     state.dualState = { activeSlot: "a", slotAPath: "", slotBPath: "", transition: null }
 }
 
@@ -215,7 +324,10 @@ function waitForVideoReady(video: HTMLVideoElement): Promise<void> {
         video.addEventListener("loadeddata", onReady)
         video.addEventListener("error", onError)
         // Timeout fallback
-        setTimeout(() => { cleanup(); resolve() }, 5000)
+        setTimeout(() => {
+            cleanup()
+            resolve()
+        }, 5000)
     })
 }
 

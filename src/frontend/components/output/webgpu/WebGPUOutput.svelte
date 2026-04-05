@@ -5,8 +5,10 @@
     import type { OutBackground, OutSlide, Slide, SlideData } from "../../../../types/Show"
     import { allOutputs, currentWindow, effects, media, outputs, overlays, showsCache, styles, templates, transitionData } from "../../../stores"
     import { clone } from "../../helpers/array"
-    import { defaultLayers, getCurrentStyle, getMetadata, getOutputLines, getOutputTransitions, getResolution, getSlideFilter, getStyleTemplate, setTemplateStyle } from "../../helpers/output"
+    import { getMediaStyle } from "../../helpers/media"
+    import { defaultLayers, getCurrentStyle, getMetadata, getOutputLines, getOutputResolution, getOutputTransitions, getResolution, getSlideFilter, getStyleTemplate, setTemplateStyle } from "../../helpers/output"
     import { _show } from "../../helpers/shows"
+    import Zoomed from "../../slide/Zoomed.svelte"
     import SlideContent from "../layers/SlideContent.svelte"
     import Overlay from "../layers/Overlay.svelte"
     import Overlays from "../layers/Overlays.svelte"
@@ -88,8 +90,8 @@
         }
     }
 
-    // Transitions
-    $: resolution = getResolution(null, { currentOutput, currentStyle }, false, outputId)
+    // Transitions — use actual pixel resolution with style aspect ratio applied
+    $: resolution = getOutputResolution(outputId, $outputs, true)
     $: transitions = getOutputTransitions(slideData, currentStyle?.transition, $transitionData, false)
 
     // Template
@@ -106,22 +108,39 @@
     let lines: any = {}
     $: currentLineId = slide?.id
     $: if (currentLineId && slide) {
-        try { setTimeout(() => { lines[currentLineId!] = getOutputLines(slide!, currentStyle?.lines) }, 50) } catch {}
+        try {
+            setTimeout(() => {
+                lines[currentLineId!] = getOutputLines(slide!, currentStyle?.lines)
+            }, 50)
+        } catch {}
     }
 
     // Metadata
     $: metadataItems = getMetadata($showsCache[(slide as any)?.id || ""], currentStyle, slide, $templates)
     let currentMetadataItems: any[] = []
     let isMetadataClearing = false
-    $: if (metadataItems !== null) { isMetadataClearing = false; if (JSON.stringify(metadataItems) !== JSON.stringify(currentMetadataItems)) currentMetadataItems = clone(metadataItems) }
-    else { isMetadataClearing = true; setTimeout(() => { currentMetadataItems = [] }) }
+    $: if (metadataItems !== null) {
+        isMetadataClearing = false
+        if (JSON.stringify(metadataItems) !== JSON.stringify(currentMetadataItems)) currentMetadataItems = clone(metadataItems)
+    } else {
+        isMetadataClearing = true
+        setTimeout(() => {
+            currentMetadataItems = []
+        })
+    }
 
     // Background data
     $: backgroundColor = currentOutput?.transparent ? "transparent" : styleTemplate?.settings?.backgroundColor || currentSlide?.settings?.color || currentStyle?.background || "black"
     $: styleBackground = currentStyle?.clearStyleBackgroundOnText && (slide || background) ? "" : currentStyle?.backgroundImage || ""
-    $: styleBackgroundData = { path: styleBackground, ...($media[styleBackground] || {}), loop: true }
-    $: templateBackgroundData = { path: templateBackground, loop: true, ...($media[templateBackground] || {}) }
-    $: backgroundData = templateBackground ? templateBackgroundData : background
+    $: defaultFit = currentStyle?.fit || "contain"
+    $: styleBackgroundMediaStyle = styleBackground ? getMediaStyle($media[styleBackground], currentStyle) : null
+    $: styleBackgroundData = styleBackground ? { path: styleBackground, ...($media[styleBackground] || {}), fit: styleBackgroundMediaStyle?.fit || defaultFit, loop: true } : null
+    $: templateBackgroundMediaStyle = templateBackground ? getMediaStyle($media[templateBackground], currentStyle) : null
+    $: templateBackgroundData = templateBackground ? { path: templateBackground, loop: true, ...($media[templateBackground] || {}), fit: templateBackgroundMediaStyle?.fit || defaultFit } : null
+    $: backgroundMediaData = background?.path ? { ...($media[background.path] || {}), ...background } : background
+    $: backgroundMediaStyle = backgroundMediaData ? getMediaStyle(backgroundMediaData, currentStyle) : null
+    $: resolvedBackgroundData = backgroundMediaData ? { ...backgroundMediaData, fit: backgroundMediaStyle?.fit || defaultFit } : null
+    $: backgroundData = templateBackground ? templateBackgroundData : resolvedBackgroundData
 
     $: overlaysActive = !!(layers.includes("overlays") && clonedOverlays)
 
@@ -146,18 +165,26 @@
 
     // --- PixiJS init (dynamic import) ---
     onMount(async () => {
-        if (!canvas) { status = "ERROR: no canvas"; return }
+        if (!canvas) {
+            status = "ERROR: no canvas"
+            return
+        }
 
         try {
             status = "loading pixi..."
             const PIXI = await import("pixi.js")
 
+            // Use output resolution with style aspect ratio applied
+            const initRes = getOutputResolution(outputId, $outputs, true)
+            const initW = initRes?.width || 1920
+            const initH = initRes?.height || 1080
+
             status = "creating app..."
             const app = new PIXI.Application()
             await app.init({
                 canvas,
-                width: 1920,
-                height: 1080,
+                width: initW,
+                height: initH,
                 backgroundColor: 0x000000,
                 backgroundAlpha: currentOutput?.transparent ? 0 : 1,
                 preference: "webgl",
@@ -170,9 +197,9 @@
             layerMgrMod = await import("./LayerManager")
 
             const containers = rendererMod.createStageContainers(app)
-            layerMgr = await layerMgrMod.createLayerManager(app, containers, 1920, 1080)
+            layerMgr = await layerMgrMod.createLayerManager(app, containers, initW, initH)
             pixiReady = true
-            status = `Ready (${app.renderer.type === 0x02 ? "WebGPU" : "WebGL"})`
+            status = `Ready (${app.renderer.type === 0x02 ? "WebGPU" : "WebGL"}) ${initW}x${initH}`
         } catch (e) {
             status = "FAILED: " + String(e)
             console.error("WebGPUOutput:", e)
@@ -191,19 +218,39 @@
         const bgPath = backgroundData?.path || backgroundData?.id || "none"
         const slideId = actualSlide?.id || "none"
         const styleBg = styleBackground || "none"
-        status = `Ready (WebGL) | bg: ${bgPath} | slide: ${slideId} | styleBg: ${styleBg}`
+        status = `Ready | ${resolution?.width}x${resolution?.height} | bg: ${bgPath} | slide: ${slideId} | styleBg: ${styleBg}`
     }
 
-    // Style background
-    $: if (pixiReady && layerMgr && layerMgrMod && styleBackground) {
-        console.log("WebGPUOutput: style bg update:", styleBackgroundData)
-        layerMgrMod.updateStyleBackground(layerMgr, styleBackgroundData, transitions?.media || {})
+    $: if (pixiReady && backgroundData) {
+        console.log("WebGPUOutput: resolved background", {
+            outputId,
+            path: backgroundData.path || backgroundData.id || "",
+            fit: (backgroundData as any).fit || "unset",
+            defaultFit,
+            currentStyleFit: currentStyle?.fit || "unset",
+            templateBackground,
+            styleBackground
+        })
     }
 
-    // Slide background — check both path and id
-    $: if (pixiReady && layerMgr && layerMgrMod && backgroundData && (backgroundData.path || backgroundData.id)) {
-        console.log("WebGPUOutput: slide bg update:", backgroundData)
-        layerMgrMod.updateSlideBackground(layerMgr, backgroundData, transitions?.media || {})
+    // Style background — update or clear
+    $: if (pixiReady && layerMgr && layerMgrMod) {
+        if (styleBackground) {
+            console.log("WebGPUOutput: style bg update:", styleBackgroundData)
+            layerMgrMod.updateStyleBackground(layerMgr, styleBackgroundData, transitions?.media || {})
+        } else {
+            layerMgrMod.updateStyleBackground(layerMgr, null, {})
+        }
+    }
+
+    // Slide background — update or clear
+    $: if (pixiReady && layerMgr && layerMgrMod) {
+        if (backgroundData && (backgroundData.path || backgroundData.id)) {
+            console.log("WebGPUOutput: slide bg update:", backgroundData)
+            layerMgrMod.updateSlideBackground(layerMgr, backgroundData, transitions?.media || {})
+        } else {
+            layerMgrMod.updateSlideBackground(layerMgr, null, {})
+        }
     }
 
     // Resize
@@ -213,37 +260,37 @@
     }
 </script>
 
-<div class="output-root" style="background: {backgroundColor};">
-    <!-- PixiJS canvas for media/background layers -->
-    <canvas bind:this={canvas} class="pixi-canvas" />
+<Zoomed id={outputId} background={backgroundColor} center {style} {resolution} bind:ratio>
+    <div class="content-wrapper">
+        <!-- PixiJS canvas for media/background layers -->
+        <canvas bind:this={canvas} class="pixi-canvas" />
 
-    <!-- DOM overlay for text (directly visible, on top of canvas) -->
-    <div class="text-overlay">
-        {#if overlaysActive}
-            <Overlays {outputId} overlays={clonedOverlays} activeOverlays={outUnderlays} transition={transitions?.overlay || {}} mirror={false} preview={false} />
-        {/if}
+        <!-- DOM overlay for text (directly visible, on top of canvas) -->
+        <div class="text-overlay">
+            {#if overlaysActive}
+                <Overlays {outputId} overlays={clonedOverlays} activeOverlays={outUnderlays} transition={transitions?.overlay || {}} mirror={false} preview={false} />
+            {/if}
 
-        {#if actualSlide && actualSlide?.type !== "pdf" && actualSlide?.type !== "ppt"}
-            <SlideContent {outputId} outSlide={actualSlide} isClearing={isSlideClearing} slideData={actualSlideData} currentSlide={actualCurrentSlide} {currentStyle} animationData={{}} currentLineId={actualCurrentLineId} {lines} {ratio} mirror={false} preview={false} transition={transitions?.text || {}} transitionEnabled={false} styleIdOverride="" />
-            <Overlay overlay={{ items: currentMetadataItems }} isClearing={isMetadataClearing || isSlideClearing} {outputId} transition={transitions?.text || {}} />
-        {/if}
+            {#if actualSlide && actualSlide?.type !== "pdf" && actualSlide?.type !== "ppt"}
+                <SlideContent {outputId} outSlide={actualSlide} isClearing={isSlideClearing} slideData={actualSlideData} currentSlide={actualCurrentSlide} {currentStyle} animationData={{}} currentLineId={actualCurrentLineId} {lines} {ratio} mirror={false} preview={false} transition={transitions?.text || {}} transitionEnabled={false} styleIdOverride="" />
+                <Overlay overlay={{ items: currentMetadataItems }} isClearing={isMetadataClearing || isSlideClearing} {outputId} transition={transitions?.text || {}} />
+            {/if}
 
-        {#if overlaysActive}
-            <Overlays {outputId} overlays={clonedOverlays} activeOverlays={outOverlays} transition={transitions?.overlay || {}} mirror={false} preview={false} />
-        {/if}
+            {#if overlaysActive}
+                <Overlays {outputId} overlays={clonedOverlays} activeOverlays={outOverlays} transition={transitions?.overlay || {}} mirror={false} preview={false} />
+            {/if}
+        </div>
     </div>
 
     <p class="debug-status">{status}</p>
-</div>
+</Zoomed>
 
 <style>
-    .output-root {
-        position: absolute;
-        top: 0;
-        left: 0;
+    .content-wrapper {
+        position: relative;
+        overflow: hidden;
         width: 100%;
         height: 100%;
-        overflow: hidden;
     }
     .pixi-canvas {
         display: block;
@@ -258,8 +305,6 @@
         height: 100%;
         z-index: 1;
         pointer-events: none;
-        /* Apply zoom to match FreeShow's output resolution scaling */
-        zoom: var(--output-zoom, 1);
     }
     .text-overlay :global(.item) {
         position: absolute;
