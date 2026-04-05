@@ -56,9 +56,13 @@ export async function updateBackground(
 
     if (isVideo && isVideoPath(newPath)) {
         videoElement = createHiddenVideoElement(newPath, data.loop ?? false, data.muted ?? true)
+        // Wait for video to be ready before creating texture
+        await waitForVideoReady(videoElement)
         newTexture = createVideoTexture(videoElement)
+        console.log("BackgroundLayer: video texture created for", newPath)
     } else {
-        newTexture = await loadImageTexture(newPath)
+        newTexture = await loadImageTexture(toFileUrl(newPath))
+        console.log("BackgroundLayer: image texture created for", newPath)
     }
 
     const fit = data.fit || "cover"
@@ -151,18 +155,46 @@ function isVideoPath(path: string): boolean {
 function createHiddenVideoElement(path: string, loop: boolean, muted: boolean): HTMLVideoElement {
     const video = document.createElement("video")
     video.src = toFileUrl(path)
+    video.crossOrigin = "anonymous"
     video.loop = loop
     video.muted = muted
     video.autoplay = true
     video.playsInline = true
-    video.style.position = "absolute"
-    video.style.visibility = "hidden"
-    video.style.pointerEvents = "none"
+    // Position off-screen instead of visibility:hidden — hidden prevents GPU decoding
+    video.style.position = "fixed"
+    video.style.top = "-9999px"
+    video.style.left = "-9999px"
     video.style.width = "1px"
     video.style.height = "1px"
+    video.style.opacity = "0.01"
+    video.style.pointerEvents = "none"
     document.body.appendChild(video)
-    video.play().catch(() => {})
+    video.play().catch((e) => console.warn("BackgroundLayer: video play failed:", e))
     return video
+}
+
+function waitForVideoReady(video: HTMLVideoElement): Promise<void> {
+    return new Promise((resolve) => {
+        if (video.readyState >= 2) {
+            resolve()
+            return
+        }
+        const onReady = () => {
+            video.removeEventListener("canplay", onReady)
+            video.removeEventListener("error", onError)
+            resolve()
+        }
+        const onError = () => {
+            video.removeEventListener("canplay", onReady)
+            video.removeEventListener("error", onError)
+            console.warn("BackgroundLayer: video load error:", video.src)
+            resolve() // resolve anyway so we don't hang
+        }
+        video.addEventListener("canplay", onReady)
+        video.addEventListener("error", onError)
+        // Timeout fallback
+        setTimeout(resolve, 5000)
+    })
 }
 
 function cleanupVideoElement(video: HTMLVideoElement | null): void {
