@@ -160,13 +160,10 @@ function createHiddenVideoElement(path: string, loop: boolean, muted: boolean): 
     video.muted = muted
     video.autoplay = true
     video.playsInline = true
-    // Position off-screen instead of visibility:hidden — hidden prevents GPU decoding
+    // Position off-screen — don't constrain dimensions so browser decodes at full resolution
     video.style.position = "fixed"
     video.style.top = "-9999px"
     video.style.left = "-9999px"
-    video.style.width = "1px"
-    video.style.height = "1px"
-    video.style.opacity = "0.01"
     video.style.pointerEvents = "none"
     document.body.appendChild(video)
     video.play().catch((e) => console.warn("BackgroundLayer: video play failed:", e))

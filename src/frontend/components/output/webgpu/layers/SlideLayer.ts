@@ -1,19 +1,31 @@
-import { Container, Sprite, Texture } from "pixi.js"
 import type { Transition } from "../../../../../types/Show"
-import { startTransition, cancelTransition } from "../transitionManager"
 import { queueRasterize } from "./TextRasterizer"
 
+let pixiModule: any = null
+async function getPixi() {
+    if (!pixiModule) pixiModule = await import("pixi.js")
+    return pixiModule
+}
+
+// Use dynamic imports for transition manager too
+let transitionMod: any = null
+async function getTransitionMod() {
+    if (!transitionMod) transitionMod = await import("../transitionManager")
+    return transitionMod
+}
+
 export interface SlideLayerState {
-    container: Container
-    currentSprite: Sprite | null
-    previousSprite: Sprite | null
+    container: any // PixiJS Container
+    currentSprite: any | null
+    previousSprite: any | null
     width: number
     height: number
     currentSlideKey: string
 }
 
-export function createSlideLayer(parentContainer: Container, width: number, height: number): SlideLayerState {
-    const container = new Container()
+export async function createSlideLayer(parentContainer: any, width: number, height: number): Promise<SlideLayerState> {
+    const PIXI = await getPixi()
+    const container = new PIXI.Container()
     container.label = "slide-layer"
     parentContainer.addChild(container)
 
@@ -34,7 +46,6 @@ export function updateSlideContent(
     transition: Transition,
     isClearing: boolean
 ): void {
-    // Same content — skip
     if (slideKey === state.currentSlideKey && !isClearing) return
     state.currentSlideKey = slideKey
 
@@ -43,10 +54,14 @@ export function updateSlideContent(
         return
     }
 
-    queueRasterize(slideElement, state.width, state.height, (texture) => {
-        if (texture === Texture.EMPTY) return
+    console.log("SlideLayer: rasterizing, children:", slideElement.children?.length, "size:", state.width, "x", state.height)
+    queueRasterize(slideElement, state.width, state.height, async (texture: any) => {
+        const PIXI = await getPixi()
+        const tm = await getTransitionMod()
 
-        // Move current to previous for crossfade
+        console.log("SlideLayer: texture result, valid:", texture !== PIXI.Texture.EMPTY)
+        if (texture === PIXI.Texture.EMPTY) return
+
         if (state.currentSprite) {
             if (state.previousSprite) {
                 state.container.removeChild(state.previousSprite)
@@ -55,15 +70,13 @@ export function updateSlideContent(
             state.previousSprite = state.currentSprite
         }
 
-        // Create new sprite
-        const sprite = new Sprite(texture)
+        const sprite = new PIXI.Sprite(texture)
         sprite.width = state.width
         sprite.height = state.height
         state.container.addChild(sprite)
         state.currentSprite = sprite
 
-        // Transition
-        startTransition(
+        tm.startTransition(
             "slide-text",
             transition.type || "fade",
             transition.duration ?? 500,
@@ -95,8 +108,9 @@ export function resizeSlideLayer(state: SlideLayerState, width: number, height: 
     }
 }
 
-function clearSlide(state: SlideLayerState): void {
-    cancelTransition("slide-text")
+async function clearSlide(state: SlideLayerState): Promise<void> {
+    const tm = await getTransitionMod()
+    tm.cancelTransition("slide-text")
     if (state.currentSprite) {
         state.container.removeChild(state.currentSprite)
         state.currentSprite.destroy()
@@ -110,7 +124,7 @@ function clearSlide(state: SlideLayerState): void {
     state.currentSlideKey = ""
 }
 
-export function destroySlideLayer(state: SlideLayerState): void {
-    clearSlide(state)
+export async function destroySlideLayer(state: SlideLayerState): Promise<void> {
+    await clearSlide(state)
     state.container.destroy({ children: true })
 }

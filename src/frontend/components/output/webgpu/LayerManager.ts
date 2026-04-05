@@ -1,27 +1,48 @@
-import type { Application } from "pixi.js"
 import type { OutBackground, Transition } from "../../../../types/Show"
-import type { StageContainers } from "./PixiRenderer"
-import { createBackgroundLayer, updateBackground, resizeBackground, destroyBackgroundLayer, type BackgroundLayerState } from "./layers/BackgroundLayer"
-import { createOverlayLayer, resizeOverlays, destroyOverlayLayer, type OverlayLayerState } from "./layers/OverlayLayer"
-import { createSlideLayer, updateSlideContent, resizeSlideLayer, destroySlideLayer, type SlideLayerState } from "./layers/SlideLayer"
-import { cancelAllTransitions } from "./transitionManager"
+
+// All layer modules loaded dynamically to avoid static pixi.js imports
+let bgMod: any = null
+let overlayMod: any = null
+let slideMod: any = null
+let transitionMod: any = null
+
+async function getBgMod() {
+    if (!bgMod) bgMod = await import("./layers/BackgroundLayer")
+    return bgMod
+}
+async function getOverlayMod() {
+    if (!overlayMod) overlayMod = await import("./layers/OverlayLayer")
+    return overlayMod
+}
+async function getSlideMod() {
+    if (!slideMod) slideMod = await import("./layers/SlideLayer")
+    return slideMod
+}
+async function getTransitionMod() {
+    if (!transitionMod) transitionMod = await import("./transitionManager")
+    return transitionMod
+}
 
 export interface LayerManagerState {
-    app: Application
-    containers: StageContainers
-    styleBackground: BackgroundLayerState
-    slideBackground: BackgroundLayerState
-    slideLayer: SlideLayerState
-    overlayLayer: OverlayLayerState
+    app: any
+    containers: any
+    styleBackground: any
+    slideBackground: any
+    slideLayer: any
+    overlayLayer: any
     width: number
     height: number
 }
 
-export function createLayerManager(app: Application, containers: StageContainers, width: number, height: number): LayerManagerState {
-    const styleBackground = createBackgroundLayer(containers.background, width, height)
-    const slideBackground = createBackgroundLayer(containers.background, width, height)
-    const slideLayer = createSlideLayer(containers.slide, width, height)
-    const overlayLayer = createOverlayLayer(containers.overlays, width, height)
+export async function createLayerManager(app: any, containers: any, width: number, height: number): Promise<LayerManagerState> {
+    const bg = await getBgMod()
+    const ov = await getOverlayMod()
+    const sl = await getSlideMod()
+
+    const styleBackground = bg.createBackgroundLayer(containers.background, width, height)
+    const slideBackground = bg.createBackgroundLayer(containers.background, width, height)
+    const slideLayer = await sl.createSlideLayer(containers.slide, width, height)
+    const overlayLayer = ov.createOverlayLayer(containers.overlays, width, height)
 
     return {
         app,
@@ -40,7 +61,8 @@ export async function updateStyleBackground(
     data: OutBackground | null,
     transition: Transition
 ): Promise<void> {
-    await updateBackground(state.styleBackground, data, transition, "style-bg")
+    const bg = await getBgMod()
+    await bg.updateBackground(state.styleBackground, data, transition, "style-bg")
 }
 
 export async function updateSlideBackground(
@@ -48,32 +70,41 @@ export async function updateSlideBackground(
     data: OutBackground | null,
     transition: Transition
 ): Promise<void> {
-    await updateBackground(state.slideBackground, data, transition, "slide-bg")
+    const bg = await getBgMod()
+    await bg.updateBackground(state.slideBackground, data, transition, "slide-bg")
 }
 
-export function updateSlideText(
+export async function updateSlideText(
     state: LayerManagerState,
     slideElement: HTMLElement | null,
     slideKey: string,
     transition: Transition,
     isClearing: boolean
-): void {
-    updateSlideContent(state.slideLayer, slideElement, slideKey, transition, isClearing)
+): Promise<void> {
+    const sl = await getSlideMod()
+    sl.updateSlideContent(state.slideLayer, slideElement, slideKey, transition, isClearing)
 }
 
-export function resizeAllLayers(state: LayerManagerState, width: number, height: number): void {
+export async function resizeAllLayers(state: LayerManagerState, width: number, height: number): Promise<void> {
     state.width = width
     state.height = height
-    resizeBackground(state.styleBackground, width, height)
-    resizeBackground(state.slideBackground, width, height)
-    resizeSlideLayer(state.slideLayer, width, height)
-    resizeOverlays(state.overlayLayer, width, height)
+    const bg = await getBgMod()
+    const ov = await getOverlayMod()
+    const sl = await getSlideMod()
+    bg.resizeBackground(state.styleBackground, width, height)
+    bg.resizeBackground(state.slideBackground, width, height)
+    sl.resizeSlideLayer(state.slideLayer, width, height)
+    ov.resizeOverlays(state.overlayLayer, width, height)
 }
 
-export function destroyLayerManager(state: LayerManagerState): void {
-    cancelAllTransitions()
-    destroyBackgroundLayer(state.styleBackground, "style-bg")
-    destroyBackgroundLayer(state.slideBackground, "slide-bg")
-    destroySlideLayer(state.slideLayer)
-    destroyOverlayLayer(state.overlayLayer)
+export async function destroyLayerManager(state: LayerManagerState): Promise<void> {
+    const tm = await getTransitionMod()
+    const bg = await getBgMod()
+    const ov = await getOverlayMod()
+    const sl = await getSlideMod()
+    tm.cancelAllTransitions()
+    bg.destroyBackgroundLayer(state.styleBackground, "style-bg")
+    bg.destroyBackgroundLayer(state.slideBackground, "slide-bg")
+    sl.destroySlideLayer(state.slideLayer)
+    ov.destroyOverlayLayer(state.overlayLayer)
 }

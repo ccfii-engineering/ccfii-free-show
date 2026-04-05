@@ -173,7 +173,7 @@
             layerMgrMod = await import("./LayerManager")
 
             const containers = rendererMod.createStageContainers(app)
-            layerMgr = layerMgrMod.createLayerManager(app, containers, 1920, 1080)
+            layerMgr = await layerMgrMod.createLayerManager(app, containers, 1920, 1080)
             pixiReady = true
             status = `Ready (${app.renderer.type === 0x02 ? "WebGPU" : "WebGL"})`
         } catch (e) {
