@@ -7,7 +7,6 @@
     import { clone } from "../../helpers/array"
     import { defaultLayers, getCurrentStyle, getMetadata, getOutputLines, getOutputTransitions, getResolution, getSlideFilter, getStyleTemplate, setTemplateStyle } from "../../helpers/output"
     import { _show } from "../../helpers/shows"
-    import Zoomed from "../../slide/Zoomed.svelte"
     import SlideContent from "../layers/SlideContent.svelte"
     import Overlay from "../layers/Overlay.svelte"
     import Overlays from "../layers/Overlays.svelte"
@@ -239,40 +238,32 @@
 
 </script>
 
-<Zoomed id={outputId} background={backgroundColor} checkered={(preview || mirror) && backgroundColor === "transparent"} backgroundDuration={transitions.media?.type === "none" ? 0 : (transitions.media?.duration ?? 800)} align={alignPosition} center {style} {resolution} {mirror} {drawZoom} {cropping} bind:ratio>
-    <!-- PixiJS canvas — renders ALL layers (backgrounds, text, overlays, effects) -->
-    <div class="pixi-wrapper">
-        <canvas bind:this={canvas} />
-    </div>
+<!-- FULL-SCREEN canvas — no Zoomed wrapper, PixiJS handles all sizing -->
+<div class="output-root" style="background: {backgroundColor};">
+    <canvas bind:this={canvas} class="pixi-canvas" />
 
     {#if initError}
-        <div class="init-error">PixiJS Error: {initError}</div>
+        <p class="init-error">PixiJS: {initError}</p>
     {/if}
 
-    <!-- Draw tool stays as DOM overlay (uses Canvas 2D, migrated separately) -->
+    <!-- Draw tool as DOM overlay -->
     {#if zoomActive}
         <Draw />
     {/if}
-</Zoomed>
+</div>
 
 <!-- Hidden off-screen container for text rasterization -->
-<!-- Svelte renders the text here using existing components, then we capture it as an image for PixiJS -->
 <div class="offscreen-renderer" aria-hidden="true">
     <div bind:this={offscreenSlide} class="offscreen-slide" style="width: {resolution.width || 1920}px; height: {resolution.height || 1080}px; position: relative; overflow: hidden;">
-        <!-- Underlays -->
         {#if overlaysActive}
             <Overlays {outputId} overlays={clonedOverlays} activeOverlays={outUnderlays} transition={transitions.overlay} {mirror} {preview} />
         {/if}
 
-        <!-- Slide content -->
         {#if actualSlide && actualSlide?.type !== "pdf" && actualSlide?.type !== "ppt"}
             <SlideContent {outputId} outSlide={actualSlide} isClearing={isSlideClearing} slideData={actualSlideData} currentSlide={actualCurrentSlide} {currentStyle} animationData={{}} currentLineId={actualCurrentLineId} {lines} {ratio} {mirror} {preview} transition={transitions.text} transitionEnabled={false} {styleIdOverride} />
-
-            <!-- Metadata -->
             <Overlay overlay={{ items: currentMetadataItems }} isClearing={isMetadataClearing || isSlideClearing} {outputId} transition={transitions.text} />
         {/if}
 
-        <!-- Overlays -->
         {#if overlaysActive}
             <Overlays {outputId} overlays={clonedOverlays} activeOverlays={outOverlays} transition={transitions.overlay} {mirror} {preview} />
         {/if}
@@ -280,18 +271,16 @@
 </div>
 
 <style>
-    /* PixiJS manages canvas pixel dimensions internally via resolution.
-       The wrapper stretches to fill the Zoomed container so the canvas covers the output area. */
-    .pixi-wrapper {
+    .output-root {
         position: absolute;
         top: 0;
         left: 0;
         width: 100%;
         height: 100%;
-        z-index: 0;
+        overflow: hidden;
     }
 
-    .pixi-wrapper canvas {
+    .pixi-canvas {
         display: block;
         width: 100%;
         height: 100%;
@@ -303,18 +292,17 @@
         left: 50%;
         transform: translate(-50%, -50%);
         color: red;
-        font-size: 24px;
+        font-size: 32px;
+        font-family: monospace;
         z-index: 999;
     }
 
-    /* Off-screen renderer: positioned far off-screen, invisible, but fully painted by the browser.
-       This lets Svelte render text with all CSS (fonts, shadows, stroke) so we can rasterize it. */
     .offscreen-renderer {
         position: fixed;
         top: -20000px;
         left: -20000px;
         pointer-events: none;
-        visibility: visible; /* must be visible for html-to-image to capture */
+        visibility: visible;
         opacity: 1;
         z-index: -9999;
     }
@@ -323,7 +311,6 @@
         background: transparent;
     }
 
-    /* Inherit the output window's default item styles so text renders correctly off-screen */
     .offscreen-slide :global(.item) {
         position: absolute;
         font-family: "CMGSans";
