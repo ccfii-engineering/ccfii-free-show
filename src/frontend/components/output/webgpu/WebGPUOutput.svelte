@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onDestroy, onMount, tick } from "svelte"
+    import { onDestroy, onMount } from "svelte"
     import type { OutData } from "../../../../types/Output"
     import type { Styles } from "../../../../types/Settings"
     import type { OutBackground, OutSlide, Slide, SlideData } from "../../../../types/Show"
@@ -21,9 +21,6 @@
     let rendererMod: any = null
     let layerMgrMod: any = null
     let pixiReady = false
-
-    // Hidden off-screen container for text rasterization
-    let offscreenSlide: HTMLDivElement
 
     // --- Store reads (wrapped in try/catch via reactive guards) ---
     $: currentOutput = $outputs[outputId] || $allOutputs[outputId] || {}
@@ -209,24 +206,6 @@
         layerMgrMod.updateSlideBackground(layerMgr, backgroundData, transitions?.media || {})
     }
 
-    // Slide text rasterization
-    $: slideKey = actualSlide ? `${actualSlide.id}-${actualSlide.index}-${actualSlide.line}` : ""
-    $: if (pixiReady && layerMgr && layerMgrMod && offscreenSlide && (slideKey || isSlideClearing)) {
-        console.log("WebGPUOutput: text raster, key:", slideKey, "clearing:", isSlideClearing)
-        tick().then(() => {
-            setTimeout(() => {
-                if (!layerMgr || !layerMgrMod) return
-                layerMgrMod.updateSlideText(
-                    layerMgr,
-                    (actualSlide && !isSlideClearing) ? offscreenSlide : null,
-                    slideKey,
-                    transitions?.text || {},
-                    isSlideClearing
-                )
-            }, 150)
-        })
-    }
-
     // Resize
     $: if (pixiReady && pixiApp && rendererMod && layerMgr && layerMgrMod && resolution?.width > 0 && resolution?.height > 0) {
         rendererMod.resizeApp(pixiApp, resolution.width, resolution.height)
@@ -235,13 +214,11 @@
 </script>
 
 <div class="output-root" style="background: {backgroundColor};">
+    <!-- PixiJS canvas for media/background layers -->
     <canvas bind:this={canvas} class="pixi-canvas" />
-    <p class="debug-status">{status}</p>
-</div>
 
-<!-- Hidden off-screen: Svelte renders text here, then we rasterize it to a PixiJS texture -->
-<div class="offscreen" aria-hidden="true">
-    <div bind:this={offscreenSlide} class="offscreen-slide" style="width: {resolution?.width || 1920}px; height: {resolution?.height || 1080}px; position: relative; overflow: hidden;">
+    <!-- DOM overlay for text (directly visible, on top of canvas) -->
+    <div class="text-overlay">
         {#if overlaysActive}
             <Overlays {outputId} overlays={clonedOverlays} activeOverlays={outUnderlays} transition={transitions?.overlay || {}} mirror={false} preview={false} />
         {/if}
@@ -255,6 +232,8 @@
             <Overlays {outputId} overlays={clonedOverlays} activeOverlays={outOverlays} transition={transitions?.overlay || {}} mirror={false} preview={false} />
         {/if}
     </div>
+
+    <p class="debug-status">{status}</p>
 </div>
 
 <style>
@@ -271,6 +250,27 @@
         width: 100%;
         height: 100%;
     }
+    .text-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+        pointer-events: none;
+        /* Apply zoom to match FreeShow's output resolution scaling */
+        zoom: var(--output-zoom, 1);
+    }
+    .text-overlay :global(.item) {
+        position: absolute;
+        font-family: "CMGSans";
+        text-shadow: 2px 2px 10px #000000;
+        color: white;
+        font-size: 100px;
+        line-height: 1.1;
+        -webkit-text-stroke-color: #000000;
+        paint-order: stroke fill;
+    }
     .debug-status {
         position: absolute;
         top: 8px;
@@ -280,26 +280,5 @@
         z-index: 999;
         pointer-events: none;
         margin: 0;
-    }
-    .offscreen {
-        position: fixed;
-        top: -20000px;
-        left: -20000px;
-        pointer-events: none;
-        visibility: visible;
-        z-index: -9999;
-    }
-    .offscreen-slide {
-        background: transparent;
-    }
-    .offscreen-slide :global(.item) {
-        position: absolute;
-        font-family: "CMGSans";
-        text-shadow: 2px 2px 10px #000000;
-        color: white;
-        font-size: 100px;
-        line-height: 1.1;
-        -webkit-text-stroke-color: #000000;
-        paint-order: stroke fill;
     }
 </style>

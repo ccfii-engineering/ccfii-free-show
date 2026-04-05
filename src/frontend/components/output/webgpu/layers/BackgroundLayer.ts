@@ -56,10 +56,10 @@ export async function updateBackground(
 
     if (isVideo && isVideoPath(newPath)) {
         videoElement = createHiddenVideoElement(newPath, data.loop ?? false, data.muted ?? true)
-        // Wait for video to be ready before creating texture
+        // Wait for video to be ready (including dimensions) before creating texture
         await waitForVideoReady(videoElement)
         newTexture = createVideoTexture(videoElement)
-        console.log("BackgroundLayer: video texture created for", newPath)
+        console.log("BackgroundLayer: video texture created for", newPath, "| texture size:", newTexture.width, "x", newTexture.height, "| video size:", videoElement.videoWidth, "x", videoElement.videoHeight)
     } else {
         newTexture = await loadImageTexture(toFileUrl(newPath))
         console.log("BackgroundLayer: image texture created for", newPath)
@@ -156,6 +156,7 @@ function createHiddenVideoElement(path: string, loop: boolean, muted: boolean): 
     const video = document.createElement("video")
     video.src = toFileUrl(path)
     video.crossOrigin = "anonymous"
+    video.preload = "auto"
     video.loop = loop
     video.muted = muted
     video.autoplay = true
@@ -172,25 +173,49 @@ function createHiddenVideoElement(path: string, loop: boolean, muted: boolean): 
 
 function waitForVideoReady(video: HTMLVideoElement): Promise<void> {
     return new Promise((resolve) => {
-        if (video.readyState >= 2) {
+        const checkDimensions = () => video.videoWidth > 0 && video.videoHeight > 0
+
+        if (video.readyState >= 2 && checkDimensions()) {
+            console.log("BackgroundLayer: video already ready:", video.videoWidth, "x", video.videoHeight)
             resolve()
             return
         }
+
         const onReady = () => {
-            video.removeEventListener("canplay", onReady)
-            video.removeEventListener("error", onError)
-            resolve()
+            // canplay fired but dimensions may not be available yet — poll briefly
+            if (checkDimensions()) {
+                cleanup()
+                console.log("BackgroundLayer: video ready:", video.videoWidth, "x", video.videoHeight)
+                resolve()
+                return
+            }
+            // Poll for dimensions (some browsers need a frame or two)
+            let polls = 0
+            const poll = setInterval(() => {
+                polls++
+                if (checkDimensions() || polls > 20) {
+                    clearInterval(poll)
+                    cleanup()
+                    console.log("BackgroundLayer: video ready after poll:", video.videoWidth, "x", video.videoHeight)
+                    resolve()
+                }
+            }, 50)
         }
         const onError = () => {
-            video.removeEventListener("canplay", onReady)
-            video.removeEventListener("error", onError)
+            cleanup()
             console.warn("BackgroundLayer: video load error:", video.src)
             resolve() // resolve anyway so we don't hang
         }
+        const cleanup = () => {
+            video.removeEventListener("canplay", onReady)
+            video.removeEventListener("loadeddata", onReady)
+            video.removeEventListener("error", onError)
+        }
         video.addEventListener("canplay", onReady)
+        video.addEventListener("loadeddata", onReady)
         video.addEventListener("error", onError)
         // Timeout fallback
-        setTimeout(resolve, 5000)
+        setTimeout(() => { cleanup(); resolve() }, 5000)
     })
 }
 
