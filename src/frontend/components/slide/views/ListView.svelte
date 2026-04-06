@@ -1,7 +1,7 @@
 <script lang="ts">
     import type { List } from "../../../../types/Show"
     import { transitionData } from "../../../stores"
-    import { custom } from "../../../utils/transitions"
+    import { customTick } from "../../../utils/transitions"
 
     export let list: List = { items: [] }
     export let disableTransition = false
@@ -37,7 +37,7 @@
                         <span>{@html item.text}</span>
                     </div>
                 {:else}
-                    <div class="center" transition:custom={transition}>
+                    <div class="center" transition:customTick={transition}>
                         <span>{@html item.text}</span>
                     </div>
                 {/if}

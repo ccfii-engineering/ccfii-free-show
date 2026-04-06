@@ -1,6 +1,6 @@
 <script lang="ts">
     import type { Transition } from "../../../../types/Show"
-    import { custom } from "../../../utils/transitions"
+    import { customTick } from "../../../utils/transitions"
 
     export let transition: Transition | undefined = undefined
     export let inTransition: Transition | null = null
@@ -15,7 +15,7 @@
         <slot />
     </div>
 {:else}
-    <div class="transitioner" in:custom={inTransition || transition || {}} out:custom={outTransition || transition || {}} on:outrostart>
+    <div class="transitioner" in:customTick={inTransition || transition || {}} out:customTick={outTransition || transition || {}} on:outrostart>
         <slot />
     </div>
 {/if}

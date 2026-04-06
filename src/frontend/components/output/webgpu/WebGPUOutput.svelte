@@ -272,7 +272,7 @@
             {/if}
 
             {#if actualSlide && actualSlide?.type !== "pdf" && actualSlide?.type !== "ppt"}
-                <SlideContent {outputId} outSlide={actualSlide} isClearing={isSlideClearing} slideData={actualSlideData} currentSlide={actualCurrentSlide} {currentStyle} animationData={{}} currentLineId={actualCurrentLineId} {lines} {ratio} mirror={false} preview={false} transition={transitions?.text || {}} transitionEnabled={false} styleIdOverride="" />
+                <SlideContent {outputId} outSlide={actualSlide} isClearing={isSlideClearing} slideData={actualSlideData} currentSlide={actualCurrentSlide} {currentStyle} animationData={{}} currentLineId={actualCurrentLineId} {lines} {ratio} mirror={false} preview={false} transition={transitions?.text || {}} transitionEnabled={true} styleIdOverride="" />
                 <Overlay overlay={{ items: currentMetadataItems }} isClearing={isMetadataClearing || isSlideClearing} {outputId} transition={transitions?.text || {}} />
             {/if}
 
