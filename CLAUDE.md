@@ -92,3 +92,21 @@ All configs live under `config/`:
 - `prefer-const`, `no-var`, `eqeqeq` (smart)
 - Svelte A11y warnings are suppressed in the Vite config
 - `@typescript-eslint/no-explicit-any` is off — `any` is used liberally in the codebase
+
+## CCFII Fork-Specific Notes
+
+### Branding
+This is "FreeShow - CCFII Edition" — a theme-level rebrand, not a full replacement. CCFII branding lives in the default theme (`defaultThemes.ts`), CSS variables (`global.css`), loading screen (`loading.html`), startup screen (`Splash.svelte`), about dialog (`About.svelte`), and top bar (`Top.svelte`). All original FreeShow credits are preserved.
+
+### Build & Release
+- **Two builder configs**: `electron-builder.yaml` (signed/external) and `electron-builder.internal.js` (unsigned/internal). Both must be kept in sync for branding fields (`productName`, `artifactName`).
+- **`package.json` `repository` field** must point to `ccfii-engineering/ccfii-free-show` — electron-builder uses this to determine the GitHub Releases target.
+- **macOS unsigned builds require `identity: null`** in the electron-builder config. Without it, electron-builder attempts code signing and fails with "not a file."
+- **macOS `icon.png` must be at least 512x512** — electron-builder enforces this for DMG builds.
+- **CI workflow must run `npm run build` before electron-builder** — the release scripts (`release:internal`, `release`) only run electron-builder packaging, they do NOT compile TypeScript/Svelte. The build step produces `build/electron/index.js` which is the app entry point.
+- **No Linux builds** — dropped from CI, not needed for CCFII.
+- **Auto-updates**: Disabled on macOS for internal (unsigned) builds via `updateSupport.ts`. May work on Windows. Users update manually via GitHub Releases.
+- **Workflow permissions**: `release.yml` needs `permissions: contents: write` for `GITHUB_TOKEN` to create GitHub Releases.
+
+### Theme Migration
+When changing default theme colors, update the migration check in `src/frontend/utils/updateSettings.ts` (around line 149). The app persists theme settings — without a migration, existing users keep old colors even after the code changes. Match on old color values to trigger a reset to `defaultThemes.default`.
