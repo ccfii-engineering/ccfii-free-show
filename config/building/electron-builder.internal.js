@@ -46,6 +46,7 @@ module.exports = {
             }
         ],
         category: "public.app-category.utilities",
+        identity: null,
         hardenedRuntime: false,
         gatekeeperAssess: false,
         notarize: false,
