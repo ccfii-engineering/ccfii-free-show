@@ -100,11 +100,10 @@
             <div class="unsaved" />
         {/if}
         <!-- logo -->
-        <h1 style="align-self: center;width: 100%;padding: 0px 10px;text-align: center;font-size: 1.8em;">FreeShow</h1>
-        <!-- <div class="logo">
-            <img style="height: 35px;" src="./import-logos/freeshow.webp" alt="FreeShow-logo" draggable={false} />
-            <h1 style="color: var(--text);font-size: 1.7em;">FreeShow</h1>
-        </div> -->
+        <div class="logo" style="display: flex;align-items: center;justify-content: center;width: 100%;padding: 0px 10px;gap: 8px;">
+            <img style="height: 30px;" src="./ccfii-logo.png" alt="CCFII-logo" draggable={false} />
+            <h1 style="color: var(--text);font-size: 1.5em;">FreeShow</h1>
+        </div>
     </span>
     <span>
         <TopButton id="show" />

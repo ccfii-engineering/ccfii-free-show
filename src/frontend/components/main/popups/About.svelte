@@ -22,8 +22,11 @@
 
 <div style="text-align: center;">
     <div class="logo">
-        <img style="height: 35px;" src="./import-logos/freeshow.webp" alt="FreeShow-logo" draggable={false} />
-        <h1 style="color: var(--text);font-size: 1.7em;">FreeShow</h1>
+        <img style="height: 50px;" src="./ccfii-logo.png" alt="CCFII-logo" draggable={false} />
+        <div>
+            <h1 style="color: var(--text);font-size: 1.7em;">FreeShow</h1>
+            <p style="font-size: 0.7em;color: #faa739;text-transform: uppercase;letter-spacing: 2px;white-space: nowrap;">CCFII Edition</p>
+        </div>
     </div>
 
     <p style="font-size: 0.8em;margin-top: 2px;">
@@ -32,6 +35,7 @@
             <T id="about.check_updates" />
         </Link>
     </p>
+    <p style="font-size: 0.7em;opacity: 0.5;margin-top: 4px;">Christ Charismatic Fellowship Int'l, Inc.</p>
 
     <!-- <p>
         <Link url="https://churchapps.org/">ChurchApps</Link>
@@ -42,6 +46,10 @@
 
 <div class="main">
     <div class="text">
+        <div>
+            • CCFII Website
+            <Link url="https://ccfii.org/">ccfii.org</Link>
+        </div>
         <div>
             • <T id="about.more" />
             <Link url="https://churchapps.org/">ChurchApps</Link>

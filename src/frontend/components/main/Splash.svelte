@@ -47,7 +47,9 @@
 </script>
 
 <Center class="context #splash">
+    <img class="ccfii-logo" src="./ccfii-logo.png" alt="CCFII" draggable="false" />
     <h1>FreeShow</h1>
+    <p class="edition">CCFII Edition</p>
     <p style="opacity: 0.7;">v{$version}</p>
     {#if $special.splashText}
         <p style="padding-top: 30px">
@@ -99,9 +101,28 @@
 </Center>
 
 <style>
+    .ccfii-logo {
+        height: 80px;
+        width: 80px;
+        object-fit: contain;
+        filter: drop-shadow(0 0 10px rgba(250, 167, 57, 0.35));
+        margin-bottom: 8px;
+    }
+
     h1 {
         font-size: 4em;
         overflow: initial;
+        color: var(--text);
+    }
+
+    .edition {
+        font-size: 0.85em;
+        font-weight: 600;
+        color: #faa739;
+        text-transform: uppercase;
+        letter-spacing: 3px;
+        overflow: initial;
+        white-space: nowrap;
     }
 
     p {
