@@ -3,7 +3,7 @@
     "version": "1.6.0-beta.3",
     "private": true,
     "main": "build/electron/index.js",
-    "description": "Show song lyrics and more for free!",
+    "description": "FreeShow - CCFII Edition: Show song lyrics and more for free!",
     "repository": "git@github.com:ChurchApps/FreeShow.git",
     "author": "ChurchApps <support@livecs.org>",
     "license": "GPL-3.0",

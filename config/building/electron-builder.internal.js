@@ -1,7 +1,7 @@
 module.exports = {
     appId: "app.freeshow",
-    productName: "FreeShow",
-    artifactName: "FreeShow-${version}-${arch}.${ext}",
+    productName: "FreeShow - CCFII Edition",
+    artifactName: "FreeShow-CCFII-${version}-${arch}.${ext}",
     extraMetadata: {
         internalBuild: true
     },
