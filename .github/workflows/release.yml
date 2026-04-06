@@ -43,6 +43,7 @@ jobs:
     publish_mac:
         name: "Publish MacOS"
         runs-on: macos-latest
+        needs: publish_windows
 
         steps:
             - name: Check out Git repository
@@ -92,3 +93,54 @@ jobs:
                     npm run release:internal
                   fi
               shell: bash
+
+    update_release_notes:
+        name: "Update Release Notes"
+        runs-on: ubuntu-latest
+        needs: [publish_windows, publish_mac]
+        if: always() && (needs.publish_windows.result == 'success' || needs.publish_mac.result == 'success')
+        permissions:
+            contents: write
+
+        steps:
+            - name: Check out Git repository
+              uses: actions/checkout@v4
+
+            - name: Get version from package.json
+              id: version
+              run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+
+            - name: Update release body
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  APP_VERSION: ${{ steps.version.outputs.version }}
+              run: |
+                  cat > /tmp/release-body.md <<BODY
+                  ## FreeShow - CCFII Edition v${APP_VERSION}
+
+                  ### Download
+
+                  | Platform | File |
+                  |---|---|
+                  | **Windows** | \`FreeShow-CCFII-${APP_VERSION}-x64.exe\` |
+                  | **macOS (Apple Silicon)** | \`FreeShow-CCFII-${APP_VERSION}-arm64.dmg\` |
+                  | **macOS (Intel)** | \`FreeShow-CCFII-${APP_VERSION}-x64.dmg\` |
+
+                  ### Installation
+
+                  **Windows:** Run the \`.exe\` installer. If Windows SmartScreen appears, click "More info" then "Run anyway."
+
+                  **macOS:** Open the \`.dmg\`, drag the app to Applications. On first launch, right-click the app and select "Open" to bypass Gatekeeper.
+
+                  ### Updating from a previous version
+
+                  **Windows:** Download and run the new installer — it replaces the old version automatically. Your shows and settings are preserved.
+
+                  **macOS:** Download the new \`.dmg\` and drag the app to Applications, replacing the old one. Your shows and settings are preserved (stored in \`~/Library/Application Support/freeshow/\`).
+
+                  ### How to check your version
+
+                  In the app: **Help > About** or check the startup screen below "CCFII Edition."
+                  BODY
+
+                  gh release edit "v${APP_VERSION}" --draft=false --notes-file /tmp/release-body.md 2>/dev/null || echo "Release v${APP_VERSION} not found or already updated"
