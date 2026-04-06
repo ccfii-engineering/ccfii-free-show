@@ -73,11 +73,6 @@ jobs:
             - name: Build app
               run: npm run build
 
-            # for some reason the build command don't continue after the rollup build
-            - name: Sleep for 3 minutes
-              run: sleep 180
-              shell: bash
-
             - name: Build and release app
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
