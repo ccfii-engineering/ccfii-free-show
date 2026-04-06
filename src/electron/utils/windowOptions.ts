@@ -22,7 +22,7 @@ export const loadingOptions: BrowserWindowConstructorOptions = {
 
 export const mainOptions: BrowserWindowConstructorOptions = {
     icon: "public/icon.png",
-    backgroundColor: "#120a0a",
+    backgroundColor: "#2a1a1a",
     titleBarStyle: isMac ? "hidden" : "default",
     trafficLightPosition: { x: 10, y: 12 }, // mac buttons
     show: false,

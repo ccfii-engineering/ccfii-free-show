@@ -146,7 +146,7 @@ export function updateSettings(data: any) {
         // update colors (pre 0.9.2 or 1.4.9 or pre-CCFII)
         const pre092 = currentTheme.colors.secondary?.toLowerCase() === "#e6349c"
         const pre149 = currentTheme.colors.primary?.toLowerCase() === "#292c36"
-        const preCCFII = currentTheme.colors.primary?.toLowerCase() === "#242832" || currentTheme.colors.secondary?.toLowerCase() === "#f0008c"
+        const preCCFII = currentTheme.colors.primary?.toLowerCase() === "#242832" || currentTheme.colors.primary?.toLowerCase() === "#120a0a" || currentTheme.colors.secondary?.toLowerCase() === "#f0008c"
         if (data.theme === "default" && (pre092 || pre149 || preCCFII)) {
             themes.update((a) => {
                 a.default = clone(defaultThemes.default)

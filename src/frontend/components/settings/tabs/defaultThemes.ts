@@ -9,10 +9,10 @@ export const defaultThemes: { [key: string]: Themes } = {
             size: "1em"
         },
         colors: {
-            primary: "#120a0a",
-            "primary-lighter": "#1e1414",
-            "primary-darker": "#0a0505",
-            "primary-darkest": "#080404",
+            primary: "#2a1a1a",
+            "primary-lighter": "#3a2828",
+            "primary-darker": "#1e1010",
+            "primary-darkest": "#160c0c",
             text: "#f0f0ff",
             textInvert: "#131313",
             "secondary-text": "#f0f0ff",
