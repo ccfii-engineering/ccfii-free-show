@@ -35,7 +35,7 @@ default: {
         primary: "#120a0a",
         "primary-lighter": "#1e1414",
         "primary-darker": "#0a0505",
-        "primary-darkest": "#0a0505",
+        "primary-darkest": "#080404",
         text: "#f0f0ff",
         textInvert: "#131313",
         "secondary-text": "#f0f0ff",
@@ -68,7 +68,7 @@ Replace the `:root` block with CCFII defaults:
     --primary: #120a0a;
     --primary-lighter: #1e1414;
     --primary-darker: #0a0505;
-    --primary-darkest: #0a0505;
+    --primary-darkest: #080404;
     --text: #f0f0ff;
     --textInvert: #131313;
     --secondary: #810e0e;
@@ -535,6 +535,54 @@ artifactName: FreeShow-CCFII-${version}-${arch}.${ext}
 ```bash
 git add config/building/electron-builder.yaml
 git commit -m "feat(build): update product name and artifact name for CCFII Edition"
+```
+
+### Task 9b: Update electron-builder.internal.js
+
+**Files:**
+- Modify: `config/building/electron-builder.internal.js:3-4`
+
+- [ ] **Step 1: Update productName and artifactName in internal config**
+
+Change:
+```javascript
+productName: "FreeShow",
+artifactName: "FreeShow-${version}-${arch}.${ext}",
+```
+to:
+```javascript
+productName: "FreeShow - CCFII Edition",
+artifactName: "FreeShow-CCFII-${version}-${arch}.${ext}",
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add config/building/electron-builder.internal.js
+git commit -m "feat(build): update internal builder config for CCFII Edition"
+```
+
+### Task 9c: Replace logo in Top.svelte (app top bar)
+
+**Files:**
+- Modify: `src/frontend/components/main/Top.svelte:105`
+
+- [ ] **Step 1: Replace FreeShow logo with CCFII logo in top bar**
+
+Change line 105 from:
+```svelte
+<img style="height: 35px;" src="./import-logos/freeshow.webp" alt="FreeShow-logo" draggable={false} />
+```
+to:
+```svelte
+<img style="height: 35px;" src="./ccfii-logo.png" alt="CCFII-logo" draggable={false} />
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add src/frontend/components/main/Top.svelte
+git commit -m "feat(ui): replace FreeShow logo with CCFII logo in top bar"
 ```
 
 ---

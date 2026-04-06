@@ -31,20 +31,25 @@ Replace the `default` theme colors with CCFII's palette. The `default` theme key
 | `--primary` | `#242832` | `#120a0a` | Main background |
 | `--primary-lighter` | `#2f3542` | `#1e1414` | Surface/hover backgrounds |
 | `--primary-darker` | `#191923` | `#0a0505` | Deeper sections |
-| `--primary-darkest` | `#12121c` | `#0a0505` | Deepest dark |
+| `--primary-darkest` | `#12121c` | `#080404` | Deepest dark (intentionally distinct from primary-darker) |
 | `--text` | `#f0f0ff` | `#f0f0ff` | Keep white text (unchanged) |
 | `--textInvert` | `#131313` | `#131313` | Keep dark invert (unchanged) |
 | `--secondary` | `#F0008C` | `#810e0e` | Crimson primary accent |
 | `--secondary-opacity` | `rgba(240, 0, 140, 0.5)` | `rgba(129, 14, 14, 0.5)` | Crimson at 50% |
 | `--secondary-text` | `#f0f0ff` | `#f0f0ff` | Keep (unchanged) |
-| `--accent` | `#90caf9` | `#faa739` | Amber/gold accent |
-| `--transparent` | `#232530` | `#1a1010` | Warm dark transparent |
 | `--hover` | `rgb(255 255 255 / 0.05)` | `rgb(255 255 255 / 0.05)` | Keep (unchanged) |
 | `--focus` | `rgb(255 255 255 / 0.1)` | `rgb(255 255 255 / 0.1)` | Keep (unchanged) |
 
-Update both:
-1. `defaultThemes.ts` — the `default` theme object's `colors` property
-2. `global.css` — the `:root` CSS variable defaults
+**`global.css`-only variables** (not in the theme system, only updated in `:root`):
+
+| CSS Variable | Current Value | CCFII Value | Notes |
+|---|---|---|---|
+| `--accent` | `#90caf9` | `#faa739` | Amber/gold accent |
+| `--transparent` | `#232530` | `#1a1010` | Warm dark transparent (appears unused in components but kept for consistency) |
+
+Update:
+1. `defaultThemes.ts` — the `default` theme object's `colors` property (11 keys listed above)
+2. `global.css` — the `:root` CSS variable defaults (all variables including `--accent` and `--transparent`)
 
 Other built-in themes (dark, light, blue, etc.) remain unchanged.
 
@@ -88,7 +93,7 @@ Replace the current FreeShow splash with a CCFII cinematic dark splash.
 **File**: `src/frontend/components/main/popups/About.svelte`
 
 ### Changes
-- Replace logo image (`freeshow.webp`) with CCFII logo (`ccfii-logo.png`), ~50px height
+- Replace logo image src from `./import-logos/freeshow.webp` to `./ccfii-logo.png` (CCFII logo lives at `public/ccfii-logo.png`), ~50px height
 - Title: "FreeShow" becomes "FreeShow - CCFII Edition"
 - Add line below version: "Christ Charismatic Fellowship Int'l, Inc." in subtle text
 - Add link: "CCFII Website" pointing to `https://ccfii.org/`
@@ -107,6 +112,9 @@ Replace the current FreeShow splash with a CCFII cinematic dark splash.
 | `src/electron/utils/windowOptions.ts` | `backgroundColor` (main) | `#242832` | `#120a0a` |
 | `config/building/electron-builder.yaml` | `productName` | `FreeShow` | `FreeShow - CCFII Edition` |
 | `config/building/electron-builder.yaml` | `artifactName` | `FreeShow-${version}...` | `FreeShow-CCFII-${version}...` |
+| `config/building/electron-builder.internal.js` | `productName` | `FreeShow` | `FreeShow - CCFII Edition` |
+| `config/building/electron-builder.internal.js` | `artifactName` | `FreeShow-${version}...` | `FreeShow-CCFII-${version}...` |
+| `src/frontend/components/main/Top.svelte` | logo `src` | `./import-logos/freeshow.webp` | `./ccfii-logo.png` |
 
 ### App Icons
 
