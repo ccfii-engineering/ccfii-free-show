@@ -4,27 +4,41 @@
         <meta charset="UTF-8" />
         <meta http-equiv="X-UA-Compatible" content="IE=edge" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>FreeShow - Loading</title>
-
-        <link rel="stylesheet" href="global.css" />
+        <title>FreeShow - CCFII Edition</title>
 
         <style>
             :root {
                 --radius: 5px;
                 --loader-height: 3px;
+                --crimson: #810e0e;
+                --amber: #faa739;
+                --bg-dark: #0a0505;
+                --bg-surface: #1e1414;
+            }
+
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+                color: #f0f0ff;
+                width: 100%;
+                height: 100vh;
+                overflow: hidden;
             }
 
             main {
-                /* background-color: var(--primary); */
-                background-color: #28276d;
-                background: linear-gradient(140deg, #28276d 20%, #150f30);
+                background: linear-gradient(140deg, var(--bg-surface) 20%, var(--bg-dark));
                 width: 100%;
                 height: 100%;
                 border-radius: var(--radius);
 
                 display: flex;
                 flex-direction: column;
-                gap: 10px;
+                gap: 6px;
                 justify-content: center;
                 align-items: center;
                 -webkit-app-region: drag;
@@ -32,45 +46,37 @@
                 overflow: hidden;
             }
 
-            img {
-                height: calc(100% - var(--loader-height));
-                width: 42%;
-                object-fit: cover;
-                object-position: top left;
-
-                left: 0;
-                /* max-width: 40%; */
-                position: absolute;
-                top: var(--loader-height);
-
-                border-bottom-left-radius: var(--radius);
-                border-top-right-radius: var(--radius);
+            .logo {
+                height: 120px;
+                width: 120px;
+                object-fit: contain;
+                filter: drop-shadow(0 0 12px rgba(250, 167, 57, 0.4));
             }
 
-            .text {
-                position: absolute;
-                right: 0;
-                width: 58%;
+            .title {
+                font-size: 1.6em;
+                font-weight: bold;
+                color: #f0f0ff;
+                margin-top: 4px;
+            }
 
-                text-align: center;
+            .edition {
+                font-size: 0.75em;
+                font-weight: 600;
+                color: var(--amber);
+                text-transform: uppercase;
+                letter-spacing: 3px;
             }
 
             .v {
                 opacity: 0.3;
-                font-size: 0.9em;
-            }
-
-            h1 {
-                font-size: 3em;
-                background: -webkit-linear-gradient(340deg, var(--secondary), #ef4684);
-                background-clip: text;
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
+                font-size: 0.8em;
+                margin-top: 2px;
             }
 
             .loader {
-                --margin: 1.5px; /* calc(var(--radius) / 2); */
-                background-color: var(--primary-lighter);
+                --margin: 1.5px;
+                background-color: var(--bg-surface);
                 margin: 0 var(--margin);
                 border-top-left-radius: 40px;
                 border-top-right-radius: 40px;
@@ -87,7 +93,7 @@
                 content: "";
                 position: absolute;
                 height: 100%;
-                background-color: var(--secondary);
+                background-color: var(--crimson);
                 animation: first 1.8s infinite ease-out;
             }
 
@@ -95,7 +101,7 @@
                 content: "";
                 position: absolute;
                 height: 100%;
-                background-color: var(--secondary);
+                background-color: var(--amber);
                 animation: second 1.8s infinite ease-in;
             }
 
@@ -128,12 +134,11 @@
         </div>
 
         <main>
-            <img src="./assets/startup.webp" alt="Loading..." draggable="false" />
+            <img class="logo" src="./ccfii-logo.png" alt="CCFII" draggable="false" />
 
-            <div class="text">
-                <h1>FreeShow</h1>
-                <p class="v">v<span class="version">0.0.0</span></p>
-            </div>
+            <div class="title">FreeShow</div>
+            <div class="edition">CCFII Edition</div>
+            <p class="v">v<span class="version">0.0.0</span></p>
         </main>
 
         <script>
