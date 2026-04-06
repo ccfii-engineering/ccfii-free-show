@@ -1,11 +1,20 @@
-// import { Notification, app } from "electron"
+import { readFileSync } from "fs"
+import path from "path"
+import { app } from "electron"
 import { autoUpdater } from "electron-updater"
 import { isProd } from ".."
+import { isInternalBuild, shouldCheckForUpdates } from "./updateSupport"
 
 // let notification: Notification | null
 
 export default async function checkForUpdates() {
-    if (!isProd) return
+    const internalBuild = getInternalBuildFlag()
+    if (!shouldCheckForUpdates({ isProd, platform: process.platform, internalBuild })) {
+        if (process.platform === "darwin" && internalBuild) {
+            console.info("Skipping auto-update check for internal macOS build.")
+        }
+        return
+    }
 
     try {
         await autoUpdater.checkForUpdatesAndNotify()
@@ -68,4 +77,15 @@ export default async function checkForUpdates() {
 
     //   notification.show()
     // })
+}
+
+function getInternalBuildFlag(): boolean {
+    try {
+        const packageJsonPath = path.join(app.getAppPath(), "package.json")
+        const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"))
+        return isInternalBuild(packageJson)
+    } catch (err) {
+        console.warn("Could not determine build channel for auto-update checks:", err)
+        return false
+    }
 }
