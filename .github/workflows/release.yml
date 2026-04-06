@@ -8,7 +8,7 @@ on:
 jobs:
     publish_windows:
         name: "Publish Windows"
-        runs-on: windows-latest
+        runs-on: blacksmith-4vcpu-windows-2025
 
         steps:
             - name: Check out Git repository
@@ -96,7 +96,7 @@ jobs:
 
     update_release_notes:
         name: "Update Release Notes"
-        runs-on: ubuntu-latest
+        runs-on: blacksmith-4vcpu-ubuntu-2404
         needs: [publish_windows, publish_mac]
         if: always() && (needs.publish_windows.result == 'success' || needs.publish_mac.result == 'success')
         permissions:
