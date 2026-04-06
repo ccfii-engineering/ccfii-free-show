@@ -13,8 +13,6 @@ jobs:
                       artifact_name: freeshow-windows-bundle
                     - os: macos-latest
                       artifact_name: freeshow-macos-bundle
-                    - os: ubuntu-latest
-                      artifact_name: freeshow-linux-bundle
 
         steps:
             - name: Check out Git repository
@@ -27,12 +25,6 @@ jobs:
 
             - name: Install dependencies
               run: npm install
-
-            - name: Install Linux libraries
-              if: runner.os == 'Linux'
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y libfontconfig1-dev uuid-dev libltc-dev --fix-missing
 
             - name: Install Python 3.11
               if: runner.os == 'macOS'
