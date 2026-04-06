@@ -143,10 +143,11 @@ export function updateSettings(data: any) {
     // theme
     let currentTheme = get(themes)[data.theme]
     if (currentTheme?.colors) {
-        // update colors (pre 0.9.2 or 1.4.9)
+        // update colors (pre 0.9.2 or 1.4.9 or pre-CCFII)
         const pre092 = currentTheme.colors.secondary?.toLowerCase() === "#e6349c"
         const pre149 = currentTheme.colors.primary?.toLowerCase() === "#292c36"
-        if (data.theme === "default" && (pre092 || pre149)) {
+        const preCCFII = currentTheme.colors.primary?.toLowerCase() === "#242832" || currentTheme.colors.secondary?.toLowerCase() === "#f0008c"
+        if (data.theme === "default" && (pre092 || pre149 || preCCFII)) {
             themes.update((a) => {
                 a.default = clone(defaultThemes.default)
                 currentTheme = a.default
