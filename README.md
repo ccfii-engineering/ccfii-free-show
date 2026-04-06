@@ -1,65 +1,68 @@
-<img align="right" width="150" height="150" src="https://github.com/ChurchApps/FreeShow/assets/17619496/02ac9807-1f47-47fc-b895-b35f857c2b57">
+<img align="right" width="150" height="150" src="public/ccfii-logo.png">
 
-[![Downloads](https://img.shields.io/github/downloads/ChurchApps/freeshow/total)](https://github.com/ChurchApps/freeshow/releases)
-[![Licence](https://img.shields.io/badge/licence-GPL-blue.svg)](https://github.com/ChurchApps/freeshow/blob/main/LICENSE)
+# FreeShow - CCFII Edition
 
-# FreeShow
+> A customized build of [FreeShow](https://github.com/ChurchApps/FreeShow) for Christ Charismatic Fellowship Int'l, Inc. (CCFII). Show song lyrics, media, and presentations for free.
 
-> FreeShow is a free software with a user-friendly interface that offers powerful features for creating and editing slideshows.
+This is a fork of FreeShow branded for CCFII's worship services. It includes CCFII's color palette, logo, and visual identity while preserving all of FreeShow's features.
 
-## Get Started Using FreeShow
+## Download & Install
 
-[![](https://markdown-videos.vercel.app/youtube/9_1lUNcrU1w)](https://youtu.be/9_1lUNcrU1w)
+Go to the [Releases](https://github.com/ccfii-engineering/ccfii-free-show/releases) page and download the latest version for your platform:
 
-## Preview
+| Platform | File | Notes |
+|---|---|---|
+| **Windows** | `FreeShow-CCFII-x.x.x-x64.exe` | Run the installer. Windows may show a SmartScreen warning — click "More info" then "Run anyway" (the app is unsigned). |
+| **macOS** | `FreeShow-CCFII-x.x.x-arm64.dmg` (Apple Silicon) or `FreeShow-CCFII-x.x.x-x64.dmg` (Intel) | Open the DMG and drag to Applications. On first launch, right-click the app and select "Open" to bypass Gatekeeper (the app is unsigned). |
 
-<div style="display: flex;gap: 10px;">
-    <img style="width: 49%;" src="https://github.com/ChurchApps/FreeShow/assets/1447203/0e5e832d-9bb8-4c64-98cc-04f0ce3f966e">
-    <img style="width: 49%;" src="https://github.com/ChurchApps/FreeShow/assets/1447203/c1d71b2f-d873-4125-9f04-339e234e55f9">
-</div>
-<div style="display: flex;gap: 10px;margin-top: 10px;">
-    <img style="width: 49%;" src="https://github.com/ChurchApps/FreeShow/assets/1447203/39c344fd-5c22-4019-9cae-c6307364d580">
-    <img style="width: 49%;" src="https://github.com/ChurchApps/FreeShow/assets/1447203/b1275bfc-e966-4813-962e-a7350ba6a84a">
-</div>
+## Updating the App
 
-## Short description
+Since this is an internal build without code signing, **auto-updates are not available on macOS**. On Windows, the app may notify you of updates automatically — if it does, follow the prompts.
 
-FreeShow is a free and open-source presentation program that makes it easy to show text on a big screen. It supports stage display, remote control, media, and many other advanced features. It is open-sourced meaning anyone can contribute.
+If auto-update does not work (or you are on macOS), follow these steps:
 
-FreeShow exists because the creator found that other similar programs were either expensive or complex to use. He wanted to create a program that is easy to use and affordable for everyone, from small churches to large venues. FreeShow is now used by people all over the world.
+### Windows
 
-## Support Us
+1. Go to [Releases](https://github.com/ccfii-engineering/ccfii-free-show/releases)
+2. Download the latest `.exe` installer
+3. Run it — the installer will automatically replace the old version
+4. Your shows, settings, and media are preserved (they are stored separately from the app)
 
-The only reason this program is free is because of the generous support from users. If you want to support us to keep this free, please head over to [ChurchApps](https://churchapps.org/partner) or [sponsor us on GitHub](https://github.com/sponsors/ChurchApps/). Thank you so much!
+### macOS
 
-## Join the Community
+1. Go to [Releases](https://github.com/ccfii-engineering/ccfii-free-show/releases)
+2. Download the latest `.dmg` for your Mac (arm64 for Apple Silicon, x64 for Intel)
+3. Open the DMG and drag the new app to Applications, replacing the old one
+4. Your shows, settings, and media are preserved (stored in `~/Library/Application Support/freeshow/`)
 
-We have a great community for end-users on [Facebook](https://www.facebook.com/groups/freeshowapp). It's a good way to ask questions, get tips and follow new updates. Come join us!
+### How to check your current version
 
-## Report an issue or request a feature
+In the app, go to **Help > About** or look at the startup screen — the version number is displayed below "CCFII Edition."
 
-If you notice a bug, or need a feature. Please create an [issue on GitHub](https://github.com/ChurchApps/freeshow/issues).
+## For Developers
 
-## Give feedback
+### Prerequisites
 
-Feedback is welcome! Please [open a discussion here](https://github.com/orgs/ChurchApps/discussions/categories/freeshow) or send a mail to [dev@freeshow.app](mailto:dev@freeshow.app).
+- [Node.js](https://nodejs.org/en/download/) v22+
+- [Python 3.11+](https://www.python.org/downloads/) with [`setuptools`](https://pypi.org/project/setuptools/)
+- **Windows only:** [Visual Studio](https://visualstudio.microsoft.com/downloads/) with "Desktop development with C++" and "Windows 10 SDK"
 
-## Help translate
+### Development
 
-Head over to [FreeShow on Transifex](https://app.transifex.com/nettbiter/freeshow/) to request a language.
+```bash
+npm install        # Install dependencies
+npm start          # Start dev environment (Vite + Electron)
+npm run build      # Production build
+```
 
-## Help the development
+### Building Installers
 
-You are welcome to contribute to the code!
+```bash
+npm run dist:internal    # Build unsigned installers for local testing
+```
 
-1. Clone the code in this repo
-2. Install [Node.js](https://nodejs.org/en/download/)
-3. Install [Python 3.12](https://www.python.org/downloads/), and the [`setuptools`](https://pypi.org/project/setuptools/) package
-4. On Windows, download [Visual Studio](https://visualstudio.microsoft.com/downloads/) and install "Desktop development with C++", also select the "Windows 10 SDK"
-5. On Linux, install the following library: `sudo apt-get install libfontconfig1-dev`
-6. In the terminal, run: `npm install`
-7. To start the app, run: `npm start`
+## Credits
 
-## Join us on Slack
+FreeShow is created by [Kristoffer Vassbo](https://github.com/vassbo) and the [ChurchApps](https://churchapps.org/) team. Licensed under [GPL-3.0](LICENSE).
 
-If you would like to get involved contributing in any way, head over to our [Slack Channel](https://join.slack.com/t/livechurchsolutions/shared_invite/zt-i88etpo5-ZZhYsQwQLVclW12DKtVflg) and introduce yourself. We'd love to hear from you.
+CCFII Edition branding by [CCFII Engineering](https://github.com/ccfii-engineering).
