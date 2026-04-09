@@ -487,7 +487,7 @@
                 {:else}
                     <div class="grid" style={$focusMode ? "" : "padding-bottom: 60px;"}>
                         {#if layoutSlides.length}
-                            {#each layoutSlides as slide, i}
+                            {#each layoutSlides as slide, i (slide.id || i)}
                                 {@const currentSlide = currentShow?.slides?.[slide.id]}
                                 {#if hasMounted && (loaded || i < lazyLoader)}
                                     {#if currentSlide && (mode === "grid" || mode === "groups" || !slide.disabled) && (mode !== "groups" || currentSlide.group !== null || activeSlides[i] !== undefined)}

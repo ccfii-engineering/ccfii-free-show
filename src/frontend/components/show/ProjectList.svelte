@@ -145,9 +145,9 @@
 {#if tree.length}
     {#if startLoading}
         <div class="fullTree">
-            {#each splittedTree as tree}
+            {#each splittedTree as tree, ti (ti)}
                 <div class="rootFolder">
-                    {#each tree as project}
+                    {#each tree as project (project.id)}
                         {#if project.id === "ROOT"}
                             <div class="title"><T id="category.unlabeled" /></div>
                         {:else}

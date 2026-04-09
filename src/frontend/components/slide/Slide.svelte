@@ -236,7 +236,9 @@
         activePage.set("edit")
     }
 
-    $: if ($refreshListBoxes >= 0) {
+    // Only the slide with the matching index schedules the reset — otherwise 20 mounted Slides
+    // all fire 20 setTimeouts that all race to set(-1). This is O(1) instead of O(N).
+    $: if ($refreshListBoxes >= 0 && $refreshListBoxes === index) {
         setTimeout(() => {
             refreshListBoxes.set(-1)
         }, 100)

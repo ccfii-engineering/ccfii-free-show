@@ -134,7 +134,7 @@
 </script>
 
 <div class="grid" on:scroll={scroll} bind:clientHeight={viewHeight}>
-    {#each items as item, i}
+    {#each items as item, i (item?.id || item?.path || item?.name || i)}
         {#if i === 0}
             <div bind:this={customCard} class="card" style="width: {100 / columns}%;">
                 <slot {item} />
