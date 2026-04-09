@@ -81,6 +81,28 @@ test("JSON gate handles in-place mutations", () => {
     bCollector.unsub()
 })
 
+test("in-place mutation emits a FRESH ref (immutable-compatible)", () => {
+    // Critical for <svelte:options immutable>: the derived store must emit a new object
+    // reference even when the parent was mutated in-place — otherwise immutable components
+    // compare refs and see no change.
+    const store = writable({ a: { v: 1 } })
+    const entry = createEntryAccessor(store)
+
+    const refs = []
+    const unsub = entry("a").subscribe((v) => refs.push(v))
+
+    store.update((s) => {
+        s.a.v = 2
+        return s
+    })
+
+    assert.equal(refs.length, 2, "two emissions")
+    assert.notEqual(refs[0], refs[1], "refs must differ — in-place mutation was cloned")
+    assert.deepEqual(refs[1], { v: 2 })
+
+    unsub()
+})
+
 test("no emission when unrelated key mutates (in-place, JSON same for my key)", () => {
     const store = writable({ a: { v: 1 }, b: { v: 10 } })
     const entry = createEntryAccessor(store)

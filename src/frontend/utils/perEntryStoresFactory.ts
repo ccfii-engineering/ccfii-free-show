@@ -35,16 +35,24 @@ export function createEntryAccessor<M extends { [k: string]: any }>(store: Writa
         let entry = cache.get(key)
         if (entry) return entry
 
-        // JSON-gate dedup. Reference equality can't be trusted as a fast path because the
-        // codebase still has in-place mutation sites that change inner values without
-        // changing the top-level ref — we have to stringify every update to stay correct.
+        // JSON-gate dedup. We stringify every parent-store notification to decide whether
+        // THIS key actually changed. When it did change:
+        //  - If the ref is new (proper reassign): emit it directly — zero extra cost.
+        //  - If the ref is the same (in-place mutation): clone via JSON.parse so that
+        //    downstream <svelte:options immutable> subscribers see a fresh reference.
         let lastJson: string | undefined = undefined
+        let lastRef: any = undefined
         entry = derived(store, ($s, set) => {
             const current = ($s && ($s as M)[key]) || null
             const json = JSON.stringify(current)
             if (json !== lastJson) {
                 lastJson = json
-                set(current as unknown as T)
+                // In-place mutation detected: ref unchanged but content changed → clone.
+                const value = current !== null && current === lastRef ? JSON.parse(json) : current
+                lastRef = current
+                set(value as unknown as T)
+            } else {
+                lastRef = current
             }
         })
         cache.set(key, entry)

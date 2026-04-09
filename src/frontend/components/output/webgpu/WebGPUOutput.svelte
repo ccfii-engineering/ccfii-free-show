@@ -1,7 +1,4 @@
-<!--
-    NOTE: do NOT add <svelte:options immutable={true} /> here. See comment in Output.svelte —
-    same issue with in-place store mutations silently breaking reactive propagation.
--->
+<svelte:options immutable={true} />
 
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
