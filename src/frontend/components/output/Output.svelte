@@ -68,13 +68,13 @@
     // output styling
     $: currentStyling = getCurrentStyle($styles, styleIdOverride || currentOutput.style)
     let currentStyle: Styles = { name: "" }
-    let lastCurrentStylingRef: any = undefined
     let lastCurrentStyleSig = ""
-    // Reference check short-circuits when the underlying store entry hasn't been touched (common
-    // case — slide changes don't mutate style). Only pay the signature cost when the upstream
-    // reference actually changes.
-    $: if (currentStyling !== lastCurrentStylingRef) {
-        lastCurrentStylingRef = currentStyling
+    // Always compute the signature (cheap scalar hash) — we can't short-circuit on reference
+    // equality because the settings history system mutates $styles[id] in place when the user
+    // edits a style field. The reference stays the same but the content changes. Signature
+    // comparison is O(length of scalar fields), much cheaper than the old JSON.stringify path
+    // but still catches in-place mutations.
+    $: {
         const sig = styleSig(currentStyling)
         if (sig !== lastCurrentStyleSig) {
             lastCurrentStyleSig = sig

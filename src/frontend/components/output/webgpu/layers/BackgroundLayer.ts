@@ -91,7 +91,12 @@ export async function updateBackground(state: BackgroundLayerState, data: OutBac
         return
     }
 
-    const isVideo = data.type === "video" || data.type === "media"
+    // Use file-extension detection as the authoritative check for video vs image. Style backgrounds
+    // don't carry a data.type field (they're built from MediaStyle which only has
+    // filter/flip/crop/etc), so type-based detection wrongly routes mp4/webm to the image loader.
+    // The extension check works for both slide backgrounds (which have data.type set) and style
+    // backgrounds (which don't).
+    const isVideo = isVideoPath(newPath) || data.type === "video" || data.type === "media"
 
     let newTexture: Texture
     let videoElement: HTMLVideoElement | null = null
