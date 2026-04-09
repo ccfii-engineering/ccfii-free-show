@@ -147,7 +147,7 @@
         <div class="fullTree">
             {#each splittedTree as tree, ti (ti)}
                 <div class="rootFolder">
-                    {#each tree as project (project.id)}
+                    {#each tree as project}
                         {#if project.id === "ROOT"}
                             <div class="title"><T id="category.unlabeled" /></div>
                         {:else}
