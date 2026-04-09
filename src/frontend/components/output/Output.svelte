@@ -1,27 +1,25 @@
 <!-- Used in output window, and currently in draw! -->
 <!--
-    NOTE: immutable is NOT safe on Output.svelte yet. The component has a complex reactive
-    graph with JSON-gated internal variables (out, slide, background, layers) that interact
-    poorly with immutable's === checks. Specifically, downstream reactives that depend on
-    sub-properties (out.slide, currentStyle.transition) don't re-fire when the parent ref
-    is unchanged even though the sub-property changed. The per-entry store migration below
-    already provides the bulk of the reactive-storm reduction; immutable is deferred until
-    the internal JSON gates are replaced with per-field derived stores.
+    NOTE: do NOT add <svelte:options immutable={true} /> here. Svelte's immutable mode treats
+    all reactive assignments as reference-equality checks, which breaks in-place mutations of
+    store-backed values (e.g. `$styles[id].backgroundImage = "..."` from the settings history
+    system — see historyActions.ts:242). With immutable on, `$: currentStyling = getCurrentStyle(...)`
+    doesn't fire downstream reactives when the store entry is mutated because the reference
+    stays the same. This silently broke style-background updates in v1.8.1.
 -->
 
 <script lang="ts">
     import { onDestroy } from "svelte"
     import { uid } from "uid"
-    import type { OutData } from "../../../types/Output"
+    import { OutData } from "../../../types/Output"
     import type { Styles } from "../../../types/Settings"
     import type { AnimationData, Item, LayoutRef, OutBackground, OutSlide, Slide, SlideData, Template, Overlays as TOverlays } from "../../../types/Show"
-    import { allOutputs, colorbars, currentWindow, drawSettings, drawTool, effects, overlays, templates, transitionData } from "../../stores"
-    import { mediaEntry, outputEntry, showEntry, styleEntry } from "../../utils/perEntryStores"
+    import { allOutputs, colorbars, currentWindow, drawSettings, drawTool, effects, media, outputs, overlays, showsCache, styles, templates, transitionData } from "../../stores"
     import { wait } from "../../utils/common"
     import { customTick } from "../../utils/transitions"
     import Draw from "../draw/Draw.svelte"
     import { clone } from "../helpers/array"
-    import { defaultLayers, getMetadata, getOutputLines, getOutputTransitions, getResolution, getSlideFilter, getStyleTemplate, setTemplateStyle } from "../helpers/output"
+    import { defaultLayers, getCurrentStyle, getMetadata, getOutputLines, getOutputTransitions, getResolution, getSlideFilter, getStyleTemplate, setTemplateStyle } from "../helpers/output"
     import { _show } from "../helpers/shows"
     import Image from "../media/Image.svelte"
     import Zoomed from "../slide/Zoomed.svelte"
@@ -42,17 +40,18 @@
     export let styleIdOverride = ""
     export let outOverride: OutData | null = null
 
-    // Per-entry derived stores: each only wakes when THIS output/style entry changes, not on
-    // unrelated mutations of the parent map. The factory clones on in-place mutation so
-    // immutable subscribers always see a fresh reference.
-    $: myOutput = outputEntry(outputId)
-    $: currentOutput = $myOutput || $allOutputs[outputId] || {}
+    $: currentOutput = $outputs[outputId] || $allOutputs[outputId] || {}
 
-    // output styling — per-entry store dedupes and clones on in-place mutations, but we
-    // still keep the JSON gate + clone for currentStyle to avoid downstream reactives firing
-    // when the style content hasn't actually changed.
-    $: myStyle = styleEntry(styleIdOverride || currentOutput.style || "")
-    $: currentStyling = $myStyle || { name: "" }
+    // --- Cached JSON change detection ---------------------------------------------------------
+    // Instead of stringifying BOTH sides on every reactive tick (as the original code did), we
+    // cache the previous JSON string for the "current" side and only stringify the incoming side.
+    // Roughly 50% cheaper than the original, and — unlike hand-crafted signature functions —
+    // correctly detects ALL content changes including fields we don't specifically know about.
+    // This matters because the settings history system mutates store entries in place (see
+    // historyActions.ts:242), so reference equality doesn't work.
+
+    // output styling
+    $: currentStyling = getCurrentStyle($styles, styleIdOverride || currentOutput.style)
     let currentStyle: Styles = { name: "" }
     let lastCurrentStyleJson = ""
     $: {
@@ -221,8 +220,7 @@
     }
 
     // metadata
-    $: myShowForMetadata = showEntry((slide as any)?.id || "")
-    $: metadataItems = getMetadata($myShowForMetadata, currentStyle, slide, $templates)
+    $: metadataItems = getMetadata($showsCache[(slide as any)?.id || ""], currentStyle, slide, $templates)
     let currentMetadataItems: Item[] = []
     let isMetadataClearing = false
     $: if (metadataItems !== null) {
@@ -297,10 +295,8 @@
     $: backgroundColor = currentOutput.transparent ? "transparent" : styleTemplate?.settings?.backgroundColor || currentSlide?.settings?.color || currentStyle.background || slide?.settings?.backgroundColor || "black"
     // background image
     $: styleBackground = currentStyle?.clearStyleBackgroundOnText && (slide || background) ? "" : currentStyle?.backgroundImage || ""
-    $: myStyleBgMedia = mediaEntry(styleBackground || "")
-    $: myTemplateBgMedia = mediaEntry(templateBackground || "")
-    $: styleBackgroundData = { path: styleBackground, ...($myStyleBgMedia || {}), loop: true }
-    $: templateBackgroundData = { path: templateBackground, loop: true, ...($myTemplateBgMedia || {}) }
+    $: styleBackgroundData = { path: styleBackground, ...($media[styleBackground] || {}), loop: true }
+    $: templateBackgroundData = { path: templateBackground, loop: true, ...($media[templateBackground] || {}) }
     $: backgroundData = templateBackground ? templateBackgroundData : background
 
     $: overlaysActive = !!(layers.includes("overlays") && clonedOverlays)
