@@ -138,17 +138,28 @@ export async function updateBackground(state: BackgroundLayerState, data: OutBac
         state.sourceHeightB = srcH
         state.dualState.slotBPath = newPath
 
-        startTransition(transitionId, transition.type || "fade", transition.duration ?? 800, transition.easing || "sine", state.spriteA, state.spriteB, transition.custom?.direction, () => {
-            removeSprite(state.spriteA, state.container)
-            cleanupVideoElement(state.videoElementA)
-            state.spriteA = null
-            state.videoElementA = null
-            state.fitA = "cover"
-            state.sourceWidthA = 0
-            state.sourceHeightA = 0
-            state.dualState.slotAPath = ""
-            state.dualState.activeSlot = "b"
-        })
+        startTransition(
+            transitionId,
+            transition.type || "fade",
+            transition.duration ?? 800,
+            transition.easing || "sine",
+            state.spriteA,
+            state.spriteB,
+            transition.custom?.direction,
+            () => {
+                removeSprite(state.spriteA, state.container)
+                cleanupVideoElement(state.videoElementA)
+                state.spriteA = null
+                state.videoElementA = null
+                state.fitA = "cover"
+                state.sourceWidthA = 0
+                state.sourceHeightA = 0
+                state.dualState.slotAPath = ""
+                state.dualState.activeSlot = "b"
+            },
+            state.width,
+            state.height
+        )
     } else {
         state.spriteA = createMediaSprite(newTexture, state.container, state.width, state.height, fit, srcW, srcH)
         state.videoElementA = videoElement
@@ -157,17 +168,28 @@ export async function updateBackground(state: BackgroundLayerState, data: OutBac
         state.sourceHeightA = srcH
         state.dualState.slotAPath = newPath
 
-        startTransition(transitionId, transition.type || "fade", transition.duration ?? 800, transition.easing || "sine", state.spriteB, state.spriteA, transition.custom?.direction, () => {
-            removeSprite(state.spriteB, state.container)
-            cleanupVideoElement(state.videoElementB)
-            state.spriteB = null
-            state.videoElementB = null
-            state.fitB = "cover"
-            state.sourceWidthB = 0
-            state.sourceHeightB = 0
-            state.dualState.slotBPath = ""
-            state.dualState.activeSlot = "a"
-        })
+        startTransition(
+            transitionId,
+            transition.type || "fade",
+            transition.duration ?? 800,
+            transition.easing || "sine",
+            state.spriteB,
+            state.spriteA,
+            transition.custom?.direction,
+            () => {
+                removeSprite(state.spriteB, state.container)
+                cleanupVideoElement(state.videoElementB)
+                state.spriteB = null
+                state.videoElementB = null
+                state.fitB = "cover"
+                state.sourceWidthB = 0
+                state.sourceHeightB = 0
+                state.dualState.slotBPath = ""
+                state.dualState.activeSlot = "a"
+            },
+            state.width,
+            state.height
+        )
     }
 }
 

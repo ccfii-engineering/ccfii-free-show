@@ -1,4 +1,4 @@
-import { BlurFilter, type Container, type Sprite } from "pixi.js"
+import { BlurFilter, Sprite, type Container } from "pixi.js"
 import { backInOut, bounceInOut, circInOut, cubicInOut, elasticInOut, linear, sineInOut } from "svelte/easing"
 import type { TransitionType } from "../../../../types/Show"
 import type { TransitionState } from "../../../../types/WebGPU"
@@ -17,10 +17,41 @@ export function getEasing(name: string): (t: number) => number {
     return easingFunctions[name] || sineInOut
 }
 
+// baseline pose captured at transition start — so we can animate *relative* to applyFit's computed layout
+// rather than fighting with it (scale would drift, spin pivot would slide, slide position would leak).
+interface Baseline {
+    x: number
+    y: number
+    width: number
+    height: number
+}
+
+function captureBaseline(node: Sprite | Container | null): Baseline | null {
+    if (!node) return null
+    return { x: node.x, y: node.y, width: node.width, height: node.height }
+}
+
+function restoreBaseline(node: Sprite | Container | null, baseline: Baseline | null): void {
+    if (!node || !baseline) return
+    node.x = baseline.x
+    node.y = baseline.y
+    if (node instanceof Sprite) {
+        node.width = baseline.width
+        node.height = baseline.height
+    }
+    node.rotation = 0
+    node.alpha = 1
+    node.filters = []
+}
+
 export interface ActiveTransition {
     state: TransitionState
     oldSprite: Sprite | Container | null
     newSprite: Sprite | Container
+    oldBaseline: Baseline | null
+    newBaseline: Baseline
+    layerWidth: number
+    layerHeight: number
     blurFilter?: BlurFilter
     onComplete: () => void
     rafId: number
@@ -28,16 +59,31 @@ export interface ActiveTransition {
 
 const activeTransitions = new Map<string, ActiveTransition>()
 
-export function startTransition(id: string, type: TransitionType, duration: number, easing: string, oldSprite: Sprite | Container | null, newSprite: Sprite | Container, direction?: string, onComplete?: () => void): void {
+export function startTransition(
+    id: string,
+    type: TransitionType,
+    duration: number,
+    easing: string,
+    oldSprite: Sprite | Container | null,
+    newSprite: Sprite | Container,
+    direction?: string,
+    onComplete?: () => void,
+    layerWidth: number = 1920,
+    layerHeight: number = 1080
+): void {
     cancelTransition(id)
 
     if (type === "none" || duration <= 0) {
         if (oldSprite) oldSprite.visible = false
         newSprite.visible = true
         newSprite.alpha = 1
+        newSprite.rotation = 0
         onComplete?.()
         return
     }
+
+    const newBaseline = captureBaseline(newSprite)!
+    const oldBaseline = captureBaseline(oldSprite)
 
     const state: TransitionState = {
         active: true,
@@ -50,11 +96,11 @@ export function startTransition(id: string, type: TransitionType, duration: numb
     }
 
     newSprite.visible = true
-    applyTransitionState(type, newSprite, 0, direction, "in")
+    applyTransitionPose(type, newSprite, newBaseline, 0, direction, "in", layerWidth, layerHeight)
 
     let blurFilter: BlurFilter | undefined
     if (type === "blur") {
-        blurFilter = new BlurFilter({ strength: 20 })
+        blurFilter = new BlurFilter({ strength: 10 })
         newSprite.filters = [blurFilter]
     }
 
@@ -62,6 +108,10 @@ export function startTransition(id: string, type: TransitionType, duration: numb
         state,
         oldSprite,
         newSprite,
+        oldBaseline,
+        newBaseline,
+        layerWidth,
+        layerHeight,
         blurFilter,
         onComplete: onComplete || (() => {}),
         rafId: 0
@@ -82,14 +132,14 @@ function tick(id: string, currentTime: number): void {
 
     transition.state.progress = rawProgress
 
-    applyTransitionState(transition.state.type, transition.newSprite, t, transition.state.direction, "in")
+    applyTransitionPose(transition.state.type, transition.newSprite, transition.newBaseline, t, transition.state.direction, "in", transition.layerWidth, transition.layerHeight)
 
-    if (transition.oldSprite) {
-        applyTransitionState(transition.state.type, transition.oldSprite, 1 - t, transition.state.direction, "out")
+    if (transition.oldSprite && transition.oldBaseline) {
+        applyTransitionPose(transition.state.type, transition.oldSprite, transition.oldBaseline, 1 - t, transition.state.direction, "out", transition.layerWidth, transition.layerHeight)
     }
 
     if (transition.blurFilter) {
-        transition.blurFilter.strength = (1 - t) * 20
+        transition.blurFilter.strength = (1 - t) * 10
     }
 
     if (rawProgress >= 1) {
@@ -100,47 +150,83 @@ function tick(id: string, currentTime: number): void {
     transition.rafId = requestAnimationFrame((time) => tick(id, time))
 }
 
-function applyTransitionState(type: TransitionType, sprite: Sprite | Container, t: number, direction?: string, mode?: "in" | "out"): void {
-    sprite.alpha = 1
-    sprite.rotation = 0
+// Applies a pose for progress `t` (0 = fully "entering", 1 = fully settled) relative to a captured baseline.
+// This keeps transitions independent from applyFit's top-left positioning.
+function applyTransitionPose(type: TransitionType, node: Sprite | Container, baseline: Baseline, t: number, direction: string | undefined, mode: "in" | "out", layerWidth: number, layerHeight: number): void {
+    // reset to baseline first — so each tick is independent
+    node.x = baseline.x
+    node.y = baseline.y
+    if (node instanceof Sprite) {
+        node.width = baseline.width
+        node.height = baseline.height
+    }
+    node.rotation = 0
+    node.alpha = 1
 
     switch (type) {
         case "fade":
-            sprite.alpha = t
+        case "crossfade":
+            node.alpha = t
             break
 
         case "blur":
-            sprite.alpha = t
+            node.alpha = t
             break
 
-        case "scale":
-            sprite.scale.set(t, t)
-            sprite.pivot.set(sprite.width / (2 * t || 1), sprite.height / (2 * t || 1))
+        case "scale": {
+            // scale from baseline center — adjust position so the center stays fixed
+            node.alpha = t
+            if (node instanceof Sprite) {
+                node.width = baseline.width * t
+                node.height = baseline.height * t
+            }
+            node.x = baseline.x + (baseline.width * (1 - t)) / 2
+            node.y = baseline.y + (baseline.height * (1 - t)) / 2
             break
+        }
 
-        case "spin":
-            sprite.alpha = t
-            sprite.rotation = (1 - t) * Math.PI * 2
+        case "spin": {
+            // rotate around baseline center
+            node.alpha = t
+            const cx = baseline.x + baseline.width / 2
+            const cy = baseline.y + baseline.height / 2
+            // Use pivot-as-center via compensating position: shift so rotation pivot sits at center
+            // (Pixi rotates around the node's pivot, which defaults to (0,0) in node-local space).
+            // Cheapest correct technique: temporarily move node so baseline-center lands at origin,
+            // rotate, then translate back.
+            node.pivot.set(baseline.width / 2, baseline.height / 2)
+            node.x = cx
+            node.y = cy
+            node.rotation = t * Math.PI * 2
             break
+        }
 
         case "slide": {
-            const pos = (1 - t) * 100
-            const parentWidth = sprite.parent?.width || 1920
-            const parentHeight = sprite.parent?.height || 1080
+            const offset = 1 - t
             const isOut = mode === "out"
+            const dir = direction || "left_right"
+            // "in": slide from offscreen toward baseline; "out": slide from baseline toward offscreen
+            if (dir === "left_right") node.x = baseline.x + (isOut ? 1 : -1) * offset * layerWidth
+            else if (dir === "right_left") node.x = baseline.x + (isOut ? -1 : 1) * offset * layerWidth
+            else if (dir === "bottom_top") node.y = baseline.y + (isOut ? -1 : 1) * offset * layerHeight
+            else if (dir === "top_bottom") node.y = baseline.y + (isOut ? 1 : -1) * offset * layerHeight
+            break
+        }
 
-            sprite.x = 0
-            sprite.y = 0
-
-            if (direction === "left_right") sprite.x = (isOut ? 1 : -1) * (pos / 100) * parentWidth
-            else if (direction === "right_left") sprite.x = (isOut ? -1 : 1) * (pos / 100) * parentWidth
-            else if (direction === "bottom_top") sprite.y = (isOut ? -1 : 1) * (pos / 100) * parentHeight
-            else if (direction === "top_bottom") sprite.y = (isOut ? 1 : -1) * (pos / 100) * parentHeight
+        case "fly": {
+            // Svelte's default fly: x=100, opacity=0 → identity. Combine horizontal travel with fade.
+            node.alpha = t
+            const dir = direction || "left_right"
+            const offset = (1 - t) * 100
+            const isOut = mode === "out"
+            if (dir === "left_right" || dir === "right_left") node.x = baseline.x + (dir === "right_left" ? -offset : offset) * (isOut ? -1 : 1)
+            else if (dir === "bottom_top" || dir === "top_bottom") node.y = baseline.y + (dir === "top_bottom" ? -offset : offset) * (isOut ? -1 : 1)
+            else node.x = baseline.x + offset
             break
         }
 
         default:
-            sprite.alpha = t
+            node.alpha = t
     }
 }
 
@@ -149,15 +235,13 @@ function completeTransition(id: string): void {
     if (!transition) return
 
     if (transition.oldSprite) {
+        restoreBaseline(transition.oldSprite, transition.oldBaseline)
         transition.oldSprite.visible = false
-        transition.oldSprite.alpha = 1
-        transition.oldSprite.rotation = 0
-        transition.oldSprite.filters = []
+        if (transition.oldSprite.pivot) transition.oldSprite.pivot.set(0, 0)
     }
 
-    transition.newSprite.alpha = 1
-    transition.newSprite.rotation = 0
-    transition.newSprite.filters = []
+    restoreBaseline(transition.newSprite, transition.newBaseline)
+    if (transition.newSprite.pivot) transition.newSprite.pivot.set(0, 0)
 
     transition.state.active = false
     transition.onComplete()
