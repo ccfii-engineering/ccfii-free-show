@@ -7,11 +7,9 @@
     import MaterialButton from "../../inputs/MaterialButton.svelte"
 
     let changelog = ($popupData.changelog || "").replaceAll("\r\n", "<br>").replaceAll("-", "•")
-    let latestVersion = $popupData.latestVersion
 
     function download() {
-        const isBeta = latestVersion.includes("-beta")
-        sendMain(Main.URL, isBeta ? "https://github.com/ChurchApps/FreeShow/releases" : "https://freeshow.app/?download")
+        sendMain(Main.URL, "https://github.com/ccfii-engineering/ccfii-free-show/releases")
 
         activePopup.set(null)
         popupData.set({})

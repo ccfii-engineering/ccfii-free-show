@@ -110,3 +110,34 @@ This is "FreeShow - CCFII Edition" — a theme-level rebrand, not a full replace
 
 ### Theme Migration
 When changing default theme colors, update the migration check in `src/frontend/utils/updateSettings.ts` (around line 149). The app persists theme settings — without a migration, existing users keep old colors even after the code changes. Match on old color values to trigger a reset to `defaultThemes.default`.
+
+## Using Serena (MCP)
+
+This project is registered with Serena. **Prefer Serena's semantic tools over generic file reads/greps** — this codebase is large (Electron + Svelte + multiple server apps + converters for many presentation formats) and blind file reads waste context fast.
+
+### Always start a session with
+1. `mcp__serena__check_onboarding_performed` — verify Serena is active for `ccfii-free-show`.
+2. `mcp__serena__list_memories` + `mcp__serena__read_memory` — load the relevant memory files before exploring. Key memories: `project_overview`, `codebase_structure`, `suggested_commands`, `code_style_conventions`, `task_completion_checklist`, `ccfii_fork_notes`.
+
+### Preferred tool mapping
+Use Serena's symbolic tools as the default; fall back to `Read`/`Grep`/`Glob` only when symbolic access isn't possible (non-code files, config, markdown).
+
+| Task | Use |
+|---|---|
+| Understand a file's shape before reading it | `mcp__serena__get_symbols_overview` |
+| Find a class/function/method by name | `mcp__serena__find_symbol` (with `name_path`, `include_body` only when needed) |
+| Find all callers/usages of a symbol | `mcp__serena__find_referencing_symbols` |
+| Fuzzy search for a pattern across the repo | `mcp__serena__search_for_pattern` |
+| Locate a file by name | `mcp__serena__find_file` |
+| Edit a function/class body wholesale | `mcp__serena__replace_symbol_body` |
+| Insert code near an existing symbol | `mcp__serena__insert_before_symbol` / `insert_after_symbol` |
+| Rename a symbol across the project | `mcp__serena__rename_symbol` |
+| Delete a symbol safely | `mcp__serena__safe_delete_symbol` |
+
+**Do not** read entire files (e.g. `App.svelte`, large converters, `stores.ts`) just to find one function — use `get_symbols_overview` then `find_symbol` with a targeted `name_path`. Only read symbol bodies when you actually need to edit or fully understand them.
+
+### Writing memories
+When you learn something durable about the codebase (non-obvious patterns, gotchas, cross-cutting conventions), save it with `mcp__serena__write_memory` so future sessions benefit. Update existing memories rather than creating duplicates. Memories live in `.serena/memories/` and persist across conversations for this project.
+
+### Scoping searches
+Always pass `relative_path` to Serena tools when you know the area (e.g. `src/electron/output`, `src/frontend/converters`) — this keeps the token cost of symbolic operations bounded.

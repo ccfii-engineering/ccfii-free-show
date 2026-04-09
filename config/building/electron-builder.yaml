@@ -2,6 +2,11 @@ appId: app.freeshow
 productName: FreeShow - CCFII Edition
 artifactName: FreeShow-CCFII-${version}-${arch}.${ext}
 
+publish:
+    - provider: github
+      owner: ccfii-engineering
+      repo: ccfii-free-show
+
 # WIDEVINE
 # Use castlabs electron builds to get widevine support
 # electronDownload:

@@ -22,6 +22,27 @@ export const defaultThemes: { [key: string]: Themes } = {
             focus: "rgb(255 255 255 / 0.1)"
         }
     },
+    ccfii: {
+        name: "CCFII",
+        default: true,
+        font: {
+            family: "",
+            size: "1em"
+        },
+        colors: {
+            primary: "#2a1a1a",
+            "primary-lighter": "#3a2828",
+            "primary-darker": "#1e1010",
+            "primary-darkest": "#160c0c",
+            text: "#f0f0ff",
+            textInvert: "#131313",
+            "secondary-text": "#f0f0ff",
+            secondary: "#810e0e",
+            "secondary-opacity": "rgba(129, 14, 14, 0.5)",
+            hover: "rgb(255 255 255 / 0.05)",
+            focus: "rgb(255 255 255 / 0.1)"
+        }
+    },
     dark: {
         name: "dark",
         default: true,

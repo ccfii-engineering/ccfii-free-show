@@ -3,7 +3,7 @@
     import type { OutData } from "../../../../types/Output"
     import type { Styles } from "../../../../types/Settings"
     import type { OutBackground, OutSlide, Slide, SlideData } from "../../../../types/Show"
-    import { allOutputs, currentWindow, effects, media, outputs, overlays, showsCache, styles, templates, transitionData } from "../../../stores"
+    import { allOutputs, currentWindow, effects, media, outputs, overlays, showsCache, styles, templates, transitionData, videosData, videosTime } from "../../../stores"
     import { clone } from "../../helpers/array"
     import { getMediaStyle } from "../../helpers/media"
     import { defaultLayers, getCurrentStyle, getMetadata, getOutputLines, getOutputResolution, getOutputTransitions, getResolution, getSlideFilter, getStyleTemplate, setTemplateStyle } from "../../helpers/output"
@@ -17,7 +17,6 @@
     export let style = ""
 
     let canvas: HTMLCanvasElement
-    let status = "waiting..."
     let pixiApp: any = null
     let layerMgr: any = null
     let rendererMod: any = null
@@ -94,6 +93,15 @@
     $: resolution = getOutputResolution(outputId, $outputs, true)
     $: transitions = getOutputTransitions(slideData, currentStyle?.transition, $transitionData, false)
 
+    // stable reference that only changes when the *media* transition's content actually changes —
+    // prevents text/overlay transition edits from re-running the media-update reactive blocks below
+    let mediaTransition: any = {}
+    $: {
+        const next = transitions?.media || {}
+        if (JSON.stringify(next) !== JSON.stringify(mediaTransition)) mediaTransition = next
+    }
+    $: mediaBackgroundDuration = mediaTransition?.type === "none" ? 0 : (mediaTransition?.duration ?? 800)
+
     // Template
     let styleTemplate: any = null
     $: if (currentStyle && currentSlide !== undefined) {
@@ -165,13 +173,9 @@
 
     // --- PixiJS init (dynamic import) ---
     onMount(async () => {
-        if (!canvas) {
-            status = "ERROR: no canvas"
-            return
-        }
+        if (!canvas) return
 
         try {
-            status = "loading pixi..."
             const PIXI = await import("pixi.js")
 
             // Use output resolution with style aspect ratio applied
@@ -179,7 +183,6 @@
             const initW = initRes?.width || 1920
             const initH = initRes?.height || 1080
 
-            status = "creating app..."
             const app = new PIXI.Application()
             await app.init({
                 canvas,
@@ -192,16 +195,24 @@
             })
             pixiApp = app
 
-            status = "loading layers..."
             rendererMod = await import("./PixiRenderer")
             layerMgrMod = await import("./LayerManager")
 
             const containers = rendererMod.createStageContainers(app)
-            layerMgr = await layerMgrMod.createLayerManager(app, containers, initW, initH)
+            // publish the slide background's video currentTime/duration/paused so MediaControls, remote, stage display all work for WebGPU outputs
+            const videoTimeHandler = ({ currentTime, duration, paused }: { currentTime: number; duration: number; paused: boolean }) => {
+                videosTime.update((a) => {
+                    a[outputId] = currentTime
+                    return a
+                })
+                videosData.update((a) => {
+                    a[outputId] = { ...(a[outputId] || {}), duration, paused }
+                    return a
+                })
+            }
+            layerMgr = await layerMgrMod.createLayerManager(app, containers, initW, initH, videoTimeHandler)
             pixiReady = true
-            status = `Ready (${app.renderer.type === 0x02 ? "WebGPU" : "WebGL"}) ${initW}x${initH}`
         } catch (e) {
-            status = "FAILED: " + String(e)
             console.error("WebGPUOutput:", e)
         }
     })
@@ -209,35 +220,24 @@
     onDestroy(() => {
         if (layerMgr && layerMgrMod) layerMgrMod.destroyLayerManager(layerMgr)
         if (pixiApp) pixiApp.destroy(true, { children: true, texture: true })
+        videosTime.update((a) => {
+            delete a[outputId]
+            return a
+        })
+        videosData.update((a) => {
+            delete a[outputId]
+            return a
+        })
     })
 
     // --- Reactive PixiJS updates ---
-
-    // Debug: update status with data flow info
-    $: if (pixiReady) {
-        const bgPath = backgroundData?.path || backgroundData?.id || "none"
-        const slideId = actualSlide?.id || "none"
-        const styleBg = styleBackground || "none"
-        status = `Ready | ${resolution?.width}x${resolution?.height} | bg: ${bgPath} | slide: ${slideId} | styleBg: ${styleBg}`
-    }
-
-    $: if (pixiReady && backgroundData) {
-        console.log("WebGPUOutput: resolved background", {
-            outputId,
-            path: backgroundData.path || backgroundData.id || "",
-            fit: (backgroundData as any).fit || "unset",
-            defaultFit,
-            currentStyleFit: currentStyle?.fit || "unset",
-            templateBackground,
-            styleBackground
-        })
-    }
+    // NOTE: these blocks depend on `mediaTransition` (memoized), NOT `transitions`, so changing
+    // text/overlay transitions never retriggers media-update calls.
 
     // Style background — update or clear
     $: if (pixiReady && layerMgr && layerMgrMod) {
         if (styleBackground) {
-            console.log("WebGPUOutput: style bg update:", styleBackgroundData)
-            layerMgrMod.updateStyleBackground(layerMgr, styleBackgroundData, transitions?.media || {})
+            layerMgrMod.updateStyleBackground(layerMgr, styleBackgroundData, mediaTransition)
         } else {
             layerMgrMod.updateStyleBackground(layerMgr, null, {})
         }
@@ -246,8 +246,7 @@
     // Slide background — update or clear
     $: if (pixiReady && layerMgr && layerMgrMod) {
         if (backgroundData && (backgroundData.path || backgroundData.id)) {
-            console.log("WebGPUOutput: slide bg update:", backgroundData)
-            layerMgrMod.updateSlideBackground(layerMgr, backgroundData, transitions?.media || {})
+            layerMgrMod.updateSlideBackground(layerMgr, backgroundData, mediaTransition)
         } else {
             layerMgrMod.updateSlideBackground(layerMgr, null, {})
         }
@@ -260,7 +259,7 @@
     }
 </script>
 
-<Zoomed id={outputId} background={backgroundColor} center {style} {resolution} bind:ratio>
+<Zoomed id={outputId} background={backgroundColor} backgroundDuration={mediaBackgroundDuration} center {style} {resolution} bind:ratio>
     <div class="content-wrapper">
         <!-- PixiJS canvas for media/background layers -->
         <canvas bind:this={canvas} class="pixi-canvas" />
@@ -281,8 +280,6 @@
             {/if}
         </div>
     </div>
-
-    <p class="debug-status">{status}</p>
 </Zoomed>
 
 <style>
@@ -315,15 +312,5 @@
         line-height: 1.1;
         -webkit-text-stroke-color: #000000;
         paint-order: stroke fill;
-    }
-    .debug-status {
-        position: absolute;
-        top: 8px;
-        left: 8px;
-        color: #0f0;
-        font: 14px monospace;
-        z-index: 999;
-        pointer-events: none;
-        margin: 0;
     }
 </style>

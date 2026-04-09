@@ -141,6 +141,14 @@ export function updateSettings(data: any) {
     }, 4000)
 
     // theme
+    // merge any missing built-in themes into the user's stored themes so new presets (e.g. CCFII) show up for existing installs
+    themes.update((a) => {
+        for (const key of Object.keys(defaultThemes)) {
+            if (!a[key]) a[key] = clone(defaultThemes[key])
+        }
+        return a
+    })
+
     let currentTheme = get(themes)[data.theme]
     if (currentTheme?.colors) {
         // update colors (pre 0.9.2 or 1.4.9 or pre-CCFII)

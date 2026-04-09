@@ -1,4 +1,5 @@
 import type { OutBackground, Transition } from "../../../../types/Show"
+import type { VideoTimeCallback } from "./layers/BackgroundLayer"
 
 // All layer modules loaded dynamically to avoid static pixi.js imports
 let bgMod: any = null
@@ -34,13 +35,14 @@ export interface LayerManagerState {
     height: number
 }
 
-export async function createLayerManager(app: any, containers: any, width: number, height: number): Promise<LayerManagerState> {
+export async function createLayerManager(app: any, containers: any, width: number, height: number, slideVideoTimeHandler: VideoTimeCallback | null = null): Promise<LayerManagerState> {
     const bg = await getBgMod()
     const ov = await getOverlayMod()
     const sl = await getSlideMod()
 
     const styleBackground = bg.createBackgroundLayer(containers.background, width, height)
-    const slideBackground = bg.createBackgroundLayer(containers.background, width, height)
+    // only the slide background reports time — style background is a decorative loop and not the user-controlled video
+    const slideBackground = bg.createBackgroundLayer(containers.background, width, height, slideVideoTimeHandler)
     const slideLayer = await sl.createSlideLayer(containers.slide, width, height)
     const overlayLayer = ov.createOverlayLayer(containers.overlays, width, height)
 
