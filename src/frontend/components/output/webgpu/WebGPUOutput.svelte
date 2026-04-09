@@ -1,9 +1,11 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
+    import { OUTPUT } from "../../../../types/Channels"
     import type { OutData } from "../../../../types/Output"
     import type { Styles } from "../../../../types/Settings"
     import type { OutBackground, OutSlide, Slide, SlideData } from "../../../../types/Show"
-    import { allOutputs, currentWindow, effects, media, outputs, overlays, showsCache, styles, templates, transitionData, videosData, videosTime } from "../../../stores"
+    import { allOutputs, currentWindow, effects, media, outputs, overlays, showsCache, styles, templates, transitionData } from "../../../stores"
+    import { send } from "../../../utils/request"
     import { clone } from "../../helpers/array"
     import { getMediaStyle } from "../../helpers/media"
     import { defaultLayers, getCurrentStyle, getMetadata, getOutputLines, getOutputResolution, getOutputTransitions, getResolution, getSlideFilter, getStyleTemplate, setTemplateStyle } from "../../helpers/output"
@@ -22,6 +24,11 @@
     let rendererMod: any = null
     let layerMgrMod: any = null
     let pixiReady = false
+    let timeSendingTimeout: NodeJS.Timeout | null = null
+    // deferred-clear timers — absorb transient null states in the reactive chain between same-media slides
+    let slideBgClearTimer: NodeJS.Timeout | null = null
+    let styleBgClearTimer: NodeJS.Timeout | null = null
+    const CLEAR_DEBOUNCE_MS = 120
 
     // --- Store reads (wrapped in try/catch via reactive guards) ---
     $: currentOutput = $outputs[outputId] || $allOutputs[outputId] || {}
@@ -199,16 +206,17 @@
             layerMgrMod = await import("./LayerManager")
 
             const containers = rendererMod.createStageContainers(app)
-            // publish the slide background's video currentTime/duration/paused so MediaControls, remote, stage display all work for WebGPU outputs
+            // publish the slide background's video currentTime/duration/paused so MediaControls, remote, stage display all work for WebGPU outputs.
+            // Like BackgroundMedia.svelte, we live in the output window — MediaControls reads the *main window's* videosTime/videosData store.
+            // That store is populated by receivers.ts MAIN_TIME/MAIN_DATA handlers, so we must send via IPC (writing to our local store in this window has no effect on the main window UI).
+            // Throttle time sends to ~220ms to match BackgroundMedia.
             const videoTimeHandler = ({ currentTime, duration, paused }: { currentTime: number; duration: number; paused: boolean }) => {
-                videosTime.update((a) => {
-                    a[outputId] = currentTime
-                    return a
-                })
-                videosData.update((a) => {
-                    a[outputId] = { ...(a[outputId] || {}), duration, paused }
-                    return a
-                })
+                send(OUTPUT, ["MAIN_DATA"], { [outputId]: { duration, paused } })
+                if (timeSendingTimeout) return
+                send(OUTPUT, ["MAIN_TIME"], { [outputId]: currentTime })
+                timeSendingTimeout = setTimeout(() => {
+                    timeSendingTimeout = null
+                }, 220)
             }
             layerMgr = await layerMgrMod.createLayerManager(app, containers, initW, initH, videoTimeHandler)
             pixiReady = true
@@ -218,37 +226,50 @@
     })
 
     onDestroy(() => {
+        if (slideBgClearTimer) clearTimeout(slideBgClearTimer)
+        if (styleBgClearTimer) clearTimeout(styleBgClearTimer)
+        if (timeSendingTimeout) clearTimeout(timeSendingTimeout)
         if (layerMgr && layerMgrMod) layerMgrMod.destroyLayerManager(layerMgr)
         if (pixiApp) pixiApp.destroy(true, { children: true, texture: true })
-        videosTime.update((a) => {
-            delete a[outputId]
-            return a
-        })
-        videosData.update((a) => {
-            delete a[outputId]
-            return a
-        })
     })
 
     // --- Reactive PixiJS updates ---
     // NOTE: these blocks depend on `mediaTransition` (memoized), NOT `transitions`, so changing
     // text/overlay transitions never retriggers media-update calls.
+    //
+    // Null dispatches are deferred by CLEAR_DEBOUNCE_MS so transient null states in the reactive
+    // chain (e.g. between two slides that both reference the same media) don't destroy the
+    // existing video/sprite state and cause a visible "black flash" reload.
 
     // Style background — update or clear
     $: if (pixiReady && layerMgr && layerMgrMod) {
         if (styleBackground) {
+            if (styleBgClearTimer) {
+                clearTimeout(styleBgClearTimer)
+                styleBgClearTimer = null
+            }
             layerMgrMod.updateStyleBackground(layerMgr, styleBackgroundData, mediaTransition)
-        } else {
-            layerMgrMod.updateStyleBackground(layerMgr, null, {})
+        } else if (!styleBgClearTimer) {
+            styleBgClearTimer = setTimeout(() => {
+                styleBgClearTimer = null
+                if (layerMgr && layerMgrMod) layerMgrMod.updateStyleBackground(layerMgr, null, {})
+            }, CLEAR_DEBOUNCE_MS)
         }
     }
 
     // Slide background — update or clear
     $: if (pixiReady && layerMgr && layerMgrMod) {
         if (backgroundData && (backgroundData.path || backgroundData.id)) {
+            if (slideBgClearTimer) {
+                clearTimeout(slideBgClearTimer)
+                slideBgClearTimer = null
+            }
             layerMgrMod.updateSlideBackground(layerMgr, backgroundData, mediaTransition)
-        } else {
-            layerMgrMod.updateSlideBackground(layerMgr, null, {})
+        } else if (!slideBgClearTimer) {
+            slideBgClearTimer = setTimeout(() => {
+                slideBgClearTimer = null
+                if (layerMgr && layerMgrMod) layerMgrMod.updateSlideBackground(layerMgr, null, {})
+            }, CLEAR_DEBOUNCE_MS)
         }
     }
 
