@@ -111,6 +111,25 @@ This is "FreeShow - CCFII Edition" — a theme-level rebrand, not a full replace
 ### Theme Migration
 When changing default theme colors, update the migration check in `src/frontend/utils/updateSettings.ts` (around line 149). The app persists theme settings — without a migration, existing users keep old colors even after the code changes. Match on old color values to trigger a reset to `defaultThemes.default`.
 
+### WebGPU Output Architecture
+
+`WebGPUOutput.svelte` is a thin ~175-line wrapper around the regular `Output.svelte`. It owns a Pixi application and layer manager and provides a `pixiBackgroundBridge` via Svelte context. `Background.svelte` checks the context and, for supported media types (media/video/image), delegates to the bridge and renders nothing to the DOM. Unsupported live types (screen/ndi/blackmagic/camera/player) fall through to DOM rendering. All other features (effects, PDF, PPT, draw, attribution, animation, cropping, mirror/preview, styleIdOverride, overlays, colorbars, slideFilter, ignoreLayer, backgroundColor fallbacks) are handled by Output.svelte directly — no duplication.
+
+**Toggle**: `special.useWebGPUOutput` (global, default true for CCFII) or `output.useWebGPU` (per-output override). Stage outputs always use DOM. Rollback is Settings → Outputs → "Use GPU-accelerated output rendering" toggle off — no restart required.
+
+**Animation parity**: slide background animations (Ken-Burns, scale, rotate) work on the GPU path via `backgroundAnimation.ts` which parses the CSS transform strings emitted by `src/frontend/components/output/animation.ts` and lerps Pixi sprite transforms. Tests in `scripts/tests/pixi-background-animation.test.mjs`.
+
+## Performance Notes
+
+The app has a known reactive-storm sensitivity due to Svelte 3 + large global stores (`$outputs`, `$media`, `$showsCache`, `$styles`, `$templates`). When adding reactive statements:
+- **Never** use `$: if (JSON.stringify(x) !== JSON.stringify(y))` for change detection — use a targeted signature function that hashes only the scalar fields that matter. See `Output.svelte` `slideSig`/`backgroundSig`/`outSig`/`styleSig` helpers for the pattern.
+- **Never** call `clone()` in a `$:` block unless the result is mutated. If it's read-only, drop the clone.
+- **Prefer** reference-equality short-circuits for store-backed values: check `if (entry !== lastRef)` before any expensive computation.
+- For `{#each}` blocks that render large or reorderable lists, use keyed each `{#each items as item (item.id)}`.
+- Consider `<svelte:options immutable={true} />` for components that don't mutate their props — this switches Svelte to reference-equality prop diffing.
+
+Full audit at `docs/superpowers/audits/2026-04-09-performance-audit.md` with prioritized remediations.
+
 ## Using Serena (MCP)
 
 This project is registered with Serena. **Prefer Serena's semantic tools over generic file reads/greps** — this codebase is large (Electron + Svelte + multiple server apps + converters for many presentation formats) and blind file reads waste context fast.
