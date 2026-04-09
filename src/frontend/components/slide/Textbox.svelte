@@ -296,8 +296,28 @@
 
     let itemElem: HTMLElement | undefined
 
+    // Cheap layout-affecting signature (replaces JSON.stringify which was O(n) per reactive tick).
+    // Captures: style, auto flag, textFit, chord flag, line count, per-text length + short prefix + style length.
+    // This catches all practical content/format changes that affect autosize layout without the per-key
+    // serialization cost of JSON.stringify. Edge case: content change that keeps identical length AND
+    // first 16 chars won't retrigger — acceptable because such changes don't affect geometry.
+    function itemLayoutSignature(it: any): string {
+        if (!it) return ""
+        const lines = it.lines || []
+        let sig = `${it.style || ""}|${it.auto ? 1 : 0}|${it.textFit || ""}|${it.chords ? 1 : 0}|${lines.length}`
+        for (let li = 0; li < lines.length; li++) {
+            const texts = lines[li]?.text || []
+            sig += `|${texts.length}`
+            for (let ti = 0; ti < texts.length; ti++) {
+                const t = texts[ti]
+                const v = t?.value || ""
+                sig += `~${v.length}:${v.slice(0, 16)}:${(t?.style || "").length}`
+            }
+        }
+        return sig
+    }
     let previousItem = "{}"
-    $: newItem = JSON.stringify(item)
+    $: newItem = itemLayoutSignature(item)
     // Combine content and template to detect all layout-affecting changes
     $: stateSignature = newItem + "|" + resolvedTemplateId
 

@@ -30,7 +30,6 @@ export async function loadImageTexture(path: string): Promise<LoadedTexture> {
 
     try {
         const fileUrl = toFileUrl(path)
-        console.log("MediaLayer: loading image:", fileUrl)
         // Use Image element instead of Assets.load for file:// compatibility in Electron
         const img = new Image()
         img.crossOrigin = "anonymous"
@@ -96,18 +95,6 @@ export function applyFit(sprite: Sprite, parentWidth: number, parentHeight: numb
             break
         }
     }
-
-    console.log("MediaLayer: applyFit", {
-        fit,
-        parentWidth,
-        parentHeight,
-        texWidth,
-        texHeight,
-        resultWidth: sprite.width,
-        resultHeight: sprite.height,
-        resultX: sprite.x,
-        resultY: sprite.y
-    })
 }
 
 export function applyMediaStyle(sprite: Sprite, mediaStyle: MediaStyle): void {

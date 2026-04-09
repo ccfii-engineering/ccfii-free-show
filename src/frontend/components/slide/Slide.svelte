@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onMount } from "svelte"
+    import { onDestroy, onMount } from "svelte"
     import type { MediaStyle } from "../../../types/Main"
     import type { Item, Media, Show, Slide, SlideData } from "../../../types/Show"
     import { removeTagsAndContent } from "../../show/slides"
@@ -50,8 +50,17 @@
     $: background = layoutSlide.background ? show.media[layoutSlide.background] : slide?.settings?.backgroundImage ? { path: slide.settings.backgroundImage } : null
 
     let ghostBackground: Media | null = null
+    // debounced — prevents dozens of setTimeouts queuing up when reactive fires repeatedly during show browsing
+    let ghostCheckPending: NodeJS.Timeout | null = null
+    function scheduleGhostCheck() {
+        if (ghostCheckPending) return
+        ghostCheckPending = setTimeout(() => {
+            ghostCheckPending = null
+            checkGhostBackground()
+        }, 0)
+    }
     // don't show ghost slides above 40 when using optimized mode
-    $: if (!background && ($special.optimizedMode ? index < 40 : true) && layoutSlides.length) setTimeout(checkGhostBackground)
+    $: if (!background && ($special.optimizedMode ? index < 40 : true) && layoutSlides.length) scheduleGhostCheck()
     function checkGhostBackground() {
         ghostBackground = null
         layoutSlides.forEach((a, i) => {
@@ -83,7 +92,21 @@
 
     $: bg = clone(background || ghostBackground)
     $: bgPath = bg?.path || bg?.id || ""
-    $: if (bgPath && !disableThumbnails) setTimeout(loadBackground)
+    // debounced — same rationale as ghost check
+    let loadBgPending: NodeJS.Timeout | null = null
+    function scheduleLoadBackground() {
+        if (loadBgPending) return
+        loadBgPending = setTimeout(() => {
+            loadBgPending = null
+            loadBackground()
+        }, 0)
+    }
+    $: if (bgPath && !disableThumbnails) scheduleLoadBackground()
+
+    onDestroy(() => {
+        if (ghostCheckPending) clearTimeout(ghostCheckPending)
+        if (loadBgPending) clearTimeout(loadBgPending)
+    })
     async function loadBackground() {
         mediaPath = bgPath
         thumbnailPath = ""
@@ -126,8 +149,19 @@
         // }
     }
 
-    // updater
-    $: if (bgPath) mediaStyle = getMediaStyle($media[bgPath], currentStyle)
+    // updater — memoize on reference equality of the exact media entry to avoid recomputing
+    // on every unrelated $media mutation (thumbnail generation, other files added, etc.).
+    // This replaces what was previously firing for every mounted Slide on any $media change.
+    let lastMediaEntryRef: any = undefined
+    let lastMediaBgPath = ""
+    $: if (bgPath) {
+        const entry = $media[bgPath]
+        if (entry !== lastMediaEntryRef || bgPath !== lastMediaBgPath) {
+            lastMediaEntryRef = entry
+            lastMediaBgPath = bgPath
+            mediaStyle = getMediaStyle(entry, currentStyle)
+        }
+    }
 
     $: group = slide.group
     $: if (slide.globalGroup && $groups[slide.globalGroup]) {

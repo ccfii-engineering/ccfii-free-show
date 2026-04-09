@@ -255,7 +255,6 @@ function waitForVideoReady(video: HTMLVideoElement): Promise<void> {
         const checkDimensions = () => video.videoWidth > 0 && video.videoHeight > 0
 
         if (video.readyState >= 2 && checkDimensions()) {
-            console.log("BackgroundLayer: video already ready:", video.videoWidth, "x", video.videoHeight)
             resolve()
             return
         }
@@ -264,7 +263,6 @@ function waitForVideoReady(video: HTMLVideoElement): Promise<void> {
             // canplay fired but dimensions may not be available yet — poll briefly
             if (checkDimensions()) {
                 cleanup()
-                console.log("BackgroundLayer: video ready:", video.videoWidth, "x", video.videoHeight)
                 resolve()
                 return
             }
@@ -275,7 +273,6 @@ function waitForVideoReady(video: HTMLVideoElement): Promise<void> {
                 if (checkDimensions() || polls > 20) {
                     clearInterval(poll)
                     cleanup()
-                    console.log("BackgroundLayer: video ready after poll:", video.videoWidth, "x", video.videoHeight)
                     resolve()
                 }
             }, 50)

@@ -138,19 +138,32 @@ export class CaptureLifecycle {
                 CaptureLifecycle.activeCaptures.delete(id)
                 return
             }
-            // Use highest frame rate among active channels.
-            const frameRates = output.captureOptions.framerates || {}
-            const maxOutputRate = Math.max(frameRates.ndi || 1, frameRates.blackmagic || 1, frameRates.server || 1, frameRates.stage || 1)
-            const baseCaptureFrameRate = Math.max(1, maxOutputRate)
 
-            // Adaptive backpressure: reduce capture FPS only at high memory levels.
+            // Per-channel throttle at the CAPTURE source, not just at transmit.
+            // Previously we captured at max(all_channels_fps), which means with NDI=30 and stage=20
+            // we were doing 30 capturePage() calls/sec and throwing away 33% of the work for stage.
+            // Now: only capture as often as the fastest *enabled* channel needs a frame.
+            const frameRates = output.captureOptions.framerates || {}
+            const opts = output.captureOptions.options || {}
+            const enabledRates: number[] = []
+            if (opts.ndi) enabledRates.push(frameRates.ndi || 1)
+            if (opts.blackmagic) enabledRates.push(frameRates.blackmagic || 1)
+            if (opts.server) enabledRates.push(frameRates.server || 1)
+            if (opts.stage) enabledRates.push(frameRates.stage || 1)
+            const baseCaptureFrameRate = Math.max(1, enabledRates.length ? Math.max(...enabledRates) : 1)
+
+            // Adaptive backpressure: lower thresholds than before (3GB was too high for typical church machines on 8GB).
             const externalMB = process.memoryUsage().external / (1024 * 1024)
             let captureFrameRate = baseCaptureFrameRate
             if (isBMD) {
-                if (externalMB > 6144) captureFrameRate = Math.min(baseCaptureFrameRate, 4)
-                else if (externalMB > 5120) captureFrameRate = Math.min(baseCaptureFrameRate, 6)
-                else if (externalMB > 4096) captureFrameRate = Math.min(baseCaptureFrameRate, 8)
-                else if (externalMB > 3072) captureFrameRate = Math.min(baseCaptureFrameRate, 10)
+                if (externalMB > 4096) captureFrameRate = Math.min(baseCaptureFrameRate, 4)
+                else if (externalMB > 3072) captureFrameRate = Math.min(baseCaptureFrameRate, 6)
+                else if (externalMB > 2048) captureFrameRate = Math.min(baseCaptureFrameRate, 8)
+                else if (externalMB > 1536) captureFrameRate = Math.min(baseCaptureFrameRate, 10)
+            } else {
+                // Non-BMD backpressure: reduce general capture rate when memory is tight.
+                if (externalMB > 3072) captureFrameRate = Math.min(baseCaptureFrameRate, 10)
+                else if (externalMB > 2048) captureFrameRate = Math.min(baseCaptureFrameRate, 15)
             }
 
             const targetIntervalMs = Math.max(1, Math.round(1000 / Math.max(1, captureFrameRate)))

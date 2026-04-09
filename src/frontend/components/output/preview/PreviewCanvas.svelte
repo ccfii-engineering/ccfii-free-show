@@ -1,7 +1,5 @@
 <script lang="ts">
-    import { onMount } from "svelte"
-    // import YUVRender from "yuv-render"
-    // import YUVRender from "yuv-buffer"
+    import { onDestroy, onMount } from "svelte"
 
     export let capture: any
     export let fullscreen: any = false
@@ -14,14 +12,24 @@
     let width = 0
     let height = 0
 
+    // Offscreen canvas reused across frames — drawing ImageData directly avoids the async
+    // createImageBitmap allocation (3 allocs per frame per preview previously).
+    let offscreen: HTMLCanvasElement | null = null
+    let offscreenCtx: CanvasRenderingContext2D | null = null
+    let offscreenW = 0
+    let offscreenH = 0
+
     onMount(() => {
         if (!canvas) return
 
-        ctx = canvas.getContext("2d")
-        canvas.width = width * 2.8
-        canvas.height = height * 2.8
+        ctx = canvas.getContext("2d", { alpha: false })
+        canvas.width = width * 2.0
+        canvas.height = height * 2.0
+    })
 
-        // send(OUTPUT, ["PREVIEW_RESOLUTION"], { id, size: { width: canvas.width, height: canvas.height } })
+    onDestroy(() => {
+        offscreen = null
+        offscreenCtx = null
     })
 
     $: if (fullscreen !== "") setTimeout(updateResolution, 100)
@@ -29,17 +37,17 @@
         if (!canvas) return
 
         // Reduce canvas resolution for better performance in stage layouts
-        const multiplier = fullscreen ? 1.2 : 2.0 // Reduced from 2.8 to 2.0
+        const multiplier = fullscreen ? 1.2 : 2.0
         canvas.width = width * multiplier
         canvas.height = height * multiplier
-        // send(OUTPUT, ["PREVIEW_RESOLUTION"], { id, size: { width: canvas.width, height: canvas.height } })
 
         if (capture) updateCanvas()
     }
 
-    // Add frame rate limiting to reduce performance impact
+    // Frame rate limit — non-fullscreen previews don't need 30fps; 20fps is imperceptibly different
+    // and cuts the allocation rate by 33%.
     let lastUpdate = 0
-    const frameRateLimit = 1000 / 30 // Limit to 30 FPS
+    $: frameRateLimit = fullscreen ? 1000 / 30 : 1000 / 20
     $: if (capture) throttledUpdateCanvas()
     function throttledUpdateCanvas() {
         const now = Date.now()
@@ -48,33 +56,32 @@
         updateCanvas()
     }
 
-    async function updateCanvas() {
-        if (!canvas || !capture) return
-
-        // const yuv = new YUVRender(canvas)
-        // // yuv.setDimension((capture.size.width / 4) * 3, (capture.size.height / 4) * 3)
-        // yuv.setDimension(capture.size.width, capture.size.height)
-        // console.log(capture.buffer, capture.size)
-        // yuv.render(capture.buffer)
-
-        // // yuv.setDimension(768, 320)
-        // // // Uint8Array data
-        // // let buffer = new Uint8Array(testFrame)
-        // // console.log(buffer)
-        // // yuv.render(buffer)
-
-        ///////////////////
+    function updateCanvas() {
+        if (!canvas || !ctx || !capture) return
 
         try {
+            const w = capture.size.width
+            const h = capture.size.height
+            if (!w || !h) return
+
+            // Reuse / reallocate offscreen canvas only when size changes
+            if (!offscreen || offscreenW !== w || offscreenH !== h) {
+                offscreen = document.createElement("canvas")
+                offscreen.width = w
+                offscreen.height = h
+                offscreenCtx = offscreen.getContext("2d", { alpha: false })
+                offscreenW = w
+                offscreenH = h
+            }
+            if (!offscreenCtx) return
+
+            // Wrap the incoming buffer in-place — no copy
             const arr = new Uint8ClampedArray(capture.buffer)
-            const pixels = new ImageData(arr, capture.size.width, capture.size.height)
-            const bitmap = await createImageBitmap(pixels)
+            const pixels = new ImageData(arr, w, h)
+            offscreenCtx.putImageData(pixels, 0, 0)
 
-            ctx.clearRect(0, 0, canvas.width, canvas.height)
-            ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-
-            // Clean up bitmap to prevent memory leaks
-            bitmap.close()
+            // Scale-blit from offscreen to visible canvas
+            ctx.drawImage(offscreen, 0, 0, canvas.width, canvas.height)
         } catch (error) {
             console.warn("PreviewCanvas update failed:", error)
         }
