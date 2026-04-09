@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
     import { activeEdit, activeFocus, activePage, activePopup, alertMessage, cachedShowsData, categories, focusMode, lessonsLoaded, notFound, outLocked, outputs, outputSlideCache, showsCache, slidesOptions, special, templates } from "../../stores"
+    import { showEntry } from "../../utils/perEntryStores"
     import { hasNewerUpdate, wait } from "../../utils/common"
     import { getAccess } from "../../utils/profile"
     import { videoExtensions } from "../../values/extensions"
@@ -26,8 +27,9 @@
     export let layout = ""
     export let projectIndex = -1
 
-    $: currentShow = $showsCache[showId]
-    $: activeLayout = layout || $showsCache[showId]?.settings?.activeLayout
+    $: myShow = showEntry(showId)
+    $: currentShow = $myShow
+    $: activeLayout = layout || $myShow?.settings?.activeLayout
     $: layoutSlides = currentShow ? getCachedShow(showId, activeLayout, $cachedShowsData)?.layout || [] : []
 
     let hasMounted = false

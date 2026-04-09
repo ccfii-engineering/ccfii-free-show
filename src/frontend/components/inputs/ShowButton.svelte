@@ -3,6 +3,7 @@
     import type { ClickEvent, MediaStyle } from "../../../types/Main"
     import { AudioPlayer } from "../../audio/audioPlayer"
     import { activeEdit, activeFocus, activePage, activeProject, activeShow, categories, focusMode, globalTags, media, notFound, outLocked, outputs, overlays, playerVideos, playingAudio, projects, refreshEditSlide, shows, showsCache, special, styles } from "../../stores"
+    import { mediaEntry } from "../../utils/perEntryStores"
     import { getAccess } from "../../utils/profile"
     import { historyAwait } from "../helpers/history"
     import Icon from "../helpers/Icon.svelte"
@@ -191,7 +192,8 @@
 
     let thumbnailPath: string | null = null
     $: isMedia = type === "image" || type === "video" || type === "player"
-    $: mediaStyle = isMedia ? getMediaStyle($media[id], undefined) : {} // , $styles[getFirstActiveOutput($outputs)?.style || ""]
+    $: myMedia = mediaEntry(id)
+    $: mediaStyle = isMedia ? getMediaStyle($myMedia, undefined) : {} // , $styles[getFirstActiveOutput($outputs)?.style || ""]
     $: mediaStyleString = `pointer-events: none;filter: ${mediaStyle.filter || ""};transform: scale(${mediaStyle.flipped ? "-1" : "1"}, ${mediaStyle.flippedY ? "-1" : "1"});`
     $: if (id && isMedia) getThumbnail()
     else thumbnailPath = ""

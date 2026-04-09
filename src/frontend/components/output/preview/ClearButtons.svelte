@@ -1,7 +1,8 @@
 <script lang="ts">
     import { createEventDispatcher } from "svelte"
     import { clearAudio } from "../../../audio/audioFading"
-    import { activeTimers, dictionary, isFadingOut, isTimelinePlaying, labelsDisabled, media, outLocked, outputCache, outputs, overlayTimers, playingAudio, playingMetronome, styles, timelineRecordingAction } from "../../../stores"
+    import { activeTimers, dictionary, isFadingOut, isTimelinePlaying, labelsDisabled, outLocked, outputCache, outputs, overlayTimers, playingAudio, playingMetronome, timelineRecordingAction } from "../../../stores"
+    import { mediaEntry, outputEntry, styleEntry } from "../../../utils/perEntryStores"
     import { presentationControllersKeysDisabled } from "../../../utils/shortcuts"
     import Icon from "../../helpers/Icon.svelte"
     import { getMediaLayerType } from "../../helpers/media"
@@ -65,12 +66,15 @@
 
     $: backgroundCleared = isOutCleared("background", $outputs)
     $: outputId = getActiveOutputs($outputs, true, true, true)[0] || ""
-    $: output = $outputs[outputId] || {}
-    $: outputStyle = $styles[output.style || ""] || {}
+    $: myOutput = outputEntry(outputId)
+    $: output = $myOutput || {}
+    $: myOutputStyle = styleEntry(output.style || "")
+    $: outputStyle = $myOutputStyle || {}
     $: canDisplayStyleBG = !outputStyle.clearStyleBackgroundOnText || (!output.out?.slide && !output.out?.background)
     $: styleBackground = backgroundCleared && !$outLocked && outputStyle.backgroundImage && canDisplayStyleBG
     $: outBackground = output.out?.background || {}
-    $: backgroundData = $media[outBackground.path || ""] || {}
+    $: myBackgroundMedia = mediaEntry(outBackground.path || "")
+    $: backgroundData = $myBackgroundMedia || {}
 
     $: isScripture = outputContent?.id === "temp"
     $: isMetronome = $playingMetronome && !Object.keys($playingAudio).length

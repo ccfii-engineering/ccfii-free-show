@@ -4,6 +4,7 @@
     import type { Item, Media, Show, Slide, SlideData } from "../../../types/Show"
     import { removeTagsAndContent } from "../../show/slides"
     import { activeEdit, activePage, activeTimers, effects, focusMode, fullColors, groups, media, outputs, overlays, refreshListBoxes, refreshSlideThumbnails, slideNotesActive, slidesOptions, slideTimers, special, styles, textEditActive } from "../../stores"
+    import { mediaEntry, styleEntry } from "../../utils/perEntryStores"
     import { wait } from "../../utils/common"
     import { translateText } from "../../utils/language"
     import { getAccess } from "../../utils/profile"
@@ -150,21 +151,11 @@
         // }
     }
 
-    // updater — memoize on the JSON of the exact $media[bgPath] entry. Uses JSON instead of
-    // reference equality because $media entries are mutated in place by helpers/media.ts
-    // (creationTime, info, tracks fields are set via a[path].field = ... on the same object).
-    // The JSON comparison still prevents recomputing mediaStyle for every unrelated $media mutation
-    // (thumbnail generation, other paths added, etc.).
-    let lastMediaEntryJson = ""
-    let lastMediaBgPath = ""
+    // Per-entry derived store — only wakes when THIS bgPath's media entry changes, not on
+    // unrelated mutations of $media. Handles in-place mutations via JSON gate.
+    $: myBgMedia = mediaEntry(bgPath)
     $: if (bgPath) {
-        const entry = $media[bgPath]
-        const entryJson = JSON.stringify(entry || null)
-        if (entryJson !== lastMediaEntryJson || bgPath !== lastMediaBgPath) {
-            lastMediaEntryJson = entryJson
-            lastMediaBgPath = bgPath
-            mediaStyle = getMediaStyle(entry, currentStyle)
-        }
+        mediaStyle = getMediaStyle($myBgMedia, currentStyle)
     }
 
     $: group = slide.group
@@ -195,7 +186,8 @@
 
     $: currentOutput = getFirstActiveOutput($outputs)
     $: transparentOutput = !!currentOutput?.transparent
-    $: currentStyle = $styles[currentOutput?.style || ""] || {}
+    $: myCurrentStyleStore = styleEntry(currentOutput?.style || "")
+    $: currentStyle = $myCurrentStyleStore || {}
     $: layers = Array.isArray(currentStyle.layers) ? currentStyle.layers : ["background"]
 
     let colorStyle = ""

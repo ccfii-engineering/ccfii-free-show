@@ -1,5 +1,6 @@
 <script lang="ts">
     import { actions, activePage, activePopup, activeShow, activeTimers, contextActive, groups, guideActive, outLocked, outputs, overlayTimers, playingAudio, playingMetronome, resized, slideTimers, special } from "../../../stores"
+    import { outputEntry } from "../../../utils/perEntryStores"
     import { DEFAULT_WIDTH, isDarkTheme } from "../../../utils/common"
     import { formatSearch } from "../../../utils/search"
     import { getNormalizedKey, previewCtrlShortcuts, previewShortcuts } from "../../../utils/shortcuts"
@@ -30,11 +31,13 @@
     $: allActiveOutputs = getActiveOutputs($outputs, true, true, true)
     $: outputId = allActiveOutputs[0]
     let currentOutput: any = {}
-    $: currentOutput = outputId ? $outputs[outputId] || {} : {}
+    $: myCurrentOutput = outputEntry(outputId || "")
+    $: currentOutput = $myCurrentOutput || {}
 
     $: allOutputsWithBackground = allActiveOutputs.filter((id) => $outputs[id]?.out?.background)
     $: backgroundOutputId = getFirstOutputIdWithAudableBackground(allOutputsWithBackground) || allOutputsWithBackground[0] || outputId
-    $: currentBgOutput = backgroundOutputId ? $outputs[backgroundOutputId] || null : null
+    $: myCurrentBgOutput = outputEntry(backgroundOutputId || "")
+    $: currentBgOutput = $myCurrentBgOutput
 
     let numberKeyTimeout: NodeJS.Timeout | null = null
     let previousNumberKey = ""

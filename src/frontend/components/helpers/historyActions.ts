@@ -10,6 +10,7 @@ import { getItemText } from "../edit/scripts/textStyle"
 import { clone, keysToID } from "./array"
 import { history } from "./history"
 import { _updaters } from "./historyHelpers"
+import { applyReassignUpdate } from "./historyReassign"
 import { addToPos } from "./mover"
 import { getItemsCountByType, isEmptyOrSpecial, mergeWithTemplate, updateLayoutsFromTemplate, updateSlideFromTemplate } from "./output"
 import { loadShows, saveTextCache } from "./setShow"
@@ -113,39 +114,45 @@ export const historyActions = ({ obj, undo = null }: any) => {
                     if (previousData && index !== undefined) index = undefined
 
                     if (previousData !== undefined) return updateKeyData(a, previousData)
-                    else {
-                        if (subkey) delete a[id][key][subkey]
-                        else delete a[id][key]
-                    }
 
-                    return a
+                    // delete the key (or subkey under key) — produce new refs at every touched path.
+                    if (subkey) {
+                        const entry = a[id]
+                        if (!entry?.[key]) return a
+                        const newKeyObj = { ...entry[key] }
+                        delete newKeyObj[subkey]
+                        return { ...a, [id]: { ...entry, [key]: newKeyObj } }
+                    }
+                    const entry = { ...a[id] }
+                    delete entry[key]
+                    return { ...a, [id]: entry }
                 }
 
                 if (keys) {
                     // if just keys, but no "key"
-                    const currentData = {}
+                    const currentData: any = {}
+                    const patch: any = { ...a }
                     keys.forEach((currentKey) => {
                         currentData[currentKey] = clone(a[currentKey])
 
                         if (previousData) {
                             const replacerValue = previousData[currentKey] || previousData
-                            a[currentKey] = replacerValue
+                            patch[currentKey] = replacerValue
                         } else {
-                            delete a[currentKey]
+                            delete patch[currentKey]
                         }
                     })
 
                     data = { ...data, data: clone(currentData) }
-
-                    return a
+                    return patch
                 }
 
                 data = { ...data, data: clone(a[id]) }
 
-                if (previousData) a[id] = previousData
-                else delete a[id]
-
-                return a
+                if (previousData) return { ...a, [id]: previousData }
+                const next = { ...a }
+                delete next[id]
+                return next
             }
 
             function updateElement(a) {
@@ -156,91 +163,32 @@ export const historyActions = ({ obj, undo = null }: any) => {
                 } else if (keys) {
                     // if just keys, but no "key"
                     data.previousData = {}
+                    const patch: any = { ...a }
                     keys.forEach((currentKey) => {
                         data.previousData[currentKey] = a[currentKey]
                         const replacerValue = data.data[currentKey] || data.data
-                        a[currentKey] = replacerValue
+                        patch[currentKey] = replacerValue
                     })
+                    a = patch
                 } else {
                     data.previousData = clone(a[id])
-                    a[id] = data.data
+                    a = { ...a, [id]: data.data }
                 }
 
-                if (subkey && index !== undefined && index > -1 && !Array.isArray(a[id][key][subkey])) delete data.previousData
+                if (subkey && index !== undefined && index > -1 && !Array.isArray(a[id]?.[key]?.[subkey])) delete data.previousData
 
-                if (updater.timestamp && a[id]) a[id].modified = Date.now() // cloud sync
+                if (updater.timestamp && a[id]) {
+                    // cloud sync — produce new ref so immutable subscribers see the change
+                    a = { ...a, [id]: { ...a[id], modified: Date.now() } }
+                }
                 if (data.previousData === data.data) console.warn(obj.id, "HISTORY:", "Previous data is the same as current data. Try using clone()!")
                 return a
             }
 
             function updateKeyData(keyData, newValue) {
-                if (!keyData[id]) return keyData
-
-                if (indexes?.length && Array.isArray(keyData[id][key])) {
-                    if (!keyData[id][key].length && newValue.length) {
-                        keyData[id][key] = newValue
-                        return keyData
-                    }
-
-                    keyData[id][key] = keyData[id][key].map((value, i) => {
-                        if (indexes?.length && !indexes.includes(i)) return value
-                        const currentIndex = indexes.findIndex((a) => a === i)
-                        const replacerValue = Array.isArray(newValue) ? newValue[currentIndex] : newValue
-
-                        if (subkey) {
-                            value[subkey] = replacerValue
-                            return value
-                        }
-
-                        return replacerValue
-                    })
-
-                    keyData[id][key] = keyData[id][key].filter((a) => a !== undefined)
-
-                    return keyData
-                }
-
-                if (keys?.length) {
-                    keys.forEach((currentKey) => {
-                        let replacerValue = typeof newValue === "string" || newValue?.[currentKey] === undefined || keyData.dataIsArray ? newValue : newValue[currentKey]
-                        if (index === -1 && !Array.isArray(replacerValue)) replacerValue = [replacerValue]
-
-                        if (subkey) {
-                            if (!keyData[id][key]?.[currentKey]) return
-                            if (index === -1) keyData[id][key][currentKey][subkey].push(...replacerValue)
-                            else keyData[id][key][currentKey][subkey] = replacerValue
-                            return
-                        }
-
-                        if (index === -1) keyData[id][key][currentKey].push(...replacerValue)
-                        else keyData[id][key][currentKey] = replacerValue
-                    })
-                    return keyData
-                }
-
-                if (subkey) {
-                    if (!keyData[id][key]) keyData[id][key] = {}
-
-                    // insert at index
-                    if (index !== undefined && Array.isArray(keyData[id][key][subkey])) {
-                        if (index === -1) keyData[id][key][subkey].push(newValue)
-                        else keyData[id][key][subkey].splice(index, 0, newValue)
-                        return keyData
-                    }
-
-                    keyData[id][key][subkey] = newValue
-                    return keyData
-                }
-
-                // insert at index
-                if (index !== undefined && Array.isArray(keyData[id][key])) {
-                    if (index === -1) keyData[id][key].push(newValue)
-                    else keyData[id][key].splice(index, 0, newValue)
-                    return keyData
-                }
-
-                keyData[id][key] = newValue
-                return keyData
+                // Thin wrapper — all branches implemented in the pure helper, which always
+                // produces new refs at every touched path. See historyReassign.ts.
+                return applyReassignUpdate(keyData, newValue, { id, key, subkey, index, indexes, keys })
             }
         },
         SHOWS: async () => {

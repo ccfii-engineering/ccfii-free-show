@@ -8,6 +8,7 @@
     import { OUTPUT } from "../../../../types/Channels"
     import type { OutBackground, Transition } from "../../../../types/Show"
     import { allOutputs, outputs } from "../../../stores"
+    import { outputEntry } from "../../../utils/perEntryStores"
     import { send } from "../../../utils/request"
     import { getOutputResolution } from "../../helpers/output"
     import Output from "../Output.svelte"
@@ -24,7 +25,8 @@
     let pixiReady = false
     let timeSendingTimeout: NodeJS.Timeout | null = null
 
-    $: currentOutput = $outputs[outputId] || $allOutputs[outputId] || {}
+    $: myOutput = outputEntry(outputId)
+    $: currentOutput = $myOutput || $allOutputs[outputId] || {}
     $: resolution = getOutputResolution(outputId, $outputs, true)
 
     // Provide the bridge IMMEDIATELY (before onMount) so child Output/Background instances see it

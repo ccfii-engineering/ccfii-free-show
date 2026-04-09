@@ -4,6 +4,7 @@
     import type { Styles } from "../../../types/Settings"
     import type { Item, Slide, TemplateStyleOverride, Transition } from "../../../types/Show"
     import { currentWindow, groups, outputs, overlays, scriptureSettings, showsCache, styles, templates, variables } from "../../stores"
+    import { showEntry, templateEntry } from "../../utils/perEntryStores"
     import { wait } from "../../utils/common"
     import { send } from "../../utils/request"
     import autosize from "../edit/scripts/autosize"
@@ -356,7 +357,8 @@
     $: if ($variables) setTimeout(calculateAutosize)
 
     // recalculate auto size if output template is different than show template
-    $: currentShowTemplateId = $showsCache[ref.showId || ""]?.settings?.template || ""
+    $: myRefShow = showEntry(ref.showId || "")
+    $: currentShowTemplateId = $myRefShow?.settings?.template || ""
     // let outputTemplateAutoSize = false
     $: outputSlide = getFirstActiveOutput($outputs)?.out?.slide
     $: if (item?.type === "slide_tracker" && outputSlide) setTimeout(calculateAutosize) // overlay progress update
@@ -798,7 +800,8 @@
         }, displayDuration * 1000)
     }
 
-    $: noTextMode = ref?.type === "template" && $templates[ref?.id]?.settings?.mode === "item"
+    $: myRefTemplate = templateEntry(ref?.id || "")
+    $: noTextMode = ref?.type === "template" && $myRefTemplate?.settings?.mode === "item"
 
     $: normalWrap = ref?.origin === "powerpoint"
 </script>

@@ -6,6 +6,7 @@
     import { addProjectItem } from "../../../converters/project"
     import { activeShow, customMessageCredits, media, mediaOptions, mediaTags, outLocked, outputs, photoApiCredits, styles } from "../../../stores"
     import { translateText } from "../../../utils/language"
+    import { mediaEntry } from "../../../utils/perEntryStores"
     import { getKey } from "../../../values/keys"
     import Icon from "../../helpers/Icon.svelte"
     import { getMediaLayerType, getMediaStyle, getMediaType, loadThumbnail } from "../../helpers/media"
@@ -154,10 +155,15 @@
     const currentOutput = derived(outputs, ($outputs) => getFirstActiveOutput($outputs))
     const currentStyle = derived([currentOutput, styles], ([$currentOutput, $styles]) => $styles[$currentOutput?.style || ""] || {})
 
-    // Memoized media style computation
+    // Per-entry derived store — only wakes when THIS path's media entry changes, not on
+    // unrelated mutations of $media (thumbnails being generated elsewhere, etc.).
+    $: myMedia = mediaEntry(path)
+
+    // Memoized media style computation — the JSON-gated per-entry store already dedupes
+    // unchanged emissions, so recompute whenever it fires.
     let mediaStyle: MediaStyle = {}
-    $: if (path && JSON.stringify($media[path]) !== JSON.stringify(mediaStyle)) {
-        mediaStyle = getMediaStyle($media[path], $currentStyle)
+    $: if (path) {
+        mediaStyle = getMediaStyle($myMedia, $currentStyle)
     }
 
     // fixed resolution
@@ -170,7 +176,7 @@
     let tags: string[] = []
 
     $: {
-        const mediaData = $media[path]
+        const mediaData = $myMedia
         isFavourite = mediaData?.favourite === true
         icon = type === "video" ? "movie" : "image"
         tags = mediaData?.tags || []
@@ -243,7 +249,7 @@
                     </div>
                 </div>
             {/if}
-            {#if !!mediaStyle.filter?.length || $media[path]?.fit || mediaStyle.flipped || mediaStyle.flippedY || Object.keys(mediaStyle.cropping || {}).length}
+            {#if !!mediaStyle.filter?.length || $myMedia?.fit || mediaStyle.flipped || mediaStyle.flippedY || Object.keys(mediaStyle.cropping || {}).length}
                 <div style="max-width: 100%;">
                     <div class="button">
                         <Button style="padding: 3px;" redHover title={translateText("actions.remove")} on:click={() => removeStyle("filters")}>
