@@ -150,15 +150,18 @@
         // }
     }
 
-    // updater — memoize on reference equality of the exact media entry to avoid recomputing
-    // on every unrelated $media mutation (thumbnail generation, other files added, etc.).
-    // This replaces what was previously firing for every mounted Slide on any $media change.
-    let lastMediaEntryRef: any = undefined
+    // updater — memoize on the JSON of the exact $media[bgPath] entry. Uses JSON instead of
+    // reference equality because $media entries are mutated in place by helpers/media.ts
+    // (creationTime, info, tracks fields are set via a[path].field = ... on the same object).
+    // The JSON comparison still prevents recomputing mediaStyle for every unrelated $media mutation
+    // (thumbnail generation, other paths added, etc.).
+    let lastMediaEntryJson = ""
     let lastMediaBgPath = ""
     $: if (bgPath) {
         const entry = $media[bgPath]
-        if (entry !== lastMediaEntryRef || bgPath !== lastMediaBgPath) {
-            lastMediaEntryRef = entry
+        const entryJson = JSON.stringify(entry || null)
+        if (entryJson !== lastMediaEntryJson || bgPath !== lastMediaBgPath) {
+            lastMediaEntryJson = entryJson
             lastMediaBgPath = bgPath
             mediaStyle = getMediaStyle(entry, currentStyle)
         }
