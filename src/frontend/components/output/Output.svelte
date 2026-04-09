@@ -1,5 +1,13 @@
 <!-- Used in output window, and currently in draw! -->
-<svelte:options immutable={true} />
+<!--
+    NOTE: immutable is NOT safe on Output.svelte yet. The component has a complex reactive
+    graph with JSON-gated internal variables (out, slide, background, layers) that interact
+    poorly with immutable's === checks. Specifically, downstream reactives that depend on
+    sub-properties (out.slide, currentStyle.transition) don't re-fire when the parent ref
+    is unchanged even though the sub-property changed. The per-entry store migration below
+    already provides the bulk of the reactive-storm reduction; immutable is deferred until
+    the internal JSON gates are replaced with per-field derived stores.
+-->
 
 <script lang="ts">
     import { onDestroy } from "svelte"
@@ -40,14 +48,18 @@
     $: myOutput = outputEntry(outputId)
     $: currentOutput = $myOutput || $allOutputs[outputId] || {}
 
-    // output styling — per-entry store already dedupes and clones on in-place mutations,
-    // so the old hand-rolled JSON gate + clone is no longer necessary.
+    // output styling — per-entry store dedupes and clones on in-place mutations, but we
+    // still keep the JSON gate + clone for currentStyle to avoid downstream reactives firing
+    // when the style content hasn't actually changed.
     $: myStyle = styleEntry(styleIdOverride || currentOutput.style || "")
     $: currentStyling = $myStyle || { name: "" }
     let currentStyle: Styles = { name: "" }
+    let lastCurrentStyleJson = ""
     $: {
-        if (currentStyling !== currentStyle) {
-            currentStyle = currentStyling
+        const json = JSON.stringify(currentStyling)
+        if (json !== lastCurrentStyleJson) {
+            lastCurrentStyleJson = json
+            currentStyle = clone(currentStyling)
         }
     }
 
