@@ -29,6 +29,8 @@ export interface Output {
     forcedResolution?: Resolution
     invisible?: boolean
     taskbar?: boolean
+    /** When false, this output uses the legacy DOM renderer even if `special.useWebGPUOutput` is true. */
+    useWebGPU?: boolean
     style?: string
     show?: any
     out?: OutData

@@ -140,6 +140,12 @@ export function updateSettings(data: any) {
         sendMain(Main.START, { ports: customPorts, max: data.maxConnections === undefined ? 10 : data.maxConnections, disabled, data: get(serverData) })
     }, 4000)
 
+    // WebGPU output renderer — default on for CCFII fork. User can toggle off in Settings → Advanced
+    // if any specific output misbehaves, via a per-output flag or globally via special.useWebGPUOutput.
+    if (get(special).useWebGPUOutput === undefined) {
+        special.update((a) => ({ ...a, useWebGPUOutput: true }))
+    }
+
     // theme
     // merge any missing built-in themes into the user's stored themes so new presets (e.g. CCFII) show up for existing installs
     themes.update((a) => {

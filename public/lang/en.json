@@ -1317,6 +1317,7 @@
         "startup_projects_list": "Show the projects list on startup",
         "auto_output": "Activate output screen on startup",
         "hide_cursor_in_output": "Hide cursor in output",
+        "use_webgpu_output": "Use GPU-accelerated output rendering",
         "clear_media_when_finished": "Clear media when finished",
         "disable_presenter_controller_keys": "Disable presenter controller keys",
         "default_project_name": "Default project name",

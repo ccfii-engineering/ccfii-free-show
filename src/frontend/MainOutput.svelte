@@ -4,7 +4,9 @@
     import { OUTPUT } from "../types/Channels"
     import type { Resolution } from "../types/Settings"
     import { getResolution } from "./components/helpers/output"
+    import Output from "./components/output/Output.svelte"
     import WebGPUOutput from "./components/output/webgpu/WebGPUOutput.svelte"
+    import { shouldUseWebGPU } from "./components/output/webgpu/useWebGPUDecision"
     import { getStyleResolution } from "./components/slide/getStyleResolution"
     import StageLayout from "./components/stage/StageLayout.svelte"
     import { currentWindow, livePrepare, outputs, special, styles } from "./stores"
@@ -12,6 +14,8 @@
     import { send } from "./utils/request"
 
     $: outputId = Object.keys($outputs)[0]
+    $: currentOutput = $outputs[outputId] || {}
+    $: useWebGPU = shouldUseWebGPU({ special: $special, output: currentOutput })
 
     // get output resolution
     let width = 0
@@ -60,7 +64,11 @@
     {#if $outputs[outputId]?.stageOutput}
         <StageLayout {outputId} stageId={$outputs[outputId].stageOutput} edit={false} />
     {:else if loaded}
-        <WebGPUOutput {outputId} style={getStyleResolution(resolution, width, height, "fit")} />
+        {#if useWebGPU}
+            <WebGPUOutput {outputId} style={getStyleResolution(resolution, width, height, "fit")} />
+        {:else}
+            <Output {outputId} style={getStyleResolution(resolution, width, height, "fit")} />
+        {/if}
     {/if}
 
     <!-- black overlay for live preparation/changes -->

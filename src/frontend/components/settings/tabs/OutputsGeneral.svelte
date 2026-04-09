@@ -17,3 +17,4 @@
 {#if $os.platform !== "darwin" || $special.hideCursor}
     <MaterialToggleSwitch label="settings.hide_cursor_in_output" checked={$special.hideCursor} defaultValue={false} on:change={(e) => updateSpecial(e.detail, "hideCursor")} />
 {/if}
+<MaterialToggleSwitch label="settings.use_webgpu_output" checked={$special.useWebGPUOutput !== false} defaultValue={true} on:change={(e) => updateSpecial(e.detail, "useWebGPUOutput", true)} />
