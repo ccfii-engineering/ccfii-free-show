@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { writable } from "svelte/store"
-import { createEntryAccessor } from "../../src/frontend/utils/perEntryStoresFactory.ts"
+import { createEntryAccessor, createRefEntryAccessor } from "../../src/frontend/utils/perEntryStoresFactory.ts"
 
 // Helper: subscribe and collect emissions. Deep-clones each value so later in-place
 // mutations don't retroactively change captured snapshots.
@@ -162,5 +162,33 @@ test("key removed emits null", () => {
     })
 
     assert.deepEqual(seen, [{ v: 1 }, null])
+    unsub()
+})
+
+test("ref accessor only emits when the entry reference changes", () => {
+    const store = writable({ a: { v: 1 }, b: { v: 10 } })
+    const entry = createRefEntryAccessor(store)
+
+    const aCollector = collect(entry("a"))
+
+    store.update((s) => ({ ...s, b: { v: 20 } }))
+    store.update((s) => ({ ...s, a: { v: 2 } }))
+
+    assert.deepEqual(aCollector.seen, [{ v: 1 }, { v: 2 }])
+    aCollector.unsub()
+})
+
+test("ref accessor does not treat in-place mutation as a change", () => {
+    const store = writable({ a: { v: 1 } })
+    const entry = createRefEntryAccessor(store)
+
+    const { seen, unsub } = collect(entry("a"))
+
+    store.update((s) => {
+        s.a.v = 2
+        return s
+    })
+
+    assert.deepEqual(seen, [{ v: 1 }])
     unsub()
 })

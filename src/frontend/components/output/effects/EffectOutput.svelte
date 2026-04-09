@@ -1,3 +1,5 @@
+<svelte:options immutable={true} />
+
 <script lang="ts">
     import { Transition } from "../../../../types/Show"
     import { effects } from "../../../stores"

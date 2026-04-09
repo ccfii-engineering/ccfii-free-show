@@ -9,6 +9,7 @@ import { clone } from "../helpers/array"
 import { clearOverlayTimer, clearPlayingVideo, getAllActiveOutputIds, getAllActiveOutputs, isOutCleared, setOutput } from "../helpers/output"
 import { _show } from "../helpers/shows"
 import { getActiveTimelinePlayback } from "../timeline/TimelinePlayback"
+import { updateMappedEntries } from "../../utils/mapStoreEntries"
 
 export function clearAll(button = false) {
     if (get(outLocked)) return
@@ -62,14 +63,11 @@ export function restoreOutput() {
     const outputIds = getAllActiveOutputIds()
 
     outputs.update((a) => {
-        Object.keys(get(outputCache)).forEach((id) => {
-            if (id.includes("playing")) return
-            // restore only selected outputs
-            if (!outputIds.includes(id) || !a[id]) return
-            a[id].out = get(outputCache)[id]
+        return updateMappedEntries(a, Object.keys(get(outputCache)), (entry, id) => {
+            if (id.includes("playing")) return entry
+            if (!outputIds.includes(id)) return entry
+            return { ...entry, out: get(outputCache)[id] }
         })
-
-        return a
     })
 
     // audio

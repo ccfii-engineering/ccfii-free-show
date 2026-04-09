@@ -1,20 +1,15 @@
 <!-- Used in output window, and currently in draw! -->
-<!--
-    NOTE: do NOT add <svelte:options immutable={true} /> here. Svelte's immutable mode treats
-    all reactive assignments as reference-equality checks, which breaks in-place mutations of
-    store-backed values (e.g. `$styles[id].backgroundImage = "..."` from the settings history
-    system — see historyActions.ts:242). With immutable on, `$: currentStyling = getCurrentStyle(...)`
-    doesn't fire downstream reactives when the store entry is mutated because the reference
-    stays the same. This silently broke style-background updates in v1.8.1.
--->
+<svelte:options immutable={true} />
 
 <script lang="ts">
     import { onDestroy } from "svelte"
     import { uid } from "uid"
-    import { OutData } from "../../../types/Output"
+    import type { OutData } from "../../../types/Output"
     import type { Styles } from "../../../types/Settings"
     import type { AnimationData, Item, LayoutRef, OutBackground, OutSlide, Slide, SlideData, Template, Overlays as TOverlays } from "../../../types/Show"
     import { allOutputs, colorbars, currentWindow, drawSettings, drawTool, effects, media, outputs, overlays, showsCache, styles, templates, transitionData } from "../../stores"
+    import { outputEntry, styleEntry } from "../../utils/perEntryStores"
+    import { getCurrentLineMap, getIdArraySignature, getJsonSignature, getSelectedEntriesSignature } from "../../utils/outputSignatures"
     import { wait } from "../../utils/common"
     import { customTick } from "../../utils/transitions"
     import Draw from "../draw/Draw.svelte"
@@ -40,7 +35,8 @@
     export let styleIdOverride = ""
     export let outOverride: OutData | null = null
 
-    $: currentOutput = $outputs[outputId] || $allOutputs[outputId] || {}
+    $: myOutput = outputEntry(outputId)
+    $: currentOutput = $myOutput || $outputs[outputId] || $allOutputs[outputId] || {}
 
     // --- Cached JSON change detection ---------------------------------------------------------
     // Instead of stringifying BOTH sides on every reactive tick (as the original code did), we
@@ -51,7 +47,8 @@
     // historyActions.ts:242), so reference equality doesn't work.
 
     // output styling
-    $: currentStyling = getCurrentStyle($styles, styleIdOverride || currentOutput.style)
+    $: myStyle = styleEntry(styleIdOverride || currentOutput.style || "")
+    $: currentStyling = $myStyle || getCurrentStyle($styles, styleIdOverride || currentOutput.style)
     let currentStyle: Styles = { name: "" }
     let lastCurrentStyleJson = ""
     $: {
@@ -81,10 +78,10 @@
     // currentOutput is set to refresh state when changed in preview
     let lastLayersJson = ""
     $: if (currentOutput) {
-        const target = JSON.stringify(currentStyle.layers || defaultLayers)
+        const target = getIdArraySignature(currentStyle.layers || defaultLayers)
         if (target !== lastLayersJson) {
             lastLayersJson = target
-            if (JSON.stringify(layers) !== target) setNewLayers()
+            if (getIdArraySignature(layers) !== target) setNewLayers()
         }
     }
     function setNewLayers() {
@@ -95,7 +92,7 @@
     let lastOutJson = ""
     $: {
         const targetOut = outOverride || currentOutput?.out || {}
-        const json = JSON.stringify(targetOut)
+        const json = [getJsonSignature(targetOut.slide || null), getJsonSignature(targetOut.background || null), getIdArraySignature(targetOut.overlays), getIdArraySignature(targetOut.effects), targetOut.refresh ? "1" : "0"].join("|")
         if (json !== lastOutJson) {
             lastOutJson = json
             out = clone(targetOut)
@@ -104,7 +101,7 @@
 
     let lastSlideJson = ""
     $: {
-        const json = JSON.stringify(out.slide || null)
+        const json = getJsonSignature(out.slide || null)
         if (json !== lastSlideJson) {
             lastSlideJson = json
             updateOutData("slide")
@@ -112,7 +109,7 @@
     }
     let lastBgJson = ""
     $: {
-        const json = JSON.stringify(out.background || null)
+        const json = getJsonSignature(out.background || null)
         if (json !== lastBgJson) {
             lastBgJson = json
             updateOutData("background")
@@ -120,6 +117,8 @@
     }
 
     $: refreshOutput = out.refresh
+    let lineUpdateTimeout: NodeJS.Timeout | null = null
+    let metadataClearTimeout: NodeJS.Timeout | null = null
     $: if (outputId || refreshOutput) updateOutData()
     function updateOutData(type = "") {
         if (!type || type === "slide") {
@@ -128,16 +127,16 @@
             if (noLineCurrent) delete noLineCurrent.line
             let noLineNew = clone(out?.slide)
             if (noLineNew) delete noLineNew.line
-            if (!refreshOutput && !out?.slide?.type && lines[currentLineId || ""]?.start === null && JSON.stringify(noLineCurrent) === JSON.stringify(noLineNew)) return
+            if (!refreshOutput && !out?.slide?.type && lines[currentLineId || ""]?.start === null && getJsonSignature(noLineCurrent) === getJsonSignature(noLineNew)) return
 
             slide = clone(out.slide || null)
         }
         if (!type || type === "background") background = clone(out.background || null)
         if (!type || type === "overlays") {
-            storedOverlayIds = JSON.stringify(out.overlays)
-            if (JSON.stringify($overlays) !== storedOverlays) {
+            storedOverlayIds = getIdArraySignature(out.overlays)
+            if (getSelectedEntriesSignature($overlays, out.overlays || []) !== storedOverlays) {
                 clonedOverlays = clone($overlays)
-                storedOverlays = JSON.stringify($overlays)
+                storedOverlays = getSelectedEntriesSignature($overlays, out.overlays || [])
             }
         }
     }
@@ -146,7 +145,7 @@
     $: overlayIds = out.overlays
     let storedOverlayIds = ""
     let storedOverlays = ""
-    $: if (JSON.stringify(overlayIds) !== storedOverlayIds) updateOutData("overlays")
+    $: if (getIdArraySignature(overlayIds) !== storedOverlayIds) updateOutData("overlays")
     $: outOverlays = out.overlays?.filter((id) => !clonedOverlays?.[id]?.placeUnderSlide) || []
     $: outUnderlays = out.overlays?.filter((id) => clonedOverlays?.[id]?.placeUnderSlide) || []
 
@@ -156,7 +155,7 @@
     let currentSlide: Slide | null = null
 
     $: updateSlideData(slide, outputId)
-    function updateSlideData(slide, _outputChanged) {
+    function updateSlideData(slide: OutSlide | null, _outputChanged: string) {
         if (!slide) {
             currentLayout = []
             slideData = null
@@ -164,24 +163,25 @@
             return
         }
 
-        currentLayout = clone(_show(slide.id).layouts([slide.layout]).ref()[0] || [])
-        slideData = currentLayout[slide?.index]?.data || null
+        const currentOutSlide = slide
+        currentLayout = clone(_show(currentOutSlide.id).layouts([currentOutSlide.layout]).ref()[0] || [])
+        slideData = currentLayout[currentOutSlide.index || 0]?.data || null
 
         // don't refresh content unless it changes
         let newCurrentSlide = getCurrentSlide()
-        if (JSON.stringify(formatSlide(newCurrentSlide)) !== JSON.stringify(currentSlide)) currentSlide = newCurrentSlide
+        if (getJsonSignature(formatSlide(newCurrentSlide)) !== getJsonSignature(currentSlide)) currentSlide = newCurrentSlide
 
         function getCurrentSlide() {
-            if (!slide && !outputId) return null
-            if (slide.id === "temp" || slide.id === "tempText") return { items: slide.tempItems }
+            if (!currentOutSlide && !outputId) return null
+            if (currentOutSlide.id === "temp" || currentOutSlide.id === "tempText") return { items: currentOutSlide.tempItems }
             if (!currentLayout) return null
 
-            let slideId: string = currentLayout[slide?.index]?.id || ""
-            return clone(_show(slide.id).slides([slideId]).get()[0] || {})
+            let slideId: string = currentLayout[currentOutSlide.index || 0]?.id || ""
+            return clone(_show(currentOutSlide.id).slides([slideId]).get()[0] || {})
         }
 
         // add template item keys to not update item when no changes is made (when custom style template is set)
-        function formatSlide(currentSlide) {
+        function formatSlide(currentSlide: Slide | null) {
             if (!currentSlide) return null
             let newSlide = clone(currentSlide)
             newSlide.items = setTemplateStyle(slide, currentStyle, newSlide.items, outputId, newSlide.customDynamicValues)
@@ -214,8 +214,11 @@
     const updateLinesTime = $currentWindow === "output" ? 50 : 10
     $: if (currentLineId) {
         // don't update until all outputs has updated their "line" value
-        setTimeout(() => {
-            lines[currentLineId] = getOutputLines(slide!, currentStyle.lines) // , currentSlide
+        if (lineUpdateTimeout) clearTimeout(lineUpdateTimeout)
+        lineUpdateTimeout = setTimeout(() => {
+            const lineId = currentLineId
+            if (!lineId) return
+            lines = { ...lines, ...getCurrentLineMap({ [lineId]: getOutputLines(slide!, currentStyle.lines) }, lineId) }
         }, updateLinesTime)
     }
 
@@ -225,11 +228,17 @@
     let isMetadataClearing = false
     $: if (metadataItems !== null) {
         isMetadataClearing = false
-        if (JSON.stringify(metadataItems) !== JSON.stringify(currentMetadataItems)) currentMetadataItems = clone(metadataItems)
+        if (metadataClearTimeout) {
+            clearTimeout(metadataClearTimeout)
+            metadataClearTimeout = null
+        }
+        if (getJsonSignature(metadataItems) !== getJsonSignature(currentMetadataItems)) currentMetadataItems = clone(metadataItems)
     } else {
         isMetadataClearing = true
-        setTimeout(() => {
+        if (metadataClearTimeout) clearTimeout(metadataClearTimeout)
+        metadataClearTimeout = setTimeout(() => {
             currentMetadataItems = []
+            metadataClearTimeout = null
         })
     }
 
@@ -239,7 +248,11 @@
     $: slideAnimation = slideData?.actions?.animate || null
 
     $: if (slide) stopAnimation()
-    onDestroy(stopAnimation)
+    onDestroy(() => {
+        stopAnimation()
+        if (lineUpdateTimeout) clearTimeout(lineUpdateTimeout)
+        if (metadataClearTimeout) clearTimeout(metadataClearTimeout)
+    })
     function stopAnimation() {
         animationData = {}
         currentAnimationId = ""

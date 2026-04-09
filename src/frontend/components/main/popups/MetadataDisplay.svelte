@@ -10,7 +10,7 @@
     import MaterialPopupButton from "../../inputs/MaterialPopupButton.svelte"
     import Tip from "../Tip.svelte"
 
-    let data
+    let data: any
     if ($popupData.type === "show_category" || $popupData.type === "style") {
         data = clone($popupData)
         currentMetadataPopupData.set(data)
@@ -67,16 +67,17 @@
 
         if (type === "show_category") {
             categories.update((a) => {
-                ids.forEach((id) => {
-                    if (!a[id]) return
+                ids.forEach((id: string) => {
+                    const category = a[id]
+                    if (!category) return
 
                     if (key === "display" && value === "never") {
-                        delete a[id].metadata
+                        delete category.metadata
                         return
                     }
 
-                    if (!a[id].metadata) a[id].metadata = {}
-                    a[id].metadata[key] = value
+                    if (!category.metadata) category.metadata = {}
+                    category.metadata[key] = value
                 })
                 return a
             })
@@ -86,17 +87,15 @@
         if (type === "style") {
             styles.update((a) => {
                 const id = ids[0] || "default"
-                if (!a[id]) a[id] = { name: translateText("example.default") }
+                const currentStyle = a[id] || { name: translateText("example.default") }
 
                 if (key === "display" && value === "default") {
-                    delete a[id].metadata
-                    return a
+                    const nextStyle = { ...currentStyle }
+                    delete nextStyle.metadata
+                    return { ...a, [id]: nextStyle }
                 }
 
-                if (!a[id].metadata) a[id].metadata = {}
-                a[id].metadata[key] = value
-
-                return a
+                return { ...a, [id]: { ...currentStyle, metadata: { ...(currentStyle.metadata || {}), [key]: value } } }
             })
         }
 

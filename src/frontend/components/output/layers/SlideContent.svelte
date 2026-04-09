@@ -1,8 +1,11 @@
+<svelte:options immutable={true} />
+
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
     import type { Item, OutSlide, SlideData, TimelineAction, Transition } from "../../../../types/Show"
     import { showsCache, slideTimelineSpeedMultiplier } from "../../../stores"
     import { waitUntilValueIsDefined } from "../../../utils/common"
+    import { getCurrentLineMap, getCurrentLineSignature, getJsonSignature, getOutSlideSignature } from "../../../utils/outputSignatures"
     import { shouldItemBeShown } from "../../edit/scripts/itemHelpers"
     import { clone } from "../../helpers/array"
     import { loadCustomFonts } from "../../helpers/fonts"
@@ -67,8 +70,7 @@
     // Compare two items to see if their visible content is identical
     function itemsAreEqual(oldItem: Item | undefined, newItem: Item | undefined): boolean {
         if (!oldItem || !newItem) return false
-        // Compare the full serialized content (lines, style, etc.)
-        return JSON.stringify(oldItem) === JSON.stringify(newItem)
+        return getJsonSignature(oldItem) === getJsonSignature(newItem)
     }
     // maintain a hidden workload that primes autosize results ahead of the visible reveal
     let precomputeTargets: { item: Item; index: number; key: string }[] = []
@@ -78,36 +80,35 @@
     // $: videoTime = $videosTime[outputId] || 0 // WIP only update if the items text has a video dynamic value
     // $: if ($activeTimers || $variables || $playingAudio || $playingAudioPaths || videoTime) updateValues()
     let conditionsUpdater = 0
+    let hasConditionalItems = false
     const updaterInterval = setInterval(() => {
         if (isClearing) return
-        if (currentItems.find((a) => a?.conditions)) conditionsUpdater++
+        if (hasConditionalItems) conditionsUpdater++
     }, 300)
     onDestroy(() => clearInterval(updaterInterval))
 
     // do not update if only line has changed
-    $: currentOutSlide = "{}"
+    $: currentOutSlide = "null"
     $: if (outSlide) {
-        let newOutSlide = clone(outSlide)
-        delete newOutSlide.line
-        delete newOutSlide.revealCount
-        delete newOutSlide.itemClickReveal
-        let outSlideString = JSON.stringify(newOutSlide)
+        let outSlideString = getOutSlideSignature(outSlide)
         if (outSlideString !== currentOutSlide) currentOutSlide = outSlideString
     }
     // do not update if lines has no changes for this output
     $: currentLines = "{}"
     $: if (lines) {
-        let outLinesString = JSON.stringify(lines)
+        let outLinesString = getCurrentLineSignature(lines, currentLineId)
         if (outLinesString !== currentLines) currentLines = outLinesString
     }
     // only update if changed (no update when another output changes)
     let currentSlideItems: Item[] | null = null
     $: if (currentSlide?.items !== 0) {
-        if (JSON.stringify(currentSlide?.items) !== JSON.stringify(currentSlideItems)) currentSlideItems = clone(currentSlide?.items || null)
+        if (getJsonSignature(currentSlide?.items || null) !== getJsonSignature(currentSlideItems)) currentSlideItems = clone(currentSlide?.items || null)
     }
 
+    $: hasConditionalItems = currentItems.some((a) => a?.conditions)
     $: if (currentSlideItems !== undefined || currentOutSlide || currentLines) updateItems()
     let timeout: NodeJS.Timeout | null = null
+    let clearToEmptyTimeout: NodeJS.Timeout | null = null
 
     // if anything is outputted & changing to something that's outputted
     let transitioningBetween = false
@@ -157,6 +158,25 @@
         return item?.id ? String(item.id) : `idx-${index}`
     }
 
+    function getCurrentLineState() {
+        return currentLineId ? clone(lines?.[currentLineId] || null) : null
+    }
+
+    function getCurrentLineSnapshot() {
+        return clone(getCurrentLineMap(lines, currentLineId))
+    }
+
+    function setCurrentSnapshot() {
+        current = {
+            outSlide: clone(outSlide),
+            slideData: clone(slideData),
+            currentSlide: clone(currentSlide),
+            lines: getCurrentLineSnapshot(),
+            lineState: getCurrentLineState(),
+            currentStyle: clone(currentStyle)
+        }
+    }
+
     let isClearingToEmpty = false
     async function updateItems() {
         let betweenClearingTransition = transition.between || transition
@@ -168,19 +188,17 @@
             // Clear persistent items when no slide content
             persistentItems = []
             persistentItemIndexes = []
-            current = {
-                outSlide: clone(outSlide),
-                slideData: clone(slideData),
-                currentSlide: clone(currentSlide),
-                lines: clone(lines),
-                currentStyle: clone(currentStyle)
-            }
+            setCurrentSnapshot()
 
             // wait for items to properly clear
             // if changing quickly from text to empty to text again, the first text will be displayed again (due to Svelte transition bug)
             if (transitionEnabled) {
                 isClearingToEmpty = true
-                setTimeout(() => (isClearingToEmpty = false), betweenClearingTransition.duration)
+                if (clearToEmptyTimeout) clearTimeout(clearToEmptyTimeout)
+                clearToEmptyTimeout = setTimeout(() => {
+                    isClearingToEmpty = false
+                    clearToEmptyTimeout = null
+                }, betweenClearingTransition.duration)
             }
             return
         }
@@ -190,14 +208,14 @@
         scheduleAutoSizePrecompute(currentSlide.items)
 
         // get any items with no transition between the two slides
-        let oldItemTransition = currentItems.find((a) => a.actions?.transition)?.actions?.transition
-        let newItemTransition = currentSlide.items.find((a) => a.actions?.transition)?.actions?.transition
+        let oldItemTransition = currentItems.find((a: Item) => a.actions?.transition)?.actions?.transition
+        let newItemTransition = currentSlide.items.find((a: Item) => a.actions?.transition)?.actions?.transition
         let itemTransitionDuration: number | null = null
-        if (oldItemTransition && JSON.stringify(oldItemTransition) === JSON.stringify(newItemTransition)) {
+        if (oldItemTransition && getJsonSignature(oldItemTransition) === getJsonSignature(newItemTransition)) {
             itemTransitionDuration = oldItemTransition.duration ?? null
             if (oldItemTransition.type === "none") itemTransitionDuration = 0
             // find any item that should have no transition!
-            else if (currentSlide.items.find((a) => a.actions?.transition?.duration === 0 || a.actions?.transition?.type === "none")) itemTransitionDuration = 0
+            else if (currentSlide.items.find((a: Item) => a.actions?.transition?.duration === 0 || a.actions?.transition?.type === "none")) itemTransitionDuration = 0
         }
 
         let currentTransition = transition.between || transition.in || transition
@@ -249,13 +267,7 @@
         // If all items are persistent (unchanged), skip the show/hide cycle entirely
         if (transitioningItems.length === 0 && persistentItems.length > 0) {
             // Just update the context without triggering transitions
-            current = {
-                outSlide: clone(outSlide),
-                slideData: clone(slideData),
-                currentSlide: clone(currentSlide),
-                lines: clone(lines),
-                currentStyle: clone(currentStyle)
-            }
+            setCurrentSnapshot()
             // Keep currentItems in sync but don't toggle show
             currentItems = clone(currentSlide.items || [])
             transitioningBetween = false
@@ -271,13 +283,7 @@
                 // Only include items that need transitioning in currentItems
                 // Persistent items are rendered separately
                 currentItems = clone(currentSlide.items || [])
-                current = {
-                    outSlide: clone(outSlide),
-                    slideData: clone(slideData),
-                    currentSlide: clone(currentSlide),
-                    lines: clone(lines),
-                    currentStyle: clone(currentStyle)
-                }
+                setCurrentSnapshot()
 
                 // wait until half transition duration of previous items have passed as it looks better visually
                 timeout = setTimeout(() => {
@@ -376,6 +382,10 @@
             clearInterval(interval)
         }
     })
+    onDestroy(() => {
+        if (timeout) clearTimeout(timeout)
+        if (clearToEmptyTimeout) clearTimeout(clearToEmptyTimeout)
+    })
 </script>
 
 <!-- Render all items in original order to maintain z-index layering -->
@@ -393,9 +403,9 @@
                 {ratio}
                 {outputId}
                 ref={{ type: "show", showId: current.outSlide?.id, slideId: current.currentSlide?.id, id: current.currentSlide?.id || "", layoutId: current.outSlide?.layout }}
-                linesStart={current.lines?.[currentLineId || ""]?.[item.lineReveal ? "linesStart" : "start"]}
-                linesEnd={current.lines?.[currentLineId || ""]?.[item.lineReveal ? "linesEnd" : "end"]}
-                clickRevealed={!!current.lines?.[currentLineId || ""]?.clickRevealed}
+                linesStart={current.lineState?.[item.lineReveal ? "linesStart" : "start"]}
+                linesEnd={current.lineState?.[item.lineReveal ? "linesEnd" : "end"]}
+                clickRevealed={!!current.lineState?.clickRevealed}
                 outputStyle={current.currentStyle}
                 {mirror}
                 {preview}

@@ -1,3 +1,5 @@
+<svelte:options immutable={true} />
+
 <script lang="ts">
     import { uid } from "uid"
     import type { Item, Transition } from "../../../../types/Show"

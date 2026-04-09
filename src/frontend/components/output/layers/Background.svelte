@@ -1,3 +1,5 @@
+<svelte:options immutable={true} />
+
 <script lang="ts">
     import { onDestroy } from "svelte"
     import type { Styles } from "../../../../types/Settings"

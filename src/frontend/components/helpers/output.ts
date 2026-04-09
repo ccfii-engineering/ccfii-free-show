@@ -12,6 +12,7 @@ import { actions, activeProject, activeRename, activeTimers, allOutputs, categor
 import { trackScriptureUsage } from "../../utils/analytics"
 import { isMainWindow, isOutputWindow, newToast } from "../../utils/common"
 import { translateText } from "../../utils/language"
+import { updateMappedEntries } from "../../utils/mapStoreEntries"
 import { send } from "../../utils/request"
 import { sendBackgroundToStage } from "../../utils/stageTalk"
 import { TemplateHelper } from "../../utils/templates"
@@ -91,6 +92,7 @@ export function setOutput(type: string, data: any, toggle = false, outputId = ""
         const allOutputIds = bindings.length ? bindings : getActiveOutputs(a, true, false, true)
         const outs = outputId ? [outputId] : allOutputIds
         const inputData = clone(data)
+        const updatedEntries: Record<string, Output> = {}
 
         const backgroundId = getFirstOutputIdWithAudableBackground(allOutputIds)
 
@@ -126,9 +128,10 @@ export function setOutput(type: string, data: any, toggle = false, outputId = ""
         outs.forEach((id: string, i: number) => {
             const output = a[id]
             if (!output) return
+            let nextOutput = output
 
-            if (!output.out) a[id].out = {}
-            if (!output.out?.[type]) a[id].out![type] = type === "overlays" || type === "effects" ? [] : null
+            if (!nextOutput.out) nextOutput = { ...nextOutput, out: {} }
+            if (!nextOutput.out?.[type]) nextOutput = { ...nextOutput, out: { ...nextOutput.out, [type]: type === "overlays" || type === "effects" ? [] : null } }
             data = clone(inputData)
 
             if (type === "slide" && data === null && output.out?.slide?.type === "ppt") {
@@ -143,12 +146,12 @@ export function setOutput(type: string, data: any, toggle = false, outputId = ""
                 data = changeOutputBackground(data, { output, id, mute: allOutputIds.length > 1 && id !== backgroundId, videoOutputId: backgroundId })
             }
 
-            let outData = a[id].out?.[type] || null
+            let outData = nextOutput.out?.[type] || null
             if ((type === "overlays" || type === "effects") && data?.length) {
                 if (!Array.isArray(data)) data = [data]
                 if (toggle && i === 0) toggleState = outData?.includes(data[0])
                 if (toggle && toggleState) outData.splice(outData.indexOf(data[0]), 1)
-                else if (toggle || add) outData = removeDuplicates([...(a[id].out?.[type] || []), ...data])
+                else if (toggle || add) outData = removeDuplicates([...(nextOutput.out?.[type] || []), ...data])
                 else outData = data
 
                 data.forEach((overlayId) => {
@@ -165,13 +168,15 @@ export function setOutput(type: string, data: any, toggle = false, outputId = ""
                 }
             }
 
-            a[id].out![type] = clone(outData)
+            nextOutput = { ...nextOutput, out: { ...nextOutput.out, [type]: clone(outData) } }
 
             // save locked overlays
             if (type === "overlays") lockedOverlays.set(outData)
+
+            updatedEntries[id] = nextOutput
         })
 
-        return a
+        return updateMappedEntries(a, Object.keys(updatedEntries), (_entry, id) => updatedEntries[id] || _entry)
     })
 }
 
@@ -335,10 +340,7 @@ export function getAllEnabledOutputs() {
     const outputsList = getAllOutputs()
     const enabled = outputsList.filter((a) => a.enabled)
     if (!enabled.length && isMainWindow()) {
-        outputs.update((a) => {
-            a[Object.keys(a)[0]].enabled = true
-            return a
-        })
+        outputs.update((a) => updateMappedEntries(a, [Object.keys(a)[0]], (entry) => ({ ...entry, enabled: true })))
         return [outputsList[0]]
     }
     return enabled
@@ -366,10 +368,7 @@ export function getAllActiveOutputs() {
     const outputsList = getAllNormalOutputs()
     const active = outputsList.filter((a) => a.active)
     if (!active.length && isMainWindow()) {
-        outputs.update((a) => {
-            a[Object.keys(a)[0]].active = true
-            return a
-        })
+        outputs.update((a) => updateMappedEntries(a, [Object.keys(a)[0]], (entry) => ({ ...entry, active: true })))
         return [outputsList[0]]
     }
     return active
@@ -447,12 +446,7 @@ export function allOutputsHasStyleTemplate(isScripture: boolean = false) {
 }
 
 export function refreshOut(refresh = true) {
-    outputs.update((a) => {
-        getAllActiveOutputs().forEach(({ id }) => {
-            a[id].out = { ...a[id].out, refresh }
-        })
-        return a
-    })
+    outputs.update((a) => updateMappedEntries(a, getAllActiveOutputs().map(({ id }) => id), (entry) => ({ ...entry, out: { ...entry.out, refresh } })))
 
     if (refresh) {
         setTimeout(() => {
@@ -742,12 +736,10 @@ export function changeStageOutputLayout(data: API_stage_output_layout) {
     const outputIds = data.outputId ? [data.outputId] : Object.keys(get(outputs))
 
     outputs.update((a) => {
-        outputIds.forEach((id) => {
-            if (!a[id]?.stageOutput) return
-            a[id].stageOutput = data.stageLayoutId
+        return updateMappedEntries(a, outputIds, (entry) => {
+            if (!entry?.stageOutput) return entry
+            return { ...entry, stageOutput: data.stageLayoutId }
         })
-
-        return a
     })
 }
 

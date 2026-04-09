@@ -1,6 +1,8 @@
 <script lang="ts">
+    import { onDestroy } from "svelte"
     import { OUTPUT } from "../../../../types/Channels"
     import { currentWindow, outputs } from "../../../stores"
+    import { syncEventTargetListeners } from "../../../utils/runtimeGuards"
     import { send } from "../../../utils/request"
     import Icon from "../../helpers/Icon.svelte"
     import Button from "../../inputs/Button.svelte"
@@ -35,39 +37,44 @@
     let loaded = false
     $: if (parsedSrc) loaded = false
 
+    const didNavigate = () => {
+        checkNavigation()
+        url = webview?.getURL() || parsedSrc
+    }
+    const webviewListeners = {
+        "dom-ready": websiteLoaded,
+        "did-finish-load": setStyle,
+        "did-navigate": didNavigate
+    }
+    let boundWebview: any = null
+    $: boundWebview = syncEventTargetListeners(boundWebview, webview || null, webviewListeners)
+    onDestroy(() => {
+        boundWebview = syncEventTargetListeners(boundWebview, null, webviewListeners)
+    })
+
     $: if (webview && ratio) setWebpageRatio()
     function setWebpageRatio() {
         // custom scale does often not work on embeds (Presentations)
         if (src.includes("embed")) return
 
-        // if preview is fullscreen, don't set ratio
-        // temporary set to always fullscreen as the scaling does not always work in the preview, if there's video streams, etc.
-        let isFullscreen = true || (webview.closest(".previewOutput")?.offsetWidth || 0) > 450
+        if (loaded) setStyle()
+    }
+
+    function setStyle() {
+        if (!webview) return
+        loaded = true
+
+        if ($currentWindow !== "output") webview.setAudioMuted(true)
+
+        const isFullscreen = true || (webview.closest(".previewOutput")?.offsetWidth || 0) > 450
         const inverse = isFullscreen ? 100 : Math.round(100 / ratio)
 
-        if (loaded) setStyle()
-        else {
-            webview?.addEventListener("dom-ready", websiteLoaded)
-            webview?.addEventListener("did-finish-load", setStyle)
-            webview?.addEventListener("did-navigate", () => {
-                checkNavigation()
-                url = webview?.getURL() || parsedSrc
-            })
-        }
-
-        function setStyle() {
-            if (!webview) return
-            loaded = true
-
-            if ($currentWindow !== "output") webview.setAudioMuted(true)
-
-            webview.executeJavaScript(`
+        webview.executeJavaScript(`
             document.body.style.transform = 'scale(${isFullscreen ? 1 : ratio})';
             document.body.style.transformOrigin = '0 0';
-            document.body.style.width = '${inverse}%';  // Scale factor inverse to maintain full width
-            document.body.style.height = '${inverse}%';  // Scale factor inverse to maintain full height
+            document.body.style.width = '${inverse}%';
+            document.body.style.height = '${inverse}%';
         `)
-        }
     }
 
     function websiteLoaded() {

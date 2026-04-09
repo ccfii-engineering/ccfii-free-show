@@ -10,6 +10,7 @@ import { markItemsAsPlayed } from "../../converters/project"
 import { sendMain } from "../../IPC/main"
 import { cameraManager } from "../../media/cameraManager"
 import { changeSlideGroups, mergeSlides, mergeTextboxes, splitItemInTwo } from "../../show/slides"
+import { updateMappedEntries } from "../../utils/mapStoreEntries"
 import {
     $,
     actions,
@@ -667,7 +668,7 @@ const clickActions = {
                 const newValue = !output[outputId].hideFromPreview
 
                 if (newValue && showingOutputsList.length <= 1) newToast("toast.one_output")
-                else output[outputId].hideFromPreview = !output[outputId].hideFromPreview
+                else return updateMappedEntries(output, [outputId], (entry) => ({ ...entry, hideFromPreview: !entry.hideFromPreview }))
 
                 return output
             })
@@ -1702,9 +1703,7 @@ const clickActions = {
                 style = { name }
 
                 styles.update((a) => {
-                    a[styleId] = style
-
-                    return a
+                    return { ...a, [styleId]: style }
                 })
             })
 

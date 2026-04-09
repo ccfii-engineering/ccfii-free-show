@@ -1,3 +1,5 @@
+<svelte:options immutable={true} />
+
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
     import { uid } from "uid"
@@ -81,11 +83,19 @@
         }, 50)
     }
 
-    $: if (!mirror && !fadingOut) send(OUTPUT, ["MAIN_DATA"], { [outputId]: videoData })
+    let lastSentVideoData = ""
+    $: if (!mirror && !fadingOut) sendVideoData(videoData)
     $: if (!mirror && !fadingOut) sendVideoTime(videoTime)
 
     let sendingTimeout: NodeJS.Timeout | null = null
     let timeUpdateTimeout = 220
+    function sendVideoData(data: typeof videoData) {
+        const next = JSON.stringify(data)
+        if (next === lastSentVideoData) return
+
+        lastSentVideoData = next
+        send(OUTPUT, ["MAIN_DATA"], { [outputId]: data })
+    }
     function sendVideoTime(time: number) {
         if (sendingTimeout) return
 

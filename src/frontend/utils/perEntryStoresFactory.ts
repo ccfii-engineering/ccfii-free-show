@@ -59,3 +59,32 @@ export function createEntryAccessor<M extends { [k: string]: any }>(store: Writa
         return entry
     }
 }
+
+export function createRefEntryAccessor<M extends { [k: string]: any }>(store: Writable<M>): (key: string) => Readable<M[string]> {
+    type T = M[string]
+    const cache = new Map<string, Readable<T>>()
+    let emptySentinel: Readable<T> | undefined
+
+    return function entryAccessor(key: string): Readable<T> {
+        if (!key) {
+            if (!emptySentinel) emptySentinel = derived(store, () => null as unknown as T)
+            return emptySentinel
+        }
+
+        let entry = cache.get(key)
+        if (entry) return entry
+
+        let lastRef: any = undefined
+        let isFirstEmission = true
+        entry = derived(store, ($s, set) => {
+            const current = ($s && ($s as M)[key]) || null
+            if (isFirstEmission || current !== lastRef) {
+                isFirstEmission = false
+                lastRef = current
+                set(current as unknown as T)
+            }
+        })
+        cache.set(key, entry)
+        return entry
+    }
+}

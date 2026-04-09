@@ -9,6 +9,8 @@ import { clone } from "../components/helpers/array"
 import { checkNextAfterMedia } from "../components/helpers/showActions"
 import { clearBackground } from "../components/output/clear"
 import { receiveMainGlobal } from "../IPC/main"
+import { updateMappedEntries } from "./mapStoreEntries"
+import { getOutputReceiverSignature } from "./outputSignatures"
 import {
     actions,
     activePopup,
@@ -157,18 +159,13 @@ const receiveOUTPUTasMAIN: any = {
     MOVE: (data) => {
         outputs.update((a) => {
             if (!a[data.id] || a[data.id].boundsLocked) return a
-
-            a[data.id].bounds = data.bounds
-            return a
+            return updateMappedEntries(a, [data.id], (entry) => ({ ...entry, bounds: data.bounds }))
         })
     },
     UPDATE_OUTPUTS_DATA: ({ key, value, id, autoSave }) => {
         outputs.update((a) => {
             const ids = id ? [id] : Object.keys(get(outputs))
-            ids.forEach((outputId) => {
-                if (a[outputId]) a[outputId][key] = value
-            })
-            return a
+            return updateMappedEntries(a, ids, (entry) => ({ ...entry, [key]: value }))
         })
         if (autoSave) save()
     },
@@ -240,14 +237,10 @@ export const receiveOUTPUTasOUTPUT: any = {
             return
         }
 
-        const active: boolean = a[id].active
-        delete a[id].active
-
         // only update if there are any changes in this output
-        const newOutputs = JSON.stringify(a)
+        const newOutputs = getOutputReceiverSignature(a, id)
         if (previousOutputs === newOutputs) return
 
-        a[id].active = active
         outputs.set(a)
         previousOutputs = newOutputs
     },

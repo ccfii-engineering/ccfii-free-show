@@ -3,6 +3,7 @@
     import type { AspectRatio, Resolution, Styles } from "../../../../types/Settings"
     import { activeDrawerTab, activeEdit, activePage, activeStyle, outputs, styles, templates } from "../../../stores"
     import { translateText } from "../../../utils/language"
+    import { updateMappedEntries } from "../../../utils/mapStoreEntries"
     import { transitionTypes } from "../../../utils/transitions"
     import { mediaExtensions } from "../../../values/extensions"
     import { mediaFitOptions } from "../../edit/values/boxes"
@@ -29,9 +30,8 @@
         // create a style if nothing exists
         styles.update((a) => {
             if (key === "metadata" && value?.display === "default") value = undefined
-            else if (!a[currentId]) a[currentId] = clone(currentStyle)
-
-            return a
+            if (a[currentId]) return a
+            return { ...a, [currentId]: clone(currentStyle) }
         })
 
         history({ id: "UPDATE", newData: { key, data: value }, oldData: { id: currentId }, location: { page: "settings", id: "settings_style", override: "style_" + key } })
@@ -51,9 +51,7 @@
             currentOutputStyle.name = output.name
 
             styles.update((a) => {
-                a[uid()] = currentOutputStyle
-
-                return a
+                return { ...a, [uid()]: currentOutputStyle }
             })
         })
     }
@@ -127,7 +125,7 @@
         activeEdit.set({ type: "template", id, items: [] })
         activePage.set("edit")
     }
-    function updateScriptureTemplate(e) {
+    function updateScriptureTemplate(e: any) {
         const type = e.detail?.type || ""
         const value = e.detail?.value ?? e.detail
 
@@ -153,13 +151,10 @@
     $: normalOutputs = Object.values($outputs).filter((a) => a.enabled && !a.stageOutput)
     function useStyle() {
         outputs.update((a) => {
-            Object.keys(a).forEach((outputId) => {
-                let output = a[outputId]
-                if (output.stageOutput || !output.enabled) return
-
-                output.style = styleId
+            return updateMappedEntries(a, Object.keys(a), (entry) => {
+                if (entry.stageOutput || !entry.enabled) return entry
+                return { ...entry, style: styleId }
             })
-            return a
         })
     }
 </script>

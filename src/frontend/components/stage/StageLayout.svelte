@@ -4,6 +4,7 @@
     import { activePage, activeStage, allOutputs, currentOutputSettings, currentWindow, outputs, settingsTab, stageShows, toggleOutputEnabled } from "../../stores"
     import { getAccess } from "../../utils/profile"
     import { send } from "../../utils/request"
+    import { hasStageVideoItems } from "../../utils/runtimeGuards"
     import { getSortedStageItems, shouldItemBeShown } from "../edit/scripts/itemHelpers"
     import { clone } from "../helpers/array"
     import { history } from "../helpers/history"
@@ -73,15 +74,21 @@
     $: layout = $stageShows[stageLayoutId || ""] || {}
 
     // get video time (pre 1.4.0)
-    $: if ($currentWindow === "output" && Object.keys(layout.items || {}).some((id) => id.includes("video"))) requestVideoData()
+    $: if ($currentWindow === "output" && hasStageVideoItems(layout.items)) requestVideoData()
+    $: if ($currentWindow !== "output" || !hasStageVideoItems(layout.items)) stopVideoDataRequests()
     let interval: NodeJS.Timeout | null = null
     function requestVideoData() {
         if (interval) return
         interval = setInterval(() => send(OUTPUT, ["MAIN_REQUEST_VIDEO_DATA"], { id: outputId }), 1000) // , stageId
     }
+    function stopVideoDataRequests() {
+        if (!interval) return
+        clearInterval(interval)
+        interval = null
+    }
 
     onDestroy(() => {
-        if (interval) clearInterval(interval)
+        stopVideoDataRequests()
     })
 
     // RESOLUTION

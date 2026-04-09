@@ -26,8 +26,8 @@
     let style = $styles[styleId]
     function updateStyle(key: string, value: any) {
         styles.update((a) => {
-            a[styleId][key] = value
-            return a
+            if (!a[styleId]) return a
+            return { ...a, [styleId]: { ...a[styleId], [key]: value } }
         })
     }
 

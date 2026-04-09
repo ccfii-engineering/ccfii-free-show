@@ -21,6 +21,7 @@
     let rendererMod: any = null
     let pixiReady = false
     let timeSendingTimeout: NodeJS.Timeout | null = null
+    let lastVideoDataSent = ""
 
     $: myOutput = outputEntry(outputId)
     $: currentOutput = $myOutput || $allOutputs[outputId] || {}
@@ -126,7 +127,11 @@
             // handles MAIN_TIME/MAIN_DATA → videosTime/videosData. Throttled ~220ms to match the
             // regular path.
             const videoTimeHandler = ({ currentTime, duration, paused }: { currentTime: number; duration: number; paused: boolean }) => {
-                send(OUTPUT, ["MAIN_DATA"], { [outputId]: { duration, paused } })
+                const nextVideoData = JSON.stringify({ duration, paused })
+                if (nextVideoData !== lastVideoDataSent) {
+                    lastVideoDataSent = nextVideoData
+                    send(OUTPUT, ["MAIN_DATA"], { [outputId]: { duration, paused } })
+                }
                 if (timeSendingTimeout) return
                 send(OUTPUT, ["MAIN_TIME"], { [outputId]: currentTime })
                 timeSendingTimeout = setTimeout(() => {

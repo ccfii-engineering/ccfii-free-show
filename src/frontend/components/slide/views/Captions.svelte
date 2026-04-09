@@ -1,11 +1,12 @@
 <script lang="ts">
-    import { onMount } from "svelte"
+    import { onDestroy, onMount } from "svelte"
     import { OUTPUT } from "../../../../types/Channels"
     import { currentWindow } from "../../../stores"
+    import { syncEventTargetListeners } from "../../../utils/runtimeGuards"
     import { send } from "../../../utils/request"
     import { uid } from "uid"
 
-    export let item
+    export let item: any
     $: captionData = item?.captions || {}
 
     let preview = $currentWindow !== "output"
@@ -50,7 +51,12 @@
 
     // custom style
     let webElem: any
-    $: if (webElem) webElem.addEventListener("dom-ready", overlayReady)
+    const captionListeners = { "dom-ready": overlayReady }
+    let boundWebElem: any = null
+    $: boundWebElem = syncEventTargetListeners(boundWebElem, webElem || null, captionListeners)
+    onDestroy(() => {
+        boundWebElem = syncEventTargetListeners(boundWebElem, null, captionListeners)
+    })
     function overlayReady() {
         let customStyle = captionData.style || ""
 

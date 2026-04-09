@@ -1,3 +1,5 @@
+<svelte:options immutable={true} />
+
 <script lang="ts">
     import type { Transition } from "../../../../types/Show"
     import { customTick } from "../../../utils/transitions"

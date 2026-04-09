@@ -30,9 +30,8 @@
 
         // create a style if nothing exists
         styles.update((a) => {
-            if (!a[currentId]) a[currentId] = clone(currentStyle)
-
-            return a
+            if (a[currentId]) return a
+            return { ...a, [currentId]: clone(currentStyle) }
         })
 
         history({ id: "UPDATE", newData: { key, data: value }, oldData: { id: currentId }, location: { page: "settings", id: "settings_style", override: "style_" + key } })

@@ -17,9 +17,9 @@
 //   $: mediaStyle = getMediaStyle($entry, currentStyle)
 
 import { media, outputs, showsCache, styles, templates } from "../stores"
-import { createEntryAccessor } from "./perEntryStoresFactory"
+import { createEntryAccessor, createRefEntryAccessor } from "./perEntryStoresFactory"
 
-export { createEntryAccessor } from "./perEntryStoresFactory"
+export { createEntryAccessor, createRefEntryAccessor } from "./perEntryStoresFactory"
 
 // ============================================================================
 // Concrete accessors bound to the app's hot stores.
@@ -33,11 +33,17 @@ export const mediaEntry = createEntryAccessor(media)
 /** Subscribe to a single entry in $outputs by output id. */
 export const outputEntry = createEntryAccessor(outputs)
 
+/** Subscribe to a single output entry using reference changes only. */
+export const outputEntryRef = createRefEntryAccessor(outputs)
+
 /** Subscribe to a single entry in $showsCache by show id. */
 export const showEntry = createEntryAccessor(showsCache)
 
 /** Subscribe to a single entry in $styles by style id. */
 export const styleEntry = createEntryAccessor(styles)
+
+/** Subscribe to a single style entry using reference changes only. */
+export const styleEntryRef = createRefEntryAccessor(styles)
 
 /** Subscribe to a single entry in $templates by template id. */
 export const templateEntry = createEntryAccessor(templates)

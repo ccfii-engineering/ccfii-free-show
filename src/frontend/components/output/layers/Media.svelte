@@ -1,3 +1,5 @@
+<svelte:options immutable={true} />
+
 <script lang="ts">
     import type { MediaStyle } from "../../../../types/Main"
     import type { OutBackground } from "../../../../types/Show"

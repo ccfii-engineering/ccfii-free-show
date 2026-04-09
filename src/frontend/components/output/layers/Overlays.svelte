@@ -1,3 +1,5 @@
+<svelte:options immutable={true} />
+
 <script lang="ts">
     import type { Overlays, Transition } from "../../../../types/Show"
     import { clone } from "../../helpers/array"
