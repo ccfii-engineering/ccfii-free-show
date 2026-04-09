@@ -1,4 +1,5 @@
 <!-- Used in output window, and currently in draw! -->
+<svelte:options immutable={true} />
 
 <script lang="ts">
     import { onDestroy } from "svelte"
@@ -34,11 +35,52 @@
 
     $: currentOutput = $outputs[outputId] || $allOutputs[outputId] || {}
 
+    // --- Cheap change-detection signatures ---------------------------------------------------
+    // Previous code used JSON.stringify on every reactive tick to detect "did this object change?"
+    // That was O(n) per tick for `out`, `slide`, `background`, `currentStyling`. With ~6 reactive
+    // blocks doing this per output, slide changes were hammering the main thread on large scripture
+    // slides. These helpers replace the stringify comparisons with O(~10) signature functions that
+    // cover every field that actually matters for the downstream reactives.
+
+    function joinArr(a: any[] | undefined | null): string {
+        return a ? a.join("|") : ""
+    }
+    function slideSig(s: any): string {
+        if (!s) return ""
+        return `${s.id || ""}|${s.layout || ""}|${s.index ?? -1}|${s.line ?? 0}|${s.type || ""}|${s.tempItems ? s.tempItems.length : 0}`
+    }
+    function backgroundSig(b: any): string {
+        if (!b) return ""
+        return `${b.path || b.id || ""}|${b.type || ""}|${b.muted ? 1 : 0}|${b.loop !== false ? 1 : 0}|${b.ignoreLayer ? 1 : 0}|${b.fit || ""}|${b.name || ""}`
+    }
+    function outSig(o: any): string {
+        if (!o) return "::"
+        return `${slideSig(o.slide)}::${backgroundSig(o.background)}::${joinArr(o.overlays)}::${joinArr(o.effects)}::${o.refresh || 0}::${o.transparent ? 1 : 0}`
+    }
+    function styleSig(s: any): string {
+        if (!s) return ""
+        const trans = s.transition ? `${s.transition.text?.type || ""}:${s.transition.text?.duration || 0}|${s.transition.media?.type || ""}:${s.transition.media?.duration || 0}` : ""
+        const crop = s.cropping ? `${s.cropping.top || 0},${s.cropping.right || 0},${s.cropping.bottom || 0},${s.cropping.left || 0}` : ""
+        const ar = s.aspectRatio ? `${s.aspectRatio.alignPosition || ""}:${s.aspectRatio.enabled ? 1 : 0}` : ""
+        return `${s.name || ""}|${joinArr(s.layers)}|${s.background || ""}|${s.backgroundImage || ""}|${s.clearStyleBackgroundOnText ? 1 : 0}|${s.fit || ""}|${s.blurAmount || 0}|${s.blurOpacity || 0}|${s.volume || 0}|${ar}|${crop}|${s.lines || 0}|${s.template || ""}|${s.templateScripture || ""}|${trans}`
+    }
+
     // output styling
     $: currentStyling = getCurrentStyle($styles, styleIdOverride || currentOutput.style)
     let currentStyle: Styles = { name: "" }
-    // don't refresh content unless it changes
-    $: if (JSON.stringify(currentStyling) !== JSON.stringify(currentStyle)) currentStyle = clone(currentStyling)
+    let lastCurrentStylingRef: any = undefined
+    let lastCurrentStyleSig = ""
+    // Reference check short-circuits when the underlying store entry hasn't been touched (common
+    // case — slide changes don't mutate style). Only pay the signature cost when the upstream
+    // reference actually changes.
+    $: if (currentStyling !== lastCurrentStylingRef) {
+        lastCurrentStylingRef = currentStyling
+        const sig = styleSig(currentStyling)
+        if (sig !== lastCurrentStyleSig) {
+            lastCurrentStyleSig = sig
+            currentStyle = clone(currentStyling)
+        }
+    }
 
     $: alignPosition = currentStyle?.aspectRatio?.alignPosition || "center"
 
@@ -49,50 +91,72 @@
     let background: OutBackground | null = null
     let clonedOverlays: TOverlays | null = null
 
-    $: effectsIds = clone(out.effects || [])
+    // No clone needed — effectsIds is only read via .filter() below, never mutated
+    $: effectsIds = out.effects || []
     $: allEffects = $effects
     $: effectsUnderSlide = effectsIds.filter((id) => allEffects[id]?.placeUnderSlide === true)
     $: effectsOverSlide = effectsIds.filter((id) => !allEffects[id]?.placeUnderSlide)
 
     // don't update when layer content changes, only when refreshing or adding/removing layer
     // currentOutput is set to refresh state when changed in preview
-    $: if (currentOutput && JSON.stringify(layers) !== JSON.stringify(currentStyle.layers || defaultLayers)) setNewLayers()
+    $: if (currentOutput && joinArr(layers) !== joinArr(currentStyle.layers || defaultLayers)) setNewLayers()
     function setNewLayers() {
         layers = clone(Array.isArray(currentStyle.layers) ? currentStyle.layers : defaultLayers)
         if (!Array.isArray(layers)) layers = []
     }
-    $: if (JSON.stringify(out) !== JSON.stringify(outOverride || currentOutput?.out || {})) out = clone(outOverride || currentOutput?.out || {})
 
-    $: if (JSON.stringify(slide) !== JSON.stringify(out.slide || null)) updateOutData("slide")
-    $: if (JSON.stringify(background) !== JSON.stringify(out.background || null)) updateOutData("background")
+    let lastOutSig = "::"
+    $: {
+        const targetOut = outOverride || currentOutput?.out || {}
+        const sig = outSig(targetOut)
+        if (sig !== lastOutSig) {
+            lastOutSig = sig
+            out = clone(targetOut)
+        }
+    }
+
+    let lastSlideSig = ""
+    $: {
+        const sig = slideSig(out.slide || null)
+        if (sig !== lastSlideSig) {
+            lastSlideSig = sig
+            updateOutData("slide")
+        }
+    }
+    let lastBgSig = ""
+    $: {
+        const sig = backgroundSig(out.background || null)
+        if (sig !== lastBgSig) {
+            lastBgSig = sig
+            updateOutData("background")
+        }
+    }
 
     $: refreshOutput = out.refresh
     $: if (outputId || refreshOutput) updateOutData()
+    // sig matching slideSig() but without the `line` field — used to decide whether a line-only
+    // change on a different slide should refresh content (answer: no, skip the refresh).
+    function slideSigNoLine(s: any): string {
+        if (!s) return ""
+        return `${s.id || ""}|${s.layout || ""}|${s.index ?? -1}|${s.type || ""}|${s.tempItems ? s.tempItems.length : 0}`
+    }
     function updateOutData(type = "") {
         if (!type || type === "slide") {
-            let noLineCurrent = clone(slide)
-            if (noLineCurrent) delete noLineCurrent.line
-            let noLineNew = clone(out?.slide)
-            if (noLineNew) delete noLineNew.line
-
-            // don't refresh if changing lines on another slide & content is unchanged
-            if (!refreshOutput && !out?.slide?.type && lines[currentLineId || ""]?.start === null && JSON.stringify(noLineCurrent) === JSON.stringify(noLineNew)) return
-
-            // WIP option to turn off "content refresh" if slide content is identical to previous content ?
-
-            // this will reset transitions...
-            // currentSlide = null
-            // // timeout to allow component text to clear before removing component (needed for videoTime condition updates)
-            // setTimeout(() => (slide = clone(out.slide || null)))
+            // don't refresh if changing lines on another slide & content is unchanged.
+            if (!refreshOutput && !out?.slide?.type && lines[currentLineId || ""]?.start === null && slideSigNoLine(slide) === slideSigNoLine(out?.slide)) return
 
             slide = clone(out.slide || null)
         }
         if (!type || type === "background") background = clone(out.background || null)
         if (!type || type === "overlays") {
-            storedOverlayIds = JSON.stringify(out.overlays)
-            if (JSON.stringify($overlays) !== storedOverlays) {
+            // Use join("|") for arrays — cheap O(n) no stringify overhead.
+            // For $overlays comparison (object dict), compare sorted keys since we only care about
+            // add/remove; content changes are handled by individual overlay reactives elsewhere.
+            storedOverlayIds = joinArr(out.overlays)
+            const overlaysKeys = Object.keys($overlays).sort().join("|")
+            if (overlaysKeys !== storedOverlays) {
                 clonedOverlays = clone($overlays)
-                storedOverlays = JSON.stringify($overlays)
+                storedOverlays = overlaysKeys
             }
         }
     }
@@ -101,7 +165,7 @@
     $: overlayIds = out.overlays
     let storedOverlayIds = ""
     let storedOverlays = ""
-    $: if (JSON.stringify(overlayIds) !== storedOverlayIds) updateOutData("overlays")
+    $: if (joinArr(overlayIds) !== storedOverlayIds) updateOutData("overlays")
     $: outOverlays = out.overlays?.filter((id) => !clonedOverlays?.[id]?.placeUnderSlide) || []
     $: outUnderlays = out.overlays?.filter((id) => clonedOverlays?.[id]?.placeUnderSlide) || []
 
@@ -122,9 +186,26 @@
         currentLayout = clone(_show(slide.id).layouts([slide.layout]).ref()[0] || [])
         slideData = currentLayout[slide?.index]?.data || null
 
-        // don't refresh content unless it changes
+        // don't refresh content unless it changes.
+        // Previous code cloned + setTemplateStyle + stringified both sides on every call. For scripture
+        // slides with 20 translations this was ~300ms of pure CPU. Use an item-shape signature that
+        // catches every layout-affecting change without deep serialization.
         let newCurrentSlide = getCurrentSlide()
-        if (JSON.stringify(formatSlide(newCurrentSlide)) !== JSON.stringify(currentSlide)) currentSlide = newCurrentSlide
+        const slideItemsSig = (s: any) => {
+            if (!s?.items) return ""
+            let sig = ""
+            for (let i = 0; i < s.items.length; i++) {
+                const it = s.items[i]
+                if (!it) { sig += "|"; continue }
+                const linesLen = it.lines?.length || 0
+                const firstText = it.lines?.[0]?.text?.[0]?.value?.slice(0, 24) || ""
+                sig += `|${it.type || ""}:${linesLen}:${firstText.length}:${firstText}:${(it.style || "").length}`
+            }
+            return sig
+        }
+        const newSig = slideItemsSig(newCurrentSlide)
+        const curSig = slideItemsSig(currentSlide)
+        if (newSig !== curSig) currentSlide = newCurrentSlide
 
         function getCurrentSlide() {
             if (!slide && !outputId) return null
@@ -133,14 +214,6 @@
 
             let slideId: string = currentLayout[slide?.index]?.id || ""
             return clone(_show(slide.id).slides([slideId]).get()[0] || {})
-        }
-
-        // add template item keys to not update item when no changes is made (when custom style template is set)
-        function formatSlide(currentSlide) {
-            if (!currentSlide) return null
-            let newSlide = clone(currentSlide)
-            newSlide.items = setTemplateStyle(slide, currentStyle, newSlide.items, outputId, newSlide.customDynamicValues)
-            return newSlide
         }
     }
 

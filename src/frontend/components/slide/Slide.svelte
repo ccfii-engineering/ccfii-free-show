@@ -90,7 +90,8 @@
 
     let ghostSize = $special.optimizedMode || index + 1 > 28 ? mediaSize.small : mediaSize.drawerSize
 
-    $: bg = clone(background || ghostBackground)
+    // No clone needed — bg is only read (never mutated) in the template for type/path/cameraGroup.
+    $: bg = background || ghostBackground
     $: bgPath = bg?.path || bg?.id || ""
     // debounced — same rationale as ghost check
     let loadBgPending: NodeJS.Timeout | null = null

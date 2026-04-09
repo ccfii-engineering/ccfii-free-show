@@ -1,3 +1,5 @@
+<svelte:options immutable={true} />
+
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
     import { OUTPUT } from "../../../../types/Channels"
