@@ -87,6 +87,16 @@ export async function updateSlideText(
     sl.updateSlideContent(state.slideLayer, slideElement, slideKey, transition, isClearing)
 }
 
+export async function setStyleAnimation(state: LayerManagerState, animationStyle: string): Promise<void> {
+    const bg = await getBgMod()
+    bg.setAnimationTransform(state.styleBackground, animationStyle)
+}
+
+export async function setSlideAnimation(state: LayerManagerState, animationStyle: string): Promise<void> {
+    const bg = await getBgMod()
+    bg.setAnimationTransform(state.slideBackground, animationStyle)
+}
+
 export async function resizeAllLayers(state: LayerManagerState, width: number, height: number): Promise<void> {
     state.width = width
     state.height = height

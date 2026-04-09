@@ -1,7 +1,9 @@
 <script lang="ts">
+    import { onDestroy } from "svelte"
     import type { Styles } from "../../../../types/Settings"
     import type { OutBackground, Transition } from "../../../../types/Show"
     import { clone } from "../../helpers/array"
+    import { getPixiBackgroundBridge, isPixiSupported } from "../webgpu/pixiBackgroundBridge"
     import BackgroundMedia from "./BackgroundMedia.svelte"
 
     export let data: OutBackground
@@ -15,6 +17,19 @@
     export let animationStyle = ""
     export let mirror = false
     export let styleBackground = false
+
+    // --- Pixi delegation ---------------------------------------------------------------------
+    // When a parent has provided a pixiBackgroundBridge (i.e. we're rendered inside WebGPUOutput)
+    // AND the media type is Pixi-compatible, we hand data off to the bridge and render nothing.
+    // For unsupported types (screen, ndi, blackmagic, camera, player) or when no bridge is
+    // present, we fall through to the normal DOM render below.
+    const pixiBridge = getPixiBackgroundBridge()
+    const pixiSlot: "style" | "slide" = styleBackground ? "style" : "slide"
+    $: pixiDelegated = !!(pixiBridge && isPixiSupported(data?.type) && pixiBridge.update(pixiSlot, data, transition))
+    $: if (pixiBridge && pixiDelegated && animationStyle !== undefined) pixiBridge.setAnimation(pixiSlot, animationStyle)
+    onDestroy(() => {
+        if (pixiBridge) pixiBridge.clear(pixiSlot)
+    })
 
     $: duration = transition.duration ?? 800
     $: style = `height: 100%;zoom: ${1 / ratio};transition: filter ${duration}ms, backdrop-filter ${duration}ms;${slideFilter}`
@@ -138,18 +153,20 @@
     }
 </script>
 
-<div class="media" {style}>
-    {#if background1}
-        <div class="media" class:hidden={loading && !firstActive}>
-            <BackgroundMedia data={background1Data} fadingOut={firstFadingOut} {outputId} transition={transition1} {currentStyle} animationStyle={animation1} {duration} {mirror} {styleBackground} on:loaded={() => loaded(true)} />
-        </div>
-    {/if}
-    {#if background2}
-        <div class="media" class:hidden={loading && firstActive}>
-            <BackgroundMedia data={background2Data} fadingOut={!firstFadingOut} {outputId} transition={transition2} {currentStyle} animationStyle={animation2} {duration} {mirror} {styleBackground} on:loaded={() => loaded(false)} />
-        </div>
-    {/if}
-</div>
+{#if !pixiDelegated}
+    <div class="media" {style}>
+        {#if background1}
+            <div class="media" class:hidden={loading && !firstActive}>
+                <BackgroundMedia data={background1Data} fadingOut={firstFadingOut} {outputId} transition={transition1} {currentStyle} animationStyle={animation1} {duration} {mirror} {styleBackground} on:loaded={() => loaded(true)} />
+            </div>
+        {/if}
+        {#if background2}
+            <div class="media" class:hidden={loading && firstActive}>
+                <BackgroundMedia data={background2Data} fadingOut={!firstFadingOut} {outputId} transition={transition2} {currentStyle} animationStyle={animation2} {duration} {mirror} {styleBackground} on:loaded={() => loaded(false)} />
+            </div>
+        {/if}
+    </div>
+{/if}
 
 <style>
     .hidden {

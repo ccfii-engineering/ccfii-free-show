@@ -126,6 +126,8 @@
         class:border
         style="{$$props.style || ''}{typeof background === 'string' && background.includes('-gradient') ? `background-image: ${background};` : `background-color: ${background};`}transition: {backgroundDuration}ms background-color;{aspectRatio ? `aspect-ratio: ${resolution.width}/${resolution.height};${croppedStyle}` : ''};"
     >
+        <!-- background slot: caller is responsible for absolute positioning + z-index 0 so it sits behind content -->
+        <slot name="background" />
         {#if zoom}
             <span class="zoom" style="zoom: {ratio};{drawZoom === 1 ? '' : `transform: scale(${drawZoom});position: absolute;width: 100%;height: 100%;` + ($draw ? `inset-inline-start: ${drawX}%;top: ${drawY}%;` : '')}">
                 <slot {ratio} />

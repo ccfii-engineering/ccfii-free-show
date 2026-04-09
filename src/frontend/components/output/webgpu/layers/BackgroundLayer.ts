@@ -22,6 +22,7 @@ export interface BackgroundLayerState {
     width: number
     height: number
     videoTimeHandler: VideoTimeCallback | null
+    currentAnimation: string
 }
 
 export function createBackgroundLayer(parentContainer: Container, width: number, height: number, videoTimeHandler: VideoTimeCallback | null = null): BackgroundLayerState {
@@ -44,8 +45,22 @@ export function createBackgroundLayer(parentContainer: Container, width: number,
         sourceHeightB: 0,
         width,
         height,
-        videoTimeHandler
+        videoTimeHandler,
+        currentAnimation: ""
     }
+}
+
+export function setAnimationTransform(state: BackgroundLayerState, animationStyle: string): void {
+    state.currentAnimation = animationStyle
+    // Defer the actual tween setup to backgroundAnimation.ts to keep layer code free of parser logic.
+    // We pass the current active sprite so the animation module can start a tween from its pose.
+    const currentIsA = state.dualState.activeSlot === "a"
+    const sprite = currentIsA ? state.spriteA : state.spriteB
+    if (!sprite) return
+    // Lazy import to avoid circular deps
+    import("../backgroundAnimation").then(({ applyAnimation }) => {
+        applyAnimation(sprite, state.width, state.height, animationStyle)
+    })
 }
 
 export async function updateBackground(state: BackgroundLayerState, data: OutBackground | null, transition: Transition, transitionId: string): Promise<void> {
