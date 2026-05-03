@@ -1,9 +1,10 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
     import type { MediaStyle } from "../../../types/Main"
+    import type { Styles } from "../../../types/Settings"
     import type { Item, Media, Show, Slide, SlideData } from "../../../types/Show"
     import { removeTagsAndContent } from "../../show/slides"
-    import { activeEdit, activePage, activeTimers, effects, focusMode, fullColors, groups, media, outputs, overlays, refreshListBoxes, refreshSlideThumbnails, slideNotesActive, slidesOptions, slideTimers, special, styles, textEditActive } from "../../stores"
+    import { activeEdit, activePage, activeTimers, effects, focusMode, fullColors, groups, media, outputs, overlays, refreshListBoxes, refreshSlideThumbnails, slideNotesActive, slidesOptions, slideTimers, special, styles, templates, textEditActive } from "../../stores"
     import { mediaEntry, styleEntry } from "../../utils/perEntryStores"
     import { wait } from "../../utils/common"
     import { translateText } from "../../utils/language"
@@ -244,15 +245,16 @@
     $: isLocked = show?.locked || isGroupLocked || profile.global === "read" || profile[show?.category || ""] === "read"
 
     // correct view order based on arranged order in Items.svelte (?.reverse())
-    $: itemsList = clone(slide.items) || []
-
-    // style template preview
-    $: if ($special.styleTemplatePreview !== false) updateItemsList(slide)
-    else itemsList = clone(slide.items) || []
-    function updateItemsList(_updater: any = null) {
-        // WIP show scripture style preview as well
-        if (!allOutputsHasStyleTemplate(show?.reference?.type === "scripture")) return
-        itemsList = setTemplateStyle(null, currentStyle, itemsList, outputId, slide?.customDynamicValues)
+    // Depend on currentStyle and $templates explicitly so edits to the assigned style or
+    // its template re-flow into the preview without needing a slide click to invalidate.
+    // Svelte tracks identifiers read inside a `$:` expression — function bodies are not
+    // scanned, so deps must appear here, not only inside computeItemsList.
+    $: itemsList = computeItemsList(slide, currentStyle, $templates, $special.styleTemplatePreview, outputId, show)
+    function computeItemsList(slide: Slide, currentStyle: Styles, _templatesDep: any, styleTemplatePreview: boolean | undefined, outputId: string, show: Show | undefined): Item[] {
+        const baseItems: Item[] = clone(slide.items) || []
+        if (styleTemplatePreview === false) return baseItems
+        if (!allOutputsHasStyleTemplate(show?.reference?.type === "scripture")) return baseItems
+        return setTemplateStyle(null, currentStyle, baseItems, outputId, slide?.customDynamicValues)
     }
 
     // $: styleTemplate = getStyleTemplate(null, currentStyle)
