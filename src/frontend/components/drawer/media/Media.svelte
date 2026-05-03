@@ -3,7 +3,7 @@
     import type { ContentProviderId } from "../../../../electron/contentProviders/base/types"
     import { Main } from "../../../../types/IPC/Main"
     import type { ClickEvent, FileFolder } from "../../../../types/Main"
-    import { requestMain } from "../../../IPC/main"
+    import { requestMain, subscribeBatches } from "../../../IPC/main"
     import { activeDrawerTab, activeEdit, activeFocus, activeMediaTagFilter, activePopup, activeShow, audioFolders, drawerTabsData, focusMode, labelsDisabled, media, mediaFolders, mediaOptions, outLocked, outputs, popupData, providerConnections, selectAllMedia, selected, sorted, special } from "../../../stores"
     import Icon from "../../helpers/Icon.svelte"
     import T from "../../helpers/T.svelte"
@@ -178,9 +178,19 @@
         // WIP only list folders with any recursive media content?
 
         requesting++
-        let currentRequest = requesting
-        const data = await requestMain(Main.READ_FOLDER, { path, depth, captureFolderContent })
+        const currentRequest = requesting
+        const requestId = uid(8)
+        const accum = new Map<string, FileFolder>()
+        const off = subscribeBatches<{ requestId: string; entries: FileFolder[] }>(requestId, (batch) => {
+            if (requesting !== currentRequest) return
+            for (const e of batch.entries) accum.set(e.path, e)
+        })
+
+        const reply = await requestMain(Main.READ_FOLDER, { path, depth, captureFolderContent, requestId, useWorker: $special.workerIndexer !== false })
+        off()
         if (requesting !== currentRequest) return
+
+        const data = accum.size > 0 ? Object.fromEntries(accum) : reply
 
         // check if there's any audio files that the user might want to find
         if (!Array.isArray(path)) {

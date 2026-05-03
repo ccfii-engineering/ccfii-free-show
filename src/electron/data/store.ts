@@ -203,17 +203,16 @@ export async function safeStoreSet(store: any, newData: any, key: string): Promi
 
 export function getStore(id: "config"): Config
 export function getStore<T extends keyof typeof storeFilesData>(id: T): (typeof storeFilesData)[T]["defaults"]
-export function getStore<T extends keyof typeof storeFilesData | "config">(id: T) {
+export function getStore(id: keyof typeof storeFilesData | "config") {
     if (id === "config") return config.store
 
-    const storeId = id as keyof typeof storeFilesData
-    if (!_store[storeId]) throw new Error(`Store with key ${id} does not exist.`)
+    if (!_store[id]) throw new Error(`Store with key ${id} does not exist.`)
 
     try {
-        return _store[storeId]!.store
+        return _store[id]!.store
     } catch (err) {
         console.error(`Could not get store data for ${id}:`, err)
-        return storeFilesData[storeId].defaults
+        return storeFilesData[id].defaults
     }
 }
 

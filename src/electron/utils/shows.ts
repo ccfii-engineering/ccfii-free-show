@@ -1,8 +1,10 @@
 import path from "path"
 import { ToMain } from "../../types/IPC/ToMain"
 import type { Show, Shows, TrimmedShow, TrimmedShows } from "../../types/Show"
+import { indexerService } from "../indexer/IndexerService"
+import { parseShowsFolder } from "../indexer/ShowParser"
 import { sendToMain } from "../IPC/main"
-import { deleteFile, getDataFolderPath, parseShow, readFile, readFileAsync, readFolder, readFolderAsync, renameFileAsync } from "./files"
+import { deleteFile, getDataFolderPath, parseShow, readFileAsync, readFolder, readFolderAsync, renameFileAsync } from "./files"
 
 export function getAllShows() {
     const showsPath = getDataFolderPath("shows")
@@ -74,7 +76,7 @@ export function deleteShows(data: { shows: { name: string; id: string }[] }) {
         deleted.push(name)
     })
 
-    refreshAllShows()
+    void refreshAllShows()
     return { deleted }
 }
 
@@ -102,30 +104,28 @@ export function deleteShowsNotIndexed(data: { shows: TrimmedShows }) {
     return { deleted }
 }
 
-export function refreshAllShows() {
+export async function refreshAllShows(useWorker = true) {
     const showsPath = getDataFolderPath("shows")
 
-    // list all shows in folder
-    const filesInFolder: string[] = readFolder(showsPath)
-    if (!filesInFolder.length) return
-
-    const newShows: TrimmedShows = {}
-
-    for (const name of filesInFolder) loadFile(name)
-    function loadFile(name: string) {
-        if (!name.includes(".show")) return
-
-        const showPath: string = path.join(showsPath, name)
-        const show = parseShow(readFile(showPath))
-
-        if (!show || !show[1]) return
-
-        const trimmedShow = trimShow({ ...show[1], name: name.replace(".show", "") })
-        if (trimmedShow) newShows[show[0]] = trimmedShow
+    const merged: TrimmedShows = {}
+    const onChunk = (chunk: TrimmedShows) => {
+        Object.assign(merged, chunk)
+        sendToMain(ToMain.SHOWS_REFRESH_BATCH, { trimmed: chunk })
     }
 
-    if (!Object.keys(newShows).length) return
-    sendToMain(ToMain.REFRESH_SHOWS2, newShows)
+    if (useWorker) {
+        try {
+            await indexerService.parseShows(showsPath, 100, onChunk)
+        } catch (err) {
+            console.error("[indexer] worker parseShows failed, falling back to in-process parse:", err)
+            await parseShowsFolder(showsPath, { chunkSize: 100 }, onChunk)
+        }
+    } else {
+        await parseShowsFolder(showsPath, { chunkSize: 100 }, onChunk)
+    }
+
+    if (!Object.keys(merged).length) return
+    sendToMain(ToMain.REFRESH_SHOWS2, merged)
 }
 
 export async function getEmptyShows(data: { cached: Shows }) {

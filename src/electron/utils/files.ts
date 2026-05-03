@@ -18,6 +18,7 @@ import type { Item, Show, TrimmedShows } from "../../types/Show"
 import { imageExtensions, mimeTypes, videoExtensions } from "../data/media"
 import { _store, appDataPath, config, getStore, setStore, setStoreValue } from "../data/store"
 import { createThumbnail, doesMediaExist, filePathHashCode } from "../data/thumbnails"
+import { indexerService } from "../indexer/IndexerService"
 import { sendMain, sendToMain } from "../IPC/main"
 import { OutputHelper } from "../output/OutputHelper"
 import { mainWindow, setAutoProfile, toApp } from "./../index"
@@ -393,11 +394,82 @@ function getMediaFolderPath(name: Parameters<typeof app.getPath>[0]): string {
 }
 
 // READ_FOLDER
-export async function readFolderContent(data: { path: string | string[]; depth?: number; generateThumbnails?: boolean; captureFolderContent?: boolean }) {
+const READ_FOLDER_BATCH_SIZE = 200
+const READ_FOLDER_STAT_CONCURRENCY = 16
+
+class ReadFolderSemaphore {
+    private inflight = 0
+    private queue: (() => void)[] = []
+    private limit: number
+    constructor(limit: number) {
+        this.limit = limit
+    }
+    async acquire() {
+        if (this.inflight < this.limit) {
+            this.inflight++
+            return
+        }
+        await new Promise<void>((resolve) => this.queue.push(resolve))
+        this.inflight++
+    }
+    release() {
+        this.inflight--
+        const next = this.queue.shift()
+        if (next) next()
+    }
+}
+
+export async function readFolderContent(data: { path: string | string[]; depth?: number; generateThumbnails?: boolean; captureFolderContent?: boolean; useWorker?: boolean }, onBatch?: (batch: FileFolder[]) => void) {
     const folderContent = new Map<string, FileFolder>()
+    const pendingBatch: FileFolder[] = []
+    const sem = new ReadFolderSemaphore(READ_FOLDER_STAT_CONCURRENCY)
 
     if (!Array.isArray(data.path)) data.path = [data.path]
     if (data.depth === undefined) data.depth = 0
+
+    const recordEntry = (entry: FileFolder) => {
+        folderContent.set(entry.path, entry)
+        if (onBatch) pendingBatch.push(entry)
+    }
+
+    const flushBatch = async (force = false) => {
+        if (!onBatch || pendingBatch.length === 0) return
+        if (!force && pendingBatch.length < READ_FOLDER_BATCH_SIZE) return
+        const out = pendingBatch.splice(0, pendingBatch.length)
+        onBatch(out)
+        await new Promise<void>((r) => setImmediate(r))
+    }
+
+    // Phase 2: route through utility process for the common case (no captureFolderContent).
+    // Capture-mode walks have nuanced filtering that lives in the in-process recursion below,
+    // so we keep them on main for now.
+    if (data.useWorker !== false && !data.captureFolderContent) {
+        try {
+            await indexerService.readFolder({ paths: data.path, depth: data.depth, captureFolderContent: false, generateThumbnails: !!data.generateThumbnails }, (entries) => {
+                const enriched = entries.map((entry) => {
+                    if (entry.isFolder) return entry
+                    const ext = path.extname(entry.name).substring(1)
+                    let thumbnailPath = ""
+                    if (data.generateThumbnails && isMedia(ext)) {
+                        try {
+                            thumbnailPath = createThumbnail(entry.path)
+                        } catch (err) {
+                            console.error("Thumbnail creation failed:", err)
+                        }
+                    }
+                    return { ...entry, thumbnailPath }
+                })
+                for (const entry of enriched) folderContent.set(entry.path, entry)
+                if (onBatch) {
+                    onBatch(enriched)
+                }
+            })
+            return Object.fromEntries(folderContent)
+        } catch (err) {
+            console.error("[indexer] worker readFolder failed, falling back to in-process walk:", err)
+            // fall through to in-process walk below
+        }
+    }
 
     await Promise.all(
         data.path.map(async (folderPath) => {
@@ -411,13 +483,14 @@ export async function readFolderContent(data: { path: string | string[]; depth?:
     async function getFolderContentRecursive(folderPath: string, currentDepth = 0) {
         const exceededDepth = currentDepth > data.depth!
         if ((data.captureFolderContent && currentDepth < 2 ? false : exceededDepth) || folderContent.has(folderPath)) {
-            let filePaths: string[] = []
+            let shallowFiles: string[] = []
             if (currentDepth === 1) {
-                const fileList = await readFolderAsync(folderPath)
-                filePaths = fileList.map((name) => path.join(folderPath, name))
+                const shallowList = await readFolderAsync(folderPath)
+                shallowFiles = shallowList.map((name) => path.join(folderPath, name))
             }
 
-            folderContent.set(folderPath, { isFolder: true, path: folderPath, name: path.basename(folderPath), files: filePaths })
+            recordEntry({ isFolder: true, path: folderPath, name: path.basename(folderPath), files: shallowFiles })
+            await flushBatch()
             return
         }
 
@@ -427,31 +500,43 @@ export async function readFolderContent(data: { path: string | string[]; depth?:
         const captureThumbnailPaths = data.captureFolderContent && currentDepth === 1 ? getFirstMediaFiles(filePaths, 4) : []
         const currentPaths = data.captureFolderContent && exceededDepth ? captureThumbnailPaths : filePaths
 
-        await Promise.all(
-            currentPaths.map(async (filePath) => {
-                const stats = await getFileStatsAsync(filePath)
-                if (!stats) return
+        const childPromises: Promise<void>[] = []
+        for (const filePath of currentPaths) {
+            await sem.acquire()
+            childPromises.push(
+                (async () => {
+                    try {
+                        const stats = await getFileStatsAsync(filePath)
+                        if (!stats) return
 
-                if (stats.isDirectory()) {
-                    await getFolderContentRecursive(filePath, currentDepth + 1)
-                } else {
-                    let thumbnailPath = ""
-                    if (captureThumbnailPaths.includes(filePath) || (data.generateThumbnails && currentDepth === 0 && isMedia(path.extname(filePath).substring(1)))) {
-                        try {
-                            thumbnailPath = createThumbnail(filePath)
-                        } catch (err) {
-                            console.error("Thumbnail creation failed:", err)
+                        if (stats.isDirectory()) {
+                            await getFolderContentRecursive(filePath, currentDepth + 1)
+                        } else {
+                            let thumbnailPath = ""
+                            if (captureThumbnailPaths.includes(filePath) || (data.generateThumbnails && currentDepth === 0 && isMedia(path.extname(filePath).substring(1)))) {
+                                try {
+                                    thumbnailPath = createThumbnail(filePath)
+                                } catch (err) {
+                                    console.error("Thumbnail creation failed:", err)
+                                }
+                            }
+
+                            recordEntry({ isFolder: false, path: filePath, name: path.basename(filePath), thumbnailPath, stats })
+                            await flushBatch()
                         }
+                    } finally {
+                        sem.release()
                     }
+                })()
+            )
+        }
+        await Promise.all(childPromises)
 
-                    folderContent.set(filePath, { isFolder: false, path: filePath, name: path.basename(filePath), thumbnailPath, stats })
-                }
-            })
-        )
-
-        folderContent.set(folderPath, { isFolder: true, path: folderPath, name: path.basename(folderPath), files: filePaths })
+        recordEntry({ isFolder: true, path: folderPath, name: path.basename(folderPath), files: filePaths })
+        await flushBatch()
     }
 
+    await flushBatch(true)
     return Object.fromEntries(folderContent)
 }
 

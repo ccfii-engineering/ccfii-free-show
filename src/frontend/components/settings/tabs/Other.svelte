@@ -33,9 +33,9 @@
     //     { id: "full", name: "$:settings.full:$ (60 fps)" },
     // ]
 
-    function updateSpecial(value, key) {
+    function updateSpecial(value, key, allowEmpty = false) {
         special.update((a) => {
-            if (!value) delete a[key]
+            if (!value && !allowEmpty) delete a[key]
             else a[key] = value
 
             return a
@@ -191,6 +191,8 @@
 <MaterialToggleSwitch label="settings.auto_error_reporting" checked={autoErrorReporting} defaultValue={true} on:change={toggleAutoErrorReporting} />
 
 <MaterialToggleSwitch label="settings.disable_hardware_acceleration" checked={disableHardwareAcceleration} defaultValue={false} on:change={toggleHardwareAcceleration} />
+
+<MaterialToggleSwitch label="settings.use_worker_indexer" checked={$special.workerIndexer !== false} defaultValue={true} on:change={(e) => updateSpecial(e.detail, "workerIndexer", true)} />
 <!-- "optimized_mode": "Optimized mode", -->
 <!-- <MaterialToggleSwitch label="settings.optimized_mode" checked={$special.optimizedMode} defaultValue={false} on:change={(e) => updateSpecial(e.detail, "optimizedMode")} /> -->
 

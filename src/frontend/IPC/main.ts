@@ -108,3 +108,19 @@ export function receiveToMain<ID extends ToMain, R = Awaited<ToMainSendPayloads[
 export function destroyMain(listenerId: string) {
     window.api.removeListener(MAIN, listenerId)
 }
+
+// Indexer streaming: per-request batch subscribers
+type BatchHandler<T> = (data: T) => void
+const batchSubscribers = new Map<string, BatchHandler<any>>()
+
+export function subscribeBatches<T extends { requestId: string }>(requestId: string, handler: BatchHandler<T>): () => void {
+    batchSubscribers.set(requestId, handler)
+    return () => {
+        batchSubscribers.delete(requestId)
+    }
+}
+
+export function dispatchBatch<T extends { requestId: string }>(payload: T) {
+    const handler = batchSubscribers.get(payload.requestId)
+    if (handler) handler(payload)
+}

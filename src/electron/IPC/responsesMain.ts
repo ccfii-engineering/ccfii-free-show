@@ -5,6 +5,8 @@ import path from "path"
 import { getMainWindow, isProd, mainWindow, maximizeMain, setGlobalMenu } from ".."
 import type { MainResponses } from "../../types/IPC/Main"
 import { Main } from "../../types/IPC/Main"
+import { ToMain } from "../../types/IPC/ToMain"
+import { sendToMain } from "./main"
 import type { ErrorLog, LyricSearchResult, OS } from "../../types/Main"
 import { openNowPlaying, setPlayingState, unsetPlayingAudio } from "../audio/nowPlaying"
 import { canSync, getSyncTeams, hasDataChanged, hasTeamData, markAsNewSync, syncData } from "../cloud/syncManager"
@@ -158,7 +160,15 @@ export const mainResponses: MainResponses = {
     [Main.MEDIA_FOLDER_COPY]: (data) => addToMediaFolder(data.paths),
     [Main.READ_BIBLES_FOLDER]: () => readBiblesFolder(),
     [Main.FILE_INFO]: (data) => getFileInfo(data),
-    [Main.READ_FOLDER]: (data) => readFolderContent(data),
+    // useWorker flag (default on) controls whether to route through the
+    // utilityProcess indexer or stay on main; renderer sets this from special.workerIndexer.
+    [Main.READ_FOLDER]: async (data) => {
+        const requestId = data.requestId
+        return readFolderContent(data, (batch) => {
+            if (!requestId) return
+            sendToMain(ToMain.READ_FOLDER_BATCH, { requestId, entries: batch })
+        })
+    },
     [Main.READ_FILE]: (data) => ({ content: readFile(data.path) }),
     [Main.OPEN_FOLDER]: (data) => selectFolder(data),
     [Main.OPEN_FILE]: (data) => selectFiles(data),

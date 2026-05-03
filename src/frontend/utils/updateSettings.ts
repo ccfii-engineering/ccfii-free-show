@@ -146,6 +146,11 @@ export function updateSettings(data: any) {
         special.update((a) => ({ ...a, useWebGPUOutput: true }))
     }
 
+    // Background indexer worker — default on. Toggle off if the worker misbehaves.
+    if (get(special).workerIndexer === undefined) {
+        special.update((a) => ({ ...a, workerIndexer: true }))
+    }
+
     // theme
     // merge any missing built-in themes into the user's stored themes so new presets (e.g. CCFII) show up for existing installs
     themes.update((a) => {

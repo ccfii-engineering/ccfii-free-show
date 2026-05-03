@@ -3,8 +3,9 @@
     import { uid } from "uid"
     import type { ContentProviderId } from "../../../../electron/contentProviders/base/types"
     import { Main } from "../../../../types/IPC/Main"
+    import type { FileFolder } from "../../../../types/Main"
     import { ToMain } from "../../../../types/IPC/ToMain"
-    import { destroyMain, receiveToMain, requestMain, sendMain } from "../../../IPC/main"
+    import { destroyMain, receiveToMain, requestMain, sendMain, subscribeBatches } from "../../../IPC/main"
     import { drawerTabsData, labelsDisabled, media, mediaFolders, providerConnections, special } from "../../../stores"
     import { getAccess } from "../../../utils/profile"
     import { keysToID, sortObject } from "../../helpers/array"
@@ -28,7 +29,18 @@
     $: if (foldersList.length) getCounts()
     async function getCounts() {
         const folderPaths = foldersList.map((a) => a.path || "")
-        const data = keysToID(await requestMain(Main.READ_FOLDER, { path: folderPaths }))
+
+        const requestId = uid(8)
+        const accum = new Map<string, FileFolder>()
+        const off = subscribeBatches<{ requestId: string; entries: FileFolder[] }>(requestId, (batch) => {
+            for (const e of batch.entries) accum.set(e.path, e)
+        })
+
+        const reply = await requestMain(Main.READ_FOLDER, { path: folderPaths, requestId, useWorker: $special.workerIndexer !== false })
+        off()
+        const merged = accum.size > 0 ? Object.fromEntries(accum) : reply
+        const data = keysToID(merged)
+
         const newFolderLengths: { [key: string]: number } = {}
         allCount = 0
 

@@ -11,6 +11,7 @@ import { cloudConnect } from "./cloud/cloud"
 import { startExport } from "./data/export"
 import { registerProtectedProtocol } from "./data/protected"
 import { config, setupStores } from "./data/store"
+import { indexerService } from "./indexer/IndexerService"
 import { receiveMain, sendMain } from "./IPC/main"
 import { receiveNDI } from "./ndi/talk"
 import { OutputHelper } from "./output/OutputHelper"
@@ -117,6 +118,14 @@ async function startApp() {
     if (RECORD_STARTUP_TIME) console.timeEnd("Initial")
 
     createMain()
+
+    // start the file indexer worker (utilityProcess) early so the first
+    // READ_FOLDER request finds it ready
+    try {
+        indexerService.start()
+    } catch (err) {
+        console.error("Failed to start indexer service:", err)
+    }
 
     // prevent display sleeping
     powerSaveBlockerId = powerSaveBlocker.start("prevent-display-sleep")
@@ -257,7 +266,7 @@ const windowBounds = {
     get(): Rectangle {
         try {
             const bounds = config.get("bounds")
-            if (bounds?.width && bounds?.height) return bounds 
+            if (bounds?.width && bounds?.height) return bounds
         } catch (err) {
             console.warn("Failed to load saved bounds:", err)
         }
@@ -302,6 +311,7 @@ app.on("window-all-closed", () => {
 
 // close app completely on mac
 app.on("will-quit", () => {
+    indexerService.stop()
     if (isMac) app.exit()
 })
 

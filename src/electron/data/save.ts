@@ -31,7 +31,7 @@ export async function save(data: SaveData) {
         const newData = (data as any)[key]
         if (!newData || !isValidJSON(newData)) return
 
-        const currentData = getStore(key as keyof typeof _store)
+        const currentData = getStore(key)
         if (checkIfMatching(currentData, newData)) return
 
         await safeStoreSet(store, newData, key)

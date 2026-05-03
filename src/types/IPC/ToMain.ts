@@ -1,5 +1,6 @@
 import type { ICommonTagsResult } from "music-metadata"
 import type { ContentProviderId } from "../../electron/contentProviders/base/types"
+import type { FileFolder } from "../Main"
 import type { TrimmedShows } from "../Show"
 
 export enum ToMain {
@@ -32,7 +33,10 @@ export enum ToMain {
     API_TRIGGER2 = "API_TRIGGER2",
     OPEN_FOLDER2 = "OPEN_FOLDER2",
     OPEN_FILE2 = "OPEN_FILE2",
-    RECEIVE_MIDI2 = "RECEIVE_MIDI2"
+    RECEIVE_MIDI2 = "RECEIVE_MIDI2",
+    // Indexer streaming
+    READ_FOLDER_BATCH = "READ_FOLDER_BATCH",
+    SHOWS_REFRESH_BATCH = "SHOWS_REFRESH_BATCH"
 }
 export interface ToMainSendPayloads {
     [ToMain.ALERT]: string
@@ -65,6 +69,9 @@ export interface ToMainSendPayloads {
     [ToMain.OPEN_FOLDER2]: { channel: string; path: string }
     [ToMain.OPEN_FILE2]: { channel: string; id: string; files: string[]; content: { [key: string]: string } }
     [ToMain.RECEIVE_MIDI2]: { id: string; values: any; type: "noteon" | "noteoff" | "control" }
+    // Indexer streaming
+    [ToMain.READ_FOLDER_BATCH]: { requestId: string; entries: FileFolder[] }
+    [ToMain.SHOWS_REFRESH_BATCH]: { trimmed: TrimmedShows }
 }
 
 export interface ToMainReturnPayloads {

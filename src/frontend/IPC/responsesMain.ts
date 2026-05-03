@@ -90,7 +90,7 @@ import { invalidateSearchIndex } from "../utils/searchFast"
 import { updateSettings, updateSyncedSettings, updateThemeValues } from "../utils/updateSettings"
 import type { MainReturnPayloads } from "./../../types/IPC/Main"
 import { Main } from "./../../types/IPC/Main"
-import { sendMain } from "./main"
+import { dispatchBatch, sendMain } from "./main"
 
 type MainHandler<ID extends Main | ToMain> = (data: ID extends keyof ToMainSendPayloads ? ToMainSendPayloads[ID] : ID extends keyof MainReturnPayloads ? Awaited<MainReturnPayloads[ID]> : undefined) => void
 export type MainResponses = {
@@ -189,6 +189,15 @@ export const mainResponses: MainResponses = {
         alertMessage.set("<h3>Updated shows</h3><br>● Old shows: " + oldCount + "<br>● New shows: " + newCount)
         activePopup.set("alert")
     },
+    [ToMain.READ_FOLDER_BATCH]: (data) => {
+        dispatchBatch(data)
+    },
+    [ToMain.SHOWS_REFRESH_BATCH]: (data) => {
+        // Stream show metadata into the live store as chunks arrive.
+        // Terminal REFRESH_SHOWS2 still arrives and replaces atomically.
+        const current = get(shows)
+        shows.set({ ...current, ...data.trimmed })
+    },
     [ToMain.BACKUP]: ({ finished, path }) => {
         if (!finished) return activePopup.set(null)
 
@@ -251,13 +260,16 @@ export const mainResponses: MainResponses = {
             })
 
             if (data.status === "complete" || data.status === "error") {
-                setTimeout(() => {
-                    pdfImports.update((current) => {
-                        const cleaned = new Map(current)
-                        cleaned.delete(data.filePath)
-                        return cleaned
-                    })
-                }, data.status === "error" ? 7000 : 3000)
+                setTimeout(
+                    () => {
+                        pdfImports.update((current) => {
+                            const cleaned = new Map(current)
+                            cleaned.delete(data.filePath)
+                            return cleaned
+                        })
+                    },
+                    data.status === "error" ? 7000 : 3000
+                )
             }
 
             return updated
