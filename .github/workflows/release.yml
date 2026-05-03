@@ -45,7 +45,7 @@ jobs:
 
     publish_mac:
         name: "Publish MacOS"
-        runs-on: macos-latest
+        runs-on: blacksmith-6vcpu-macos-15
         needs: publish_windows
 
         steps:
