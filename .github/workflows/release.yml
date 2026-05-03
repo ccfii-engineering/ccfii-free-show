@@ -18,9 +18,10 @@ jobs:
               uses: actions/checkout@v4
 
             - name: Install Node.js and NPM
-              uses: actions/setup-node@v4
+              uses: useblacksmith/setup-node@v5
               with:
                   node-version: 22
+                  cache: "npm"
 
             - name: Install dependencies
               # npm ci is better, but requires package-lock.json file
@@ -45,7 +46,7 @@ jobs:
 
     publish_mac:
         name: "Publish MacOS"
-        runs-on: macos-latest
+        runs-on: blacksmith-6vcpu-macos-15
         needs: publish_windows
 
         steps:
@@ -53,9 +54,10 @@ jobs:
               uses: actions/checkout@v4
 
             - name: Install Node.js and NPM
-              uses: actions/setup-node@v4
+              uses: useblacksmith/setup-node@v5
               with:
                   node-version: 22
+                  cache: "npm"
 
             # Change Python version: https://github.com/nodejs/node-gyp/issues/2869
             - name: Install Python 3.11

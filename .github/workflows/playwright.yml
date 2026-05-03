@@ -14,13 +14,22 @@ jobs:
         runs-on: blacksmith-4vcpu-ubuntu-2404
         steps:
             - uses: actions/checkout@v4
-            - uses: actions/setup-node@v4
+            - uses: useblacksmith/setup-node@v5
               with:
                   node-version: 20
+                  cache: "npm"
             - name: Install libraries
               run: sudo apt-get install libfontconfig1-dev
             - name: Install dependencies
               run: npm install
+            - name: Cache Playwright browsers
+              uses: useblacksmith/cache@v5
+              id: playwright-cache
+              with:
+                  path: ~/.cache/ms-playwright
+                  key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+                  restore-keys: |
+                      playwright-${{ runner.os }}-
             - name: Install Playwright Browsers
               run: npx playwright install --with-deps
             - name: Build
