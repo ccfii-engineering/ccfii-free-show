@@ -13,6 +13,7 @@
     import BmdStream from "../../drawer/live/BMDStream.svelte"
     import NdiStream from "../../drawer/live/NDIStream.svelte"
     import { getMediaStyle } from "../../helpers/media"
+    import { getPreviewVideoSyncUpdate } from "../videoPreviewSync"
     import Player from "../../system/Player.svelte"
     import Camera from "../Camera.svelte"
     import OutputTransition from "../transitions/OutputTransition.svelte"
@@ -68,18 +69,17 @@
     function setPreviewVideoTime() {
         // timeout in case video is going to fade out
         setTimeout(() => {
-            if (fadingOut || (!videoData.paused && videoTime < 2)) return
+            const update = getPreviewVideoSyncUpdate({
+                fadingOut,
+                localPaused: videoData.paused,
+                localTime: videoTime,
+                remotePaused: $videosData[outputId]?.paused,
+                remoteTime: $videosTime[outputId]
+            })
+            if (!update) return
 
-            const diff = Math.abs($videosTime[outputId] - videoTime)
-            if (diff > 0.5) {
-                videoTime = $videosTime[outputId]
-
-                if (videoTime < 0.6) {
-                    videoData.paused = true // quick fix for preview stutter when video loops (should be a better fix)
-                } else {
-                    videoData.paused = $videosData[outputId]?.paused
-                }
-            }
+            videoTime = update.time
+            videoData.paused = update.paused
         }, 50)
     }
 

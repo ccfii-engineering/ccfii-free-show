@@ -1,6 +1,7 @@
 import { get } from "svelte/store"
 import type { Shows } from "../../../types/Show"
 import { activePlaylist, audioPlaylists, outputs, playingAudio, playingVideos, projects, shows, showsCache, variables, videosData, videosTime } from "../../stores"
+import { isVideoLooping } from "../../utils/videoLoopState"
 import { getTextLines } from "../edit/scripts/textStyle"
 import { keysToID } from "../helpers/array"
 import { getFirstActiveOutput } from "../helpers/output"
@@ -71,14 +72,14 @@ export function getPlayingVideoState() {
     const bg = output?.out?.background
     const path = bg?.path || bg?.id || ""
 
-    const playingList = (get(playingVideos) as any[]) || []
+    const playingList = get(playingVideos) || []
     const videoEntry = playingList.find((v: any) => v?.id === path) || {}
     const videoData = get(videosData)[outputId] || {}
 
     const duration = videoData?.duration ?? videoEntry?.duration ?? videoEntry?.video?.duration ?? 0
     const time = get(videosTime)[outputId] ?? videoEntry?.time ?? videoEntry?.video?.currentTime ?? 0
     const paused = videoData?.paused ?? videoEntry?.paused ?? videoEntry?.video?.paused ?? false
-    const loop = bg?.loop !== false // default to true
+    const loop = isVideoLooping(bg)
     const muted = bg?.muted !== false // default to true
 
     return { duration, time, paused, loop, muted }

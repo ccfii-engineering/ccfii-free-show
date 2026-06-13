@@ -3,12 +3,11 @@ import type { OutBackground, Transition } from "../../../../types/Show"
 
 export const PIXI_BG_BRIDGE_KEY = Symbol("pixiBackgroundBridge")
 
-/** Media types the Pixi layer can render. Everything else must fall back to DOM. */
-export const PIXI_SUPPORTED_TYPES = new Set(["media", "video", "image"])
+/** Media types the Pixi layer can render reliably. Everything else must fall back to DOM. */
+export const PIXI_SUPPORTED_TYPES = new Set(["image"])
 
 export function isPixiSupported(type: string | undefined | null): boolean {
-    // undefined/empty defaults to "media" per BackgroundMedia.svelte convention
-    if (!type) return true
+    if (!type) return false
     return PIXI_SUPPORTED_TYPES.has(type)
 }
 

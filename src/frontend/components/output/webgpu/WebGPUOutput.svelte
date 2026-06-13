@@ -6,9 +6,10 @@
     import type { OutBackground, Transition } from "../../../../types/Show"
     import { allOutputs, outputs } from "../../../stores"
     import { outputEntry } from "../../../utils/perEntryStores"
-    import { send } from "../../../utils/request"
+    import { destroy, receive, send } from "../../../utils/request"
     import { getOutputResolution } from "../../helpers/output"
     import Output from "../Output.svelte"
+    import { isVideoTimeReset } from "./videoControlState"
     import { isPixiSupported, providePixiBackgroundBridge, type PixiBackgroundBridge } from "./pixiBackgroundBridge"
 
     export let outputId = ""
@@ -22,6 +23,7 @@
     let pixiReady = false
     let timeSendingTimeout: NodeJS.Timeout | null = null
     let lastVideoDataSent = ""
+    let lastVideoTimeSent = Number.NaN
 
     $: myOutput = outputEntry(outputId)
     $: currentOutput = $myOutput || $allOutputs[outputId] || {}
@@ -97,8 +99,12 @@
     }
     providePixiBackgroundBridge(bridge)
 
+    let listenerId = ""
     onMount(async () => {
         if (!canvas) return
+        listenerId = `WEBGPU_VIDEO_RECEIVE_${outputId}`
+        receive(OUTPUT, videoReceiver, listenerId)
+
         try {
             const PIXI = await import("pixi.js")
             const initRes = getOutputResolution(outputId, $outputs, true)
@@ -126,14 +132,20 @@
             // we live in the output window — we send via IPC to the main window where receivers.ts
             // handles MAIN_TIME/MAIN_DATA → videosTime/videosData. Throttled ~220ms to match the
             // regular path.
-            const videoTimeHandler = ({ currentTime, duration, paused }: { currentTime: number; duration: number; paused: boolean }) => {
-                const nextVideoData = JSON.stringify({ duration, paused })
+            const videoTimeHandler = ({ currentTime, duration, paused, loop, muted }: { currentTime: number; duration: number; paused: boolean; loop: boolean; muted: boolean }) => {
+                const timeReset = isVideoTimeReset(currentTime, lastVideoTimeSent)
+                const nextVideoData = JSON.stringify({ duration, paused, loop, muted })
                 if (nextVideoData !== lastVideoDataSent) {
                     lastVideoDataSent = nextVideoData
-                    send(OUTPUT, ["MAIN_DATA"], { [outputId]: { duration, paused } })
+                    send(OUTPUT, ["MAIN_DATA"], { [outputId]: { duration, paused, loop, muted } })
                 }
-                if (timeSendingTimeout) return
+                if (timeSendingTimeout && !timeReset) return
+                if (timeSendingTimeout) {
+                    clearTimeout(timeSendingTimeout)
+                    timeSendingTimeout = null
+                }
                 send(OUTPUT, ["MAIN_TIME"], { [outputId]: currentTime })
+                lastVideoTimeSent = currentTime
                 timeSendingTimeout = setTimeout(() => {
                     timeSendingTimeout = null
                 }, 220)
@@ -151,6 +163,21 @@
         }
     })
 
+    const videoReceiver = {
+        DATA: (data: any) => {
+            const outputData = data?.[outputId]
+            if (!outputData || !layerMgr || !layerMgrMod) return
+
+            layerMgrMod.updateSlideVideoData(layerMgr, outputData)
+        },
+        TIME: (data: any) => {
+            const outputTime = data?.[outputId]
+            if (!Number.isFinite(outputTime) || !layerMgr || !layerMgrMod) return
+
+            layerMgrMod.updateSlideVideoTime(layerMgr, outputTime)
+        }
+    }
+
     // Resize Pixi canvas when the output resolution changes
     $: if (pixiReady && layerMgr && layerMgrMod && resolution?.width > 0 && resolution?.height > 0) {
         rendererMod.resizeApp(pixiApp, resolution.width, resolution.height)
@@ -158,6 +185,7 @@
     }
 
     onDestroy(() => {
+        if (listenerId) destroy(OUTPUT, listenerId)
         if (slideBgClearTimer) clearTimeout(slideBgClearTimer)
         if (styleBgClearTimer) clearTimeout(styleBgClearTimer)
         if (timeSendingTimeout) clearTimeout(timeSendingTimeout)

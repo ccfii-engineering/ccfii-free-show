@@ -1,10 +1,13 @@
-import { Container, Sprite, Texture } from "pixi.js"
+import { Container } from "pixi.js"
+import type { Sprite, Texture } from "pixi.js"
 import type { OutBackground, Transition } from "../../../../../types/Show"
 import type { DualSpriteState } from "../../../../../types/WebGPU"
 import { loadImageTexture, createVideoTexture, createMediaSprite, applyFit, removeSprite } from "./MediaLayer"
 import { startTransition, cancelTransition } from "../transitionManager"
+import { applyVideoControlData, getVideoControlSnapshot, type VideoControlData } from "../videoControlState"
 
-export type VideoTimeCallback = (info: { currentTime: number; duration: number; paused: boolean }) => void
+export type VideoTimeCallback = (info: ReturnType<typeof getVideoControlSnapshot>) => void
+type WebGPUOutBackground = OutBackground & { fit?: string }
 
 export interface BackgroundLayerState {
     container: Container
@@ -63,7 +66,7 @@ export function setAnimationTransform(state: BackgroundLayerState, animationStyl
     })
 }
 
-export async function updateBackground(state: BackgroundLayerState, data: OutBackground | null, transition: Transition, transitionId: string): Promise<void> {
+export async function updateBackground(state: BackgroundLayerState, data: WebGPUOutBackground | null, transition: Transition, transitionId: string): Promise<void> {
     if (!data || (!data.path && !data.id)) {
         clearBackground(state, transitionId)
         return
@@ -88,6 +91,7 @@ export async function updateBackground(state: BackgroundLayerState, data: OutBac
             if (currentIsA) state.fitA = fit
             else state.fitB = fit
         }
+        await updateActiveVideoData(state, { loop: data.loop, muted: data.muted })
         return
     }
 
@@ -100,12 +104,12 @@ export async function updateBackground(state: BackgroundLayerState, data: OutBac
 
     let newTexture: Texture
     let videoElement: HTMLVideoElement | null = null
-    let srcW: number = 0
-    let srcH: number = 0
+    let srcW = 0
+    let srcH = 0
 
     if (isVideo && isVideoPath(newPath)) {
         videoElement = createHiddenVideoElement(newPath, data.loop ?? false, data.muted ?? true)
-        if (state.videoTimeHandler) attachVideoTimeListeners(videoElement, state.videoTimeHandler)
+        attachVideoTimeListeners(videoElement, state.videoTimeHandler)
         await waitForVideoReady(videoElement)
         newTexture = createVideoTexture(videoElement)
         srcW = videoElement.videoWidth
@@ -239,6 +243,24 @@ function clearBackground(state: BackgroundLayerState, transitionId: string): voi
     state.dualState = { activeSlot: "a", slotAPath: "", slotBPath: "", transition: null }
 }
 
+export async function updateActiveVideoData(state: BackgroundLayerState, data: VideoControlData): Promise<void> {
+    const video = getActiveVideoElement(state)
+    if (!video) return
+
+    await applyVideoControlData(video, data)
+    reportVideoState(state, video)
+}
+
+function getActiveVideoElement(state: BackgroundLayerState): HTMLVideoElement | null {
+    const activeVideo = state.dualState.activeSlot === "a" ? state.videoElementA : state.videoElementB
+    return activeVideo || state.videoElementA || state.videoElementB
+}
+
+function reportVideoState(state: BackgroundLayerState, video: HTMLVideoElement): void {
+    if (!state.videoTimeHandler) return
+    state.videoTimeHandler(getVideoControlSnapshot(video))
+}
+
 function toFileUrl(path: string): string {
     if (!path || path.startsWith("http") || path.startsWith("file://") || path.startsWith("blob:") || path.startsWith("data:")) return path
     // Local filesystem path — Electron needs file:// protocol
@@ -326,8 +348,8 @@ function cleanupVideoElement(video: HTMLVideoElement | null): void {
     video.remove()
 }
 
-function attachVideoTimeListeners(video: HTMLVideoElement, handler: VideoTimeCallback): void {
-    const report = () => handler({ currentTime: video.currentTime || 0, duration: Number.isFinite(video.duration) ? video.duration : 0, paused: video.paused })
+function attachVideoTimeListeners(video: HTMLVideoElement, handler: VideoTimeCallback | null): void {
+    const report = () => handler?.(getVideoControlSnapshot(video))
     video.addEventListener("timeupdate", report)
     video.addEventListener("loadedmetadata", report)
     video.addEventListener("play", report)

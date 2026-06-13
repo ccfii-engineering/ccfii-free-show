@@ -9,6 +9,7 @@ import { AudioPlaylist } from "../../audio/audioPlaylist"
 import { activeDrawerTab, activeEdit, activePage, activeProject, activeShow, activeTimers, audioPlaylists, draw, drawSettings, drawTool, folders, groupNumbers, groups, media, openScripture, outLocked, outputs, overlays, pdfImports, playingAudio, playingMetronome, projects, refreshEditSlide, selected, showsCache, sortedShowsList, special, styles, timers, variables, volume } from "../../stores"
 import { newToast } from "../../utils/common"
 import { send } from "../../utils/request"
+import { getToggledVideoLoop, isVideoLooping } from "../../utils/videoLoopState"
 import { getDynamicValue } from "../edit/scripts/itemHelpers"
 import { keysToID, removeDeleted, sortByName } from "../helpers/array"
 import { ondrop } from "../helpers/drop"
@@ -474,13 +475,13 @@ export function setNextSlideTimer(time: number) {
     // GO TO START
 
     // remove existing go to start if just one applied to any slide
-    let goToStartRefs = allActiveSlides.reduce((value, ref) => (ref.data?.end ? [...value, ref] : value), [] as any[])
+    const goToStartRefs = allActiveSlides.reduce((refs, ref) => (ref.data?.end ? [...refs, ref] : refs), [] as any[])
     if (goToStartRefs.length === 1) {
         const showId = get(activeShow)?.id || ""
         const layoutId = _show().get("settings.activeLayout")
 
         showsCache.update((a) => {
-            let ref = goToStartRefs[0]
+            const ref = goToStartRefs[0]
             if (!ref) return a
 
             if (ref.type === "parent") delete a[showId].layouts[layoutId]?.slides?.[ref.index]?.end
@@ -600,16 +601,15 @@ export function toggleMediaLoop() {
     const currentBg = get(outputs)[activeOutput.id]?.out?.background
     if (!currentBg) return
 
-    const isLooping = currentBg.loop !== false
-    setOutput("background", { ...currentBg, loop: !isLooping })
+    setOutput("background", { ...currentBg, loop: getToggledVideoLoop(currentBg) })
 }
 
 export function getMediaLoopState(): boolean {
     const activeOutput = getFirstActiveOutput()
-    if (!activeOutput) return true
+    if (!activeOutput) return false
 
     const currentBg = get(outputs)[activeOutput.id]?.out?.background
-    return currentBg?.loop !== false
+    return isVideoLooping(currentBg)
 }
 
 export function toggleMediaMute() {
@@ -814,7 +814,11 @@ function levenshteinDistance(a, b) {
 
 export async function getPDFThumbnails({ path }: API_media) {
     if (!path) return []
-    const name = path.split(/[/\\]/).pop()?.replace(/\.pdf$/i, "") || "PDF"
+    const name =
+        path
+            .split(/[/\\]/)
+            .pop()
+            ?.replace(/\.pdf$/i, "") || "PDF"
     const renderPhasePercent = 80
     const totalPercent = 100
 

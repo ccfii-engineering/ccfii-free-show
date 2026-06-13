@@ -1,4 +1,5 @@
 import type { OutBackground, Transition } from "../../../../types/Show"
+import type { VideoControlData } from "./videoControlState"
 import type { VideoTimeCallback } from "./layers/BackgroundLayer"
 
 // All layer modules loaded dynamically to avoid static pixi.js imports
@@ -58,31 +59,27 @@ export async function createLayerManager(app: any, containers: any, width: numbe
     }
 }
 
-export async function updateStyleBackground(
-    state: LayerManagerState,
-    data: OutBackground | null,
-    transition: Transition
-): Promise<void> {
+export async function updateStyleBackground(state: LayerManagerState, data: OutBackground | null, transition: Transition): Promise<void> {
     const bg = await getBgMod()
     await bg.updateBackground(state.styleBackground, data, transition, "style-bg")
 }
 
-export async function updateSlideBackground(
-    state: LayerManagerState,
-    data: OutBackground | null,
-    transition: Transition
-): Promise<void> {
+export async function updateSlideBackground(state: LayerManagerState, data: OutBackground | null, transition: Transition): Promise<void> {
     const bg = await getBgMod()
     await bg.updateBackground(state.slideBackground, data, transition, "slide-bg")
 }
 
-export async function updateSlideText(
-    state: LayerManagerState,
-    slideElement: HTMLElement | null,
-    slideKey: string,
-    transition: Transition,
-    isClearing: boolean
-): Promise<void> {
+export async function updateSlideVideoData(state: LayerManagerState, data: VideoControlData): Promise<void> {
+    const bg = await getBgMod()
+    await bg.updateActiveVideoData(state.slideBackground, data)
+}
+
+export async function updateSlideVideoTime(state: LayerManagerState, time: number): Promise<void> {
+    const bg = await getBgMod()
+    await bg.updateActiveVideoData(state.slideBackground, { currentTime: time })
+}
+
+export async function updateSlideText(state: LayerManagerState, slideElement: HTMLElement | null, slideKey: string, transition: Transition, isClearing: boolean): Promise<void> {
     const sl = await getSlideMod()
     sl.updateSlideContent(state.slideLayer, slideElement, slideKey, transition, isClearing)
 }
