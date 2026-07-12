@@ -1,0 +1,6 @@
+<-- Build v1.10.2 -->
+
+What's new in this build:
+
+Presentation Output
+- Clearing an output now reliably removes the previous frame without leaving a stale image artifact.
