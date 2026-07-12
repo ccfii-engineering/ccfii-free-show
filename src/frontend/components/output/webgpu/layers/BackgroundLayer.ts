@@ -2,6 +2,7 @@ import { Container } from "pixi.js"
 import type { Sprite, Texture } from "pixi.js"
 import type { OutBackground, Transition } from "../../../../../types/Show"
 import type { DualSpriteState } from "../../../../../types/WebGPU"
+import { createLatestRequest } from "../../../../utils/latestRequest"
 import { loadImageTexture, createVideoTexture, createMediaSprite, applyFit, removeSprite } from "./MediaLayer"
 import { startTransition, cancelTransition } from "../transitionManager"
 import { applyVideoControlData, getVideoControlSnapshot, type VideoControlData } from "../videoControlState"
@@ -26,6 +27,7 @@ export interface BackgroundLayerState {
     height: number
     videoTimeHandler: VideoTimeCallback | null
     currentAnimation: string
+    latestUpdate: ReturnType<typeof createLatestRequest>
 }
 
 export function createBackgroundLayer(parentContainer: Container, width: number, height: number, videoTimeHandler: VideoTimeCallback | null = null): BackgroundLayerState {
@@ -49,7 +51,8 @@ export function createBackgroundLayer(parentContainer: Container, width: number,
         width,
         height,
         videoTimeHandler,
-        currentAnimation: ""
+        currentAnimation: "",
+        latestUpdate: createLatestRequest()
     }
 }
 
@@ -67,6 +70,8 @@ export function setAnimationTransform(state: BackgroundLayerState, animationStyl
 }
 
 export async function updateBackground(state: BackgroundLayerState, data: WebGPUOutBackground | null, transition: Transition, transitionId: string): Promise<void> {
+    const updateRequest = state.latestUpdate.start()
+
     if (!data || (!data.path && !data.id)) {
         clearBackground(state, transitionId)
         return
@@ -119,6 +124,12 @@ export async function updateBackground(state: BackgroundLayerState, data: WebGPU
         newTexture = loaded.texture
         srcW = loaded.width
         srcH = loaded.height
+    }
+
+    // A clear or newer background may arrive while the media is loading.
+    if (!updateRequest.isCurrent()) {
+        cleanupVideoElement(videoElement)
+        return
     }
 
     // After async gap: cancel any in-progress transition and clean up stale state
@@ -225,6 +236,7 @@ export function resizeBackground(state: BackgroundLayerState, width: number, hei
 }
 
 function clearBackground(state: BackgroundLayerState, transitionId: string): void {
+    state.latestUpdate.invalidate()
     cancelTransition(transitionId)
     removeSprite(state.spriteA, state.container)
     removeSprite(state.spriteB, state.container)
