@@ -89,6 +89,20 @@ test("matching acknowledgements make the session healthy", () => {
     assert.deepEqual(harness.recreated, [])
 })
 
+test("a render failure is observed without recreating a responsive renderer", () => {
+    const harness = createBrokerHarness()
+    harness.broker.publish(outputOneRevision1)
+    harness.ready("session-a")
+    harness.broker.applied(observation(outputOneRevision1, "session-a"), "one")
+
+    const accepted = harness.broker.rendered({ ...observation(outputOneRevision1, "session-a"), status: "render_failed", failures: [{ layer: "background", reason: "missing_media" }] }, "one")
+
+    assert.equal(accepted, true)
+    assert.equal(harness.latestHealth().status, "render_failed")
+    assert.equal(harness.latestHealth().reason, "background:missing_media")
+    assert.deepEqual(harness.recreated, [])
+})
+
 function observation(snapshot, sessionId) {
     return { outputId: "one", sessionId, topic: snapshot.topic, scope: snapshot.scope, revision: snapshot.revision, contentHash: snapshot.contentHash }
 }

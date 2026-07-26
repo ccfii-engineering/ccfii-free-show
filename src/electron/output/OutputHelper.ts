@@ -1,5 +1,6 @@
 import type { Rectangle } from "electron"
-import { toApp } from ".."
+import { getMainWindow, toApp } from ".."
+import { OUTPUT_STATE_TOPICS, isValidOutputTopicSnapshot, outputStateKey } from "../../common/outputState/snapshot"
 import { OUTPUT } from "../../types/Channels"
 import type { Output } from "../../types/Output"
 import type { Message } from "../../types/Socket"
@@ -11,9 +12,11 @@ import { OutputSend } from "./helpers/OutputSend"
 import { OutputValues } from "./helpers/OutputValues"
 import { OutputVisibility } from "./helpers/OutputVisibility"
 import type { Output as OutputData } from "./Output"
+import { OutputStateBroker } from "./OutputStateBroker"
+import { OutputStateRouting } from "./OutputStateRouting"
 
 export class OutputHelper {
-    static receiveOutput(_e: Electron.IpcMainEvent, msg: Message) {
+    static receiveOutput(e: Electron.IpcMainEvent, msg: Message) {
         const outputResponses = {
             CREATE: (data: Output) => OutputHelper.Lifecycle.createOutput(data),
             REMOVE: (data: { id: string }) => OutputHelper.Lifecycle.removeOutput(data.id),
@@ -36,6 +39,7 @@ export class OutputHelper {
             FOCUS: (data: { id: string }) => OutputHelper.Lifecycle.focusOutput(data.id)
         }
 
+        if (OutputHelper.StateRouting.receive(e.sender.id, msg)) return
         if (msg.channel.includes("MAIN")) return toApp(OUTPUT, msg)
         if (msg.channel in outputResponses) return outputResponses[msg.channel as keyof typeof outputResponses](msg.data)
 
@@ -58,7 +62,12 @@ export class OutputHelper {
     }
 
     static deleteOutput(id: string) {
+        OutputHelper.StateBroker.removeSession(id)
         delete this.outputs[id]
+    }
+
+    static getOutputIdByWebContentsId(webContentsId: number): string | null {
+        return OutputHelper.getAllOutputs().find((output) => !output.window.isDestroyed() && output.window.webContents.id === webContentsId)?.id ?? null
     }
 
     static getKeys() {
@@ -71,4 +80,23 @@ export class OutputHelper {
     static Send = OutputSend
     static Values = OutputValues
     static Visibility = OutputVisibility
+
+    static StateBroker = new OutputStateBroker({
+        requiredSharedTopics: OUTPUT_STATE_TOPICS.filter((topic) => topic !== "output" && topic !== "mediaControlBaseline"),
+        requiredOutputTopics: ["output", "mediaControlBaseline"],
+        validateSnapshot: isValidOutputTopicSnapshot,
+        snapshotKey: outputStateKey,
+        transport: {
+            sendToOutput: (outputId, message) => OutputHelper.Send.sendToWindow(outputId, message),
+            sendToMain: (message) => toApp(OUTPUT, message),
+            recreateOutput: (outputId) => toApp(OUTPUT, { channel: "RESTART", data: { id: outputId } })
+        }
+    })
+
+    static StateRouting = new OutputStateRouting({
+        broker: OutputHelper.StateBroker,
+        getMainWebContentsId: () => getMainWindow()?.webContents.id ?? null,
+        resolveOutputId: (webContentsId) => OutputHelper.getOutputIdByWebContentsId(webContentsId),
+        reject: ({ reason, channel, claimedOutputId, authenticatedOutputId }) => console.warn("Rejected output-state IPC", { reason, channel, claimedOutputId, authenticatedOutputId })
+    })
 }

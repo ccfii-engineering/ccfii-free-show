@@ -1,4 +1,4 @@
-import type { OutputStateApply, OutputStateHealth, OutputStateManifest, OutputStateObservation, OutputStateReady, OutputStateScope, OutputStateToMainMessage, OutputStateToRendererMessage, OutputStateTopic, OutputTopicSnapshot } from "../../types/OutputState"
+import type { OutputStateApply, OutputStateHealth, OutputStateManifest, OutputStateObservation, OutputStateReady, OutputStateRejection, OutputStateRendered, OutputStateScope, OutputStateToMainMessage, OutputStateToRendererMessage, OutputStateTopic, OutputTopicSnapshot } from "../../types/OutputState"
 
 type TimerHandle = unknown
 
@@ -118,6 +118,24 @@ export class OutputStateBroker {
         return true
     }
 
+    rendered(observation: OutputStateRendered, authenticatedOutputId: string): boolean {
+        const session = this.sessions.get(authenticatedOutputId)
+        if (!session || !this.matchesCurrentSnapshot(observation, session, authenticatedOutputId)) return false
+
+        if (observation.status === "render_failed") {
+            this.reportHealth(session, { status: "render_failed", topic: observation.topic, revision: observation.revision, reason: observation.failures?.map(({ layer, reason }) => `${layer}:${reason}`).join(",") || "render_failed" })
+        }
+        return true
+    }
+
+    rejected(rejection: OutputStateRejection, authenticatedOutputId: string): boolean {
+        const session = this.sessions.get(authenticatedOutputId)
+        if (!session || rejection.outputId !== authenticatedOutputId || rejection.sessionId !== session.sessionId) return false
+
+        this.reportHealth(session, { status: "unhealthy", topic: rejection.topic, revision: rejection.revision, reason: rejection.reason })
+        return true
+    }
+
     removeSession(outputId: string): void {
         const session = this.sessions.get(outputId)
         if (!session) return
@@ -193,6 +211,12 @@ export class OutputStateBroker {
 
     private belongsToSession(scope: OutputStateScope, outputId: string): boolean {
         return scope.kind === "shared" || scope.outputId === outputId
+    }
+
+    private matchesCurrentSnapshot(observation: OutputStateObservation, session: OutputSession, authenticatedOutputId: string): boolean {
+        if (observation.outputId !== authenticatedOutputId || observation.sessionId !== session.sessionId) return false
+        const snapshot = this.snapshots.get(this.snapshotKey(observation.topic, observation.scope))
+        return !!snapshot && snapshot.revision === observation.revision && snapshot.contentHash === observation.contentHash
     }
 
     private requiredKeys(outputId: string): { topic: OutputStateTopic; scope: OutputStateScope }[] {
