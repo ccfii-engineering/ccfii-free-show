@@ -12,6 +12,7 @@ import { wait, waitUntilValueIsDefined } from "./common"
 import { getDefaultElements } from "./createData"
 import { setLanguage } from "./language"
 import { storeSubscriber } from "./listeners"
+import { startOutputStatePublisher } from "../outputState/runtime"
 import { autoOpenLastUsedProfile, openProfileByName } from "./profile"
 import { receiveOUTPUTasOUTPUT, remoteListen, setupMainReceivers } from "./receivers"
 import { destroy, receive, send } from "./request"
@@ -67,6 +68,7 @@ async function startupMain() {
     else autoOpenLastUsedProfile()
 
     storeSubscriber()
+    startOutputStatePublisher()
     remoteListen()
     checkStartupActions()
     startTracking()

@@ -78,6 +78,7 @@ import { closeApp, save } from "./save"
 import { client } from "./sendData"
 import { playFolder, previewShortcuts } from "./shortcuts"
 import { restartOutputs } from "./updateSettings"
+import { publishNeededOutputState } from "../outputState/runtime"
 
 export function setupMainReceivers() {
     receiveMainGlobal()
@@ -170,6 +171,7 @@ const receiveOUTPUTasMAIN: any = {
         if (autoSave) save()
     },
     REQUEST_DATA_MAIN: () => sendInitialOutputData(),
+    OUTPUT_STATE_NEEDED: publishNeededOutputState,
     MAIN_LOG: (msg: any) => console.info(msg),
     MAIN_DATA: (msg: any) => videosData.update((a) => ({ ...a, ...msg })),
     MAIN_TIME: (msg: any) => videosTime.update((a) => ({ ...a, ...msg })),
