@@ -215,7 +215,7 @@ function mainWindowLoaded() {
     if (RECORD_STARTUP_TIME) console.timeEnd("Full startup")
 }
 
-export async function loadWindowContent(window: BrowserWindow, type: null | "output" = null) {
+export async function loadWindowContent(window: BrowserWindow, type: null | "output" = null, outputId?: string) {
     const mainOutput = type === null
 
     if (isProd) window.loadFile("public/index.html").catch(loadingFailed)
@@ -229,7 +229,7 @@ export async function loadWindowContent(window: BrowserWindow, type: null | "out
     }
 
     window.webContents.on("did-finish-load", () => {
-        window.webContents.send(STARTUP, { channel: "TYPE", data: type, autoProfile })
+        window.webContents.send(STARTUP, { channel: "TYPE", data: type, autoProfile, outputId })
     })
 
     function loadingFailed(err: Error) {

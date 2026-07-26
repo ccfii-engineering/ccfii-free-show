@@ -13,6 +13,7 @@ import { getDefaultElements } from "./createData"
 import { setLanguage } from "./language"
 import { storeSubscriber } from "./listeners"
 import { startOutputStatePublisher } from "../outputState/runtime"
+import { startOutputStateClient } from "../outputState/clientRuntime"
 import { autoOpenLastUsedProfile, openProfileByName } from "./profile"
 import { receiveOUTPUTasOUTPUT, remoteListen, setupMainReceivers } from "./receivers"
 import { destroy, receive, send } from "./request"
@@ -42,7 +43,7 @@ export async function startup() {
 
             if (type === "pdf") return
             if (type === "output") {
-                startupOutput()
+                startupOutput(msg.outputId)
                 return
             }
 
@@ -163,11 +164,16 @@ async function getStoredData() {
     getDefaultElements()
 }
 
-async function startupOutput() {
+async function startupOutput(outputId?: string) {
     setLanguage() // this is only needed for the context menu (and stage display)
     receive(OUTPUT, receiveOUTPUTasOUTPUT)
 
-    // wait a bit on slow computers
+    if (outputId) {
+        startOutputStateClient(outputId)
+        return
+    }
+
+    // Legacy offscreen thumbnail windows do not have a registered live output identity.
     await wait(200)
 
     send(OUTPUT, ["REQUEST_DATA_MAIN"])

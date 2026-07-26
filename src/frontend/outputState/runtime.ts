@@ -20,9 +20,16 @@ export function startOutputStatePublisher(): void {
         outputDependencies: OUTPUT_STATE_DEPENDENCY_TOPICS
     })
 
+    let initializingSharedTopics = true
     OUTPUT_STATE_TOPIC_SOURCES.forEach((source) => {
-        unsubscribers.push(source.store.subscribe(() => publishShared(source.topic, false)))
+        unsubscribers.push(
+            source.store.subscribe(() => {
+                const changed = publishShared(source.topic, false)
+                if (changed && !initializingSharedTopics) publishEveryOutput()
+            })
+        )
     })
+    initializingSharedTopics = false
     unsubscribers.push(
         outputs.subscribe((currentOutputs) => {
             sampleAllSharedTopics()
@@ -54,13 +61,16 @@ export function publishNeededOutputState({ keys }: OutputStateNeeded): void {
     })
 }
 
-function publishShared(topic: OutputStateTopic, force: boolean): void {
+function publishShared(topic: OutputStateTopic, force: boolean): boolean {
     const source = getOutputStateTopicSource(topic)
-    if (!publisher || !source) return
+    if (!publisher || !source) return false
 
     const payload = source.read()
-    if (force) publisher.publish(source.topic, sharedScope, payload)
-    else publisher.publishIfChanged(source.topic, sharedScope, payload)
+    if (force) {
+        publisher.publish(source.topic, sharedScope, payload)
+        return true
+    }
+    return !!publisher.publishIfChanged(source.topic, sharedScope, payload)
 }
 
 function sampleAllSharedTopics(): void {
@@ -76,6 +86,11 @@ function publishOutput(outputId: string, output: Output): void {
     } as Output
     publisher.publishOutput(outputId, normalizedOutput)
     publishMediaControlBaseline(outputId, false)
+}
+
+function publishEveryOutput(): void {
+    const currentOutputs = get(outputs)
+    Object.entries(currentOutputs).forEach(([outputId, output]) => publishOutput(outputId, output))
 }
 
 function publishAllMediaControlBaselines(force: boolean): void {

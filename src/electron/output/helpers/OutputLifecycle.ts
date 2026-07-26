@@ -95,7 +95,7 @@ export class OutputLifecycle {
         })
         // window.setVisibleOnAllWorkspaces(true)
 
-        loadWindowContent(window, "output")
+        loadWindowContent(window, "output", id)
         this.setWindowListeners(window, { id, name })
 
         // open devtools
