@@ -41,7 +41,7 @@ export const OUTPUT_STATE_PROTOCOL_VERSION = 1
 
 export type OutputPresentationMode = "live" | "cleared"
 export type OutputStateScope = { kind: "shared" } | { kind: "output"; outputId: string }
-export type OutputStateTopic = "output" | "styles" | "transition" | "shows" | "categories" | "templates" | "overlays" | "events" | "groups" | "draw" | "drawTool" | "drawSettings" | "visualizerData" | "media" | "effects" | "timers" | "variables" | "timeFormat" | "special" | "slideTimelineSpeedMultiplier" | "playerVideos" | "stage" | "projects" | "activeProject" | "showsData" | "customMetadata" | "customCredits" | "volume" | "mediaControlBaseline"
+export type OutputStateTopic = "output" | "language" | "styles" | "transition" | "shows" | "categories" | "templates" | "overlays" | "events" | "groups" | "draw" | "drawTool" | "drawSettings" | "media" | "outputSlideCache" | "effects" | "timers" | "activeTimers" | "variables" | "timeFormat" | "special" | "slideTimelineSpeedMultiplier" | "playerVideos" | "stage" | "projects" | "activeProject" | "showsData" | "customMetadata" | "customCredits" | "volume" | "gain" | "audioChannelsData" | "equalizerConfig" | "metronome" | "metronomeTimer" | "playingAudio" | "colorbars" | "livePrepare" | "mediaControlBaseline"
 
 export interface OutputTopicSnapshot<T extends OutputStateTopic = OutputStateTopic> {
     protocolVersion: typeof OUTPUT_STATE_PROTOCOL_VERSION
@@ -82,7 +82,7 @@ Electron obtains the output identity from the sender's registered `webContents`,
 ### Normal update
 
 1. A domain action updates its source store in the main renderer.
-2. The topic publisher assigns the next revision, creates the canonical full snapshot from that store's actual value, computes its hash, and sends it to Electron.
+2. The topic publisher assigns the next revision, creates the canonical full snapshot from that store's actual value, computes its hash, and sends it to Electron. Before publishing an `output` topic, it synchronously samples and publishes any changed dependency stores, then records those observed revisions in the output dependency vector; it never assumes earlier subscription callbacks have run.
 3. Electron validates topic, scope, protocol version, revision, payload, and hash before replacing the corresponding cache entry.
 4. Electron sends the snapshot to every current renderer session that consumes that shared topic, or only to the matching renderer for an output-scoped topic.
 5. The renderer validates the snapshot, ignores revisions older than or equal to its last applied revision for that topic/scope, replaces the mapped local store atomically, waits for the next Svelte update tick, and acknowledges the exact topic/revision/hash.
@@ -141,7 +141,9 @@ Diagnostic logs contain output ID, renderer session, revision, message type, ret
 
 ## Compatibility and Migration
 
-The new state protocol first wraps the stores currently listed in `initalOutputData`, plus per-output state and the current media-control baseline. Existing channel handlers remain as temporary adapters while each topic moves to the reliable client. Once all output-renderer consumers use topic snapshots, redundant stateful sends (`OUTPUTS`, `STYLES`, `SHOWS`, and peers) are removed. `ALL_OUTPUTS` remains only for the stage-mirror use case until that consumer is migrated deliberately.
+The new state protocol first wraps the stores currently listed in `initalOutputData`, the other durable stores already sent by `storeSubscriber()` (`outputSlideCache`, `activeTimers`, gain/channel/equalizer/metronome state, playing-audio paths, colorbars, and live-prepare state), plus per-output state and the current media-control baseline. Existing channel handlers remain as temporary adapters while each topic moves to the reliable client. Once all output-renderer consumers use topic snapshots, redundant stateful sends (`OUTPUTS`, `STYLES`, `SHOWS`, and peers) are removed. `ALL_OUTPUTS` remains only for the stage-mirror use case until that consumer is migrated deliberately.
+
+Sample streams (`BUFFER`, `TIME`, `AUDIO_DATA`, `DYNAMIC_VALUE_DATA`, and `VISUALIZER_DATA`) keep dedicated channels with monotonic sample sequence/timestamp checks. Their latest meaningful baseline is included in a reliable topic when a new renderer session needs one; old samples are discarded by observed sequence, not arrival timing.
 
 The existing `getOutputReceiverSignature` optimization must not control authoritative snapshot application. Topic, scope, revision, and hash are the only synchronization identity.
 
