@@ -106,6 +106,7 @@ export class OutputLifecycle {
 
     static async removeOutput(id: string, reopen: Output | null = null) {
         CaptureHelper.Lifecycle.stopCapture(id)
+        CaptureHelper.Transmitter.stageWindows = CaptureHelper.Transmitter.stageWindows.filter((outputId) => outputId !== id)
         NdiSender.stopSenderNDI(id)
         BlackmagicSender.stop(id)
 

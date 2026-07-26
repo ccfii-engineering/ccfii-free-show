@@ -10,7 +10,7 @@ export class OutputSend {
         OutputHelper.getAllOutputs().forEach(sendToWindow)
 
         function sendToWindow(output: Output & { id: string }) {
-            if ((msg.data?.id && msg.data.id !== output.id) || !output?.window || output.window.isDestroyed()) return
+            if ((msg.id && msg.id !== output.id) || (msg.data?.id && msg.data.id !== output.id) || !output?.window || output.window.isDestroyed()) return
 
             let tempMsg: Message = clone(msg)
             if (msg.channel === "OUTPUTS") tempMsg = onlySendToMatchingId(tempMsg, output.id)

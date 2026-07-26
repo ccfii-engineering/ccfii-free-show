@@ -18,6 +18,7 @@ import type { ServerData } from "../types/Socket"
 import type { ActiveStage, StageLayouts } from "../types/Stage"
 import type { BibleCategories, Categories, DrawerTabs, SettingsTabs, TopViews } from "../types/Tabs"
 import type { AudioChannel, AudioChannelData, AudioStream, Playlist } from "./../types/Audio"
+import type { OutputStateHealth } from "../types/OutputState"
 import type { Outputs } from "./../types/Output"
 import type { DrawerTabIds } from "./../types/Tabs"
 import type { EQBand, EqualizerConfig } from "./audio/audioEqualizer"
@@ -120,6 +121,7 @@ export const paintCache: Writable<DrawLine[]> = writable([])
 // OUTPUTS
 export const outputDisplay: Writable<boolean> = writable(false)
 export const outputState: Writable<{ id: string; active: boolean | "invisible" }[]> = writable([])
+export const outputStateHealth: Writable<{ [outputId: string]: OutputStateHealth }> = writable({})
 export const currentOutputSettings: Writable<string | null> = writable(null)
 export const slideTimers: Writable<{ [key: string]: SlideTimer }> = writable({})
 export const outputCache: Writable<any> = writable(null)

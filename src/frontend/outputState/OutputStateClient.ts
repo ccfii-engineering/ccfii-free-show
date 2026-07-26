@@ -79,6 +79,7 @@ export class OutputStateClient {
 
         this.applied.set(key, { revision: snapshot.revision, contentHash: snapshot.contentHash })
         this.acknowledge(snapshot)
+        if (snapshot.topic === "output" && (snapshot.payload as any).out?.presentationMode === "cleared") this.options.send({ channel: "OUTPUT_STATE_RENDERED", data: { ...this.observation(snapshot), status: "rendered", failures: [] } })
         return true
     }
 

@@ -1,11 +1,8 @@
 <script lang="ts">
     import { onMount } from "svelte"
-    import { get } from "svelte/store"
-    import { OUTPUT } from "../../../../types/Channels"
     import type { Transition } from "../../../../types/Show"
-    import { activeEdit, activeShow, overlays, popupData, selected, showsCache, styles, templates, transitionData } from "../../../stores"
+    import { activeEdit, activeShow, overlays, popupData, selected, styles, templates, transitionData } from "../../../stores"
     import { translateText } from "../../../utils/language"
-    import { send } from "../../../utils/request"
     import { easings, transitionTypes } from "../../../utils/transitions"
     import { clone } from "../../helpers/array"
     import { history } from "../../helpers/history"
@@ -91,10 +88,6 @@
             let indexes = $selected.data.map((a) => a.index)
             let override = "show#" + $activeShow?.id + "layout#" + _show().get("settings.activeLayout") + "indexes#" + indexes.join(",") + type
             history({ id: "SHOW_LAYOUT", newData: { key: type, data: value, indexes }, location: { page: "show", override } })
-
-            setTimeout(() => {
-                send(OUTPUT, ["SHOWS"], get(showsCache))
-            }, 500)
         } else if (isStyle) {
             value = { ...styleTransition, [selectedType]: updateSpecific(styleTransition[selectedType] || {}, key, value, reset) }
             if (!$styles[popupDataId]) return

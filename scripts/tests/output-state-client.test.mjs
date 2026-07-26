@@ -79,6 +79,19 @@ test("wrong output and session envelopes never mutate state", async () => {
     )
 })
 
+test("a cleared output reports terminal rendering after its applied acknowledgement", async () => {
+    const harness = createClientHarness()
+    await harness.apply(stylesRevision3)
+    const cleared = createOutputTopicSnapshot("output", outputScope, 1, { ...output(), out: { presentationMode: "cleared", background: null, slide: null, overlays: [], effects: [], transition: null } }, { "styles:shared": 3 })
+
+    await harness.apply(cleared)
+
+    assert.deepEqual(
+        harness.messages.slice(-2).map(({ channel }) => channel),
+        ["OUTPUT_STATE_APPLIED", "OUTPUT_STATE_RENDERED"]
+    )
+})
+
 function createClientHarness() {
     const messages = []
     const appliedPayloads = []

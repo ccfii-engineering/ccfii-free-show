@@ -869,9 +869,6 @@ export function updateOut(showId: string, index: number, layout: LayoutRef[], ex
         if (data.overlays?.length) {
             // let clear action trigger first
             setTimeout(() => {
-                // send overlays again, because it sometimes don't have it for some reason
-                send(OUTPUT, ["OVERLAYS"], get(overlays))
-
                 setOutput("overlays", data.overlays, false, outputId, true)
             }, 200)
         }

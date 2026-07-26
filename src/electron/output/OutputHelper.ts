@@ -40,6 +40,7 @@ export class OutputHelper {
         }
 
         if (OutputHelper.StateRouting.receive(e.sender.id, msg)) return
+        if (msg.channel === "REQUEST_DATA_MAIN") return toApp(OUTPUT, { ...msg, data: { id: OutputHelper.getOutputIdByWebContentsId(e.sender.id) } })
         if (msg.channel.includes("MAIN")) return toApp(OUTPUT, msg)
         if (msg.channel in outputResponses) return outputResponses[msg.channel as keyof typeof outputResponses](msg.data)
 

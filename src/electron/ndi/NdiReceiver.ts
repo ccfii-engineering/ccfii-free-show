@@ -1,6 +1,7 @@
 import { toApp } from ".."
 import { NDI } from "../../types/Channels"
 import { OutputHelper } from "../output/OutputHelper"
+import { removeRoutingTarget } from "../output/routingTargets"
 
 let warned = false
 const loadGrandiose = async () => {
@@ -274,7 +275,7 @@ export class NdiReceiver {
 
     static stopReceiversNDI(data: { id: string; outputId?: string } | null = null) {
         if (data?.id) {
-            if (data.outputId) this.sendToOutputs.splice(this.sendToOutputs.indexOf(data.outputId), 1)
+            if (data.outputId) removeRoutingTarget(this.sendToOutputs, data.outputId)
             else this.sendToOutputs = []
 
             if (!this.sendToOutputs.length && this.NDI_RECEIVERS[data.id]) {

@@ -1,6 +1,7 @@
 import { get } from "svelte/store"
 import { CLOUD, CONTROLLER, NDI, OUTPUT, OUTPUT_STREAM, REMOTE, STAGE } from "../../types/Channels"
 import type { ClientMessage } from "../../types/Socket"
+import type { OutputStateHealth } from "../../types/OutputState"
 import { AudioAnalyser } from "../audio/audioAnalyser"
 import { AudioAnalyserMerger } from "../audio/audioAnalyserMerger"
 import { setEqualizerEnabled, updateEqualizerBands } from "../audio/audioEqualizer"
@@ -45,6 +46,7 @@ import {
     outputs,
     outputSlideCache,
     outputState,
+    outputStateHealth,
     overlays,
     playerVideos,
     playingAudioPaths,
@@ -170,8 +172,20 @@ const receiveOUTPUTasMAIN: any = {
         })
         if (autoSave) save()
     },
-    REQUEST_DATA_MAIN: () => sendInitialOutputData(),
+    REQUEST_DATA_MAIN: ({ id }: { id: string }) => sendInitialOutputData(id),
     OUTPUT_STATE_NEEDED: publishNeededOutputState,
+    OUTPUT_STATE_HEALTH: (health: OutputStateHealth) => {
+        outputStateHealth.update((current) => {
+            const previous = current[health.outputId]
+            if (previous?.status !== health.status) {
+                if (health.status === "recovering") newToast(`Output ${health.outputId} stopped acknowledging state; recreating it once.`)
+                else if (health.status === "unhealthy") newToast(`Output ${health.outputId} is not synchronizing. Restart or disable this output.`)
+                else if (health.status === "render_failed") newToast(`Output ${health.outputId} could not render revision ${health.revision ?? "unknown"}.`)
+                else if (health.status === "healthy" && previous && previous.status !== "syncing") newToast(`Output ${health.outputId} synchronization recovered.`)
+            }
+            return { ...current, [health.outputId]: health }
+        })
+    },
     MAIN_LOG: (msg: any) => console.info(msg),
     MAIN_DATA: (msg: any) => videosData.update((a) => ({ ...a, ...msg })),
     MAIN_TIME: (msg: any) => videosTime.update((a) => ({ ...a, ...msg })),

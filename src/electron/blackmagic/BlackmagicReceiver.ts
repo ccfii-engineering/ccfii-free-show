@@ -4,6 +4,7 @@ import { toApp } from ".."
 import { BLACKMAGIC } from "../../types/Channels"
 import util from "../ndi/vingester-util"
 import { OutputHelper } from "../output/OutputHelper"
+import { removeRoutingTarget } from "../output/routingTargets"
 import { BlackmagicManager } from "./BlackmagicManager"
 import { InputImageBufferConverter } from "./ImageBufferConverter"
 
@@ -170,11 +171,10 @@ export class BlackmagicReceiver {
     static stopReceiver(data: any) {
         if (data?.id) {
             if (data.outputId) {
-                const index = this.sendToOutputs.indexOf(data.outputId)
-                if (index > -1) this.sendToOutputs.splice(index, 1)
+                removeRoutingTarget(this.sendToOutputs, data.outputId)
             } else this.sendToOutputs = [] // error
 
-            if (!this.sendToOutputs.length) {
+            if (!this.sendToOutputs.length && this.BMD_RECEIVERS[data.id]) {
                 clearInterval(this.BMD_RECEIVERS[data.id].interval)
                 try {
                     this.BMD_RECEIVERS[data.id].receiver?.stop()

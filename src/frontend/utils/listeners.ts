@@ -1,66 +1,9 @@
 import { get } from "svelte/store"
 import { OUTPUT, REMOTE, STAGE } from "../../types/Channels"
-import { AudioPlayer } from "../audio/audioPlayer"
 import { midiInListen } from "../components/actions/midi"
-import { getAllActiveOutputIds, getAllNormalOutputs } from "../components/helpers/output"
 import { loadShows } from "../components/helpers/setShow"
 import { getShowCacheId, updateCachedShow, updateCachedShows, updateShowsList } from "../components/helpers/show"
-import {
-    $,
-    actions,
-    actionTags,
-    activeProject,
-    activeScripture,
-    activeShow,
-    activeTimers,
-    audioChannelsData,
-    audioData,
-    cachedShowsData,
-    categories,
-    colorbars,
-    customMessageCredits,
-    customMetadata,
-    draw,
-    drawSettings,
-    drawTool,
-    driveKeys,
-    effects,
-    equalizerConfig,
-    events,
-    folders,
-    gain,
-    groups,
-    livePrepare,
-    media,
-    metronome,
-    metronomeTimer,
-    openedFolders,
-    outputs,
-    outputSlideCache,
-    overlayCategories,
-    overlays,
-    playerVideos,
-    playingAudio,
-    projects,
-    refreshSlideThumbnails,
-    runningActions,
-    scriptures,
-    shows,
-    showsCache,
-    slideTimelineSpeedMultiplier,
-    special,
-    stageShows,
-    styles,
-    templateCategories,
-    templates,
-    timeFormat,
-    timers,
-    transitionData,
-    triggers,
-    variables,
-    variableTags,
-    volume
-} from "../stores"
+import { $, actions, actionTags, activeProject, activeScripture, activeShow, activeTimers, audioChannelsData, audioData, cachedShowsData, driveKeys, events, folders, groups, openedFolders, outputs, outputSlideCache, overlayCategories, overlays, projects, refreshSlideThumbnails, runningActions, scriptures, shows, showsCache, stageShows, templateCategories, templates, timeFormat, timers, triggers, variables, variableTags, volume } from "../stores"
 import { hasNewerUpdate } from "./common"
 import { driveConnect } from "./drive"
 import { convertBackgrounds, getMixerPayload } from "./remoteTalk"
@@ -94,9 +37,6 @@ export function storeSubscriber() {
     showsCache.subscribe(async (data) => {
         if (await hasNewerUpdate("LISTENER_SHOWSCACHE")) return // TIMELINE style updates everytime unless set to 20ms
 
-        // needs to be sent before output data
-        send(OUTPUT, ["SHOWS"], data)
-
         if (await hasNewerUpdate("LISTENER_SHOWSCACHE_LONGER", 50)) return
 
         // STAGE
@@ -124,22 +64,9 @@ export function storeSubscriber() {
         if (Object.keys(data).length < 100) updateCachedShows(data)
     })
 
-    // show category metadata display
-    categories.subscribe(async (data) => {
-        if (await hasNewerUpdate("LISTENER_CATEGORIES", 50)) return
-
-        send(OUTPUT, ["CATEGORIES"], data)
-    })
-
-    groups.subscribe(async (data) => {
-        if (await hasNewerUpdate("LISTENER_GROUPS", 50)) return
-
-        send(OUTPUT, ["GROUPS"], data)
-    })
     templates.subscribe(async (data) => {
         if (await hasNewerUpdate("LISTENER_TEMPLATES", 50)) return
 
-        send(OUTPUT, ["TEMPLATES"], data)
         send(REMOTE, ["TEMPLATES"], data)
 
         // set all loaded shows to false, so show style can be updated from template again
@@ -164,7 +91,6 @@ export function storeSubscriber() {
     overlays.subscribe(async (data) => {
         if (await hasNewerUpdate("LISTENER_OVERLAYS", 50)) return
 
-        send(OUTPUT, ["OVERLAYS"], data)
         send(REMOTE, ["OVERLAYS"], data)
     })
     overlayCategories.subscribe(async (data) => {
@@ -174,8 +100,6 @@ export function storeSubscriber() {
     })
 
     events.subscribe((data) => {
-        send(OUTPUT, ["EVENTS"], data)
-
         // STAGE
         // WIP all stage listeners should not send to all stages, just the connected ids
         send(STAGE, ["EVENTS"], data)
@@ -198,7 +122,6 @@ export function storeSubscriber() {
         // wait in case multiple slide layers get activated right after each other - to reduce the amount of updates
         if (await hasNewerUpdate("LISTENER_OUTPUTS", 1)) return
 
-        send(OUTPUT, ["OUTPUTS"], data)
         // used for stage mirror data
         send(OUTPUT, ["ALL_OUTPUTS"], data)
 
@@ -217,16 +140,8 @@ export function storeSubscriber() {
         // send(STAGE, ["OUTPUTS"], data)
         // sendBackgroundToStage(a)
     })
-    styles.subscribe((data) => {
-        send(OUTPUT, ["STYLES"], data)
-    })
-    playerVideos.subscribe((data) => {
-        send(OUTPUT, ["PLAYER_VIDEOS"], data)
-    })
     stageShows.subscribe(async (data) => {
         if (await hasNewerUpdate("LISTENER_STAGE", 50)) return
-
-        send(OUTPUT, ["STAGE"], data)
 
         // STAGE
         data = arrayToObject(filterObjectArray(data, ["disabled", "name", "settings", "items"]).filter((a: any) => a.disabled === false))
@@ -243,65 +158,13 @@ export function storeSubscriber() {
         )
     })
 
-    draw.subscribe((data) => {
-        // if (await hasNewerUpdate("LISTENER_DRAW")) return
-
-        const activeOutputIds = getAllActiveOutputIds()
-        getAllNormalOutputs().forEach(({ id }) => {
-            if (activeOutputIds.includes(id)) send(OUTPUT, ["DRAW"], { id, data })
-            else send(OUTPUT, ["DRAW"], { id, data: null })
-        })
-    })
-    drawTool.subscribe((data) => {
-        // WIP changing tool while output is not active, will not update tool in output if set to active before changing tool again
-        const activeOutputIds = getAllActiveOutputIds()
-        getAllNormalOutputs().forEach(({ id }) => {
-            if (activeOutputIds.includes(id)) send(OUTPUT, ["DRAW_TOOL"], { id, data })
-            else send(OUTPUT, ["DRAW_TOOL"], { id, data: "focus" })
-        })
-    })
-    drawSettings.subscribe((data) => {
-        const activeOutputIds = getAllActiveOutputIds()
-        getAllNormalOutputs().forEach(({ id }) => {
-            if (activeOutputIds.includes(id)) send(OUTPUT, ["DRAW_SETTINGS"], data)
-            else {
-                send(OUTPUT, ["DRAW_TOOL"], { id, data: "focus" })
-                send(OUTPUT, ["DRAW"], { id, data: null })
-            }
-        })
-    })
-
-    transitionData.subscribe((data) => {
-        send(OUTPUT, ["TRANSITION"], data)
-    })
-
-    // used by stage output
-    media.subscribe((data) => {
-        send(OUTPUT, ["MEDIA"], data)
-    })
     outputSlideCache.subscribe(async (a) => {
         if (await hasNewerUpdate("LISTENER_SLIDE_CACHE", 50)) return
 
-        send(OUTPUT, ["OUT_SLIDE_CACHE"], a)
         send(STAGE, ["OUT_SLIDE_CACHE"], a)
     })
 
-    customMetadata.subscribe((data) => {
-        send(OUTPUT, ["CUSTOM_METADATA"], data)
-    })
-    customMessageCredits.subscribe((data) => {
-        send(OUTPUT, ["CUSTOM_CREDITS"], data)
-    })
-
-    effects.subscribe(async (data) => {
-        if (await hasNewerUpdate("LISTENER_EFFECTS", 50)) return
-
-        send(OUTPUT, ["EFFECTS"], data)
-    })
-
     timers.subscribe((data) => {
-        send(OUTPUT, ["TIMERS"], data)
-
         // STAGE
         send(STAGE, ["TIMERS"], data)
 
@@ -309,14 +172,10 @@ export function storeSubscriber() {
         send(REMOTE, ["TIMERS"], data)
     })
     activeTimers.subscribe((data) => {
-        send(OUTPUT, ["ACTIVE_TIMERS"], data)
-
         // REMOTE
         send(REMOTE, ["ACTIVE_TIMERS"], data)
     })
     variables.subscribe((data) => {
-        send(OUTPUT, ["VARIABLES"], data)
-
         // STAGE
         send(STAGE, ["VARIABLES"], data)
 
@@ -328,80 +187,31 @@ export function storeSubscriber() {
         send(REMOTE, ["VARIABLE_TAGS"], data)
     })
 
-    special.subscribe((data) => {
-        send(OUTPUT, ["SPECIAL"], data)
-    })
-
-    slideTimelineSpeedMultiplier.subscribe((data) => {
-        send(OUTPUT, ["SLIDE_TIMELINE_SPEED_MULTIPLIER"], data)
-    })
-
-    volume.subscribe((data) => {
-        send(OUTPUT, ["VOLUME"], data)
-
+    volume.subscribe(() => {
         // REMOTE mixer updates
         sendRemoteMixer()
     })
-    gain.subscribe((data) => {
-        send(OUTPUT, ["GAIN"], data)
-    })
-    audioChannelsData.subscribe((data) => {
-        send(OUTPUT, ["AUDIO_CHANNELS_DATA"], data)
-
+    audioChannelsData.subscribe(() => {
         // REMOTE mixer updates
         sendRemoteMixer()
-    })
-
-    equalizerConfig.subscribe(async (data) => {
-        if (await hasNewerUpdate("EQUALIZER_CONFIG_CACHE", 50)) return
-
-        send(OUTPUT, ["EQUALIZER_CONFIG"], data)
-    })
-
-    metronome.subscribe((data) => {
-        send(OUTPUT, ["METRONOME"], data)
-    })
-    metronomeTimer.subscribe((data) => {
-        send(OUTPUT, ["METRONOME_TIMER"], data)
-        // WIP send to stage
     })
 
     timeFormat.subscribe((a) => {
-        send(OUTPUT, ["TIME_FORMAT"], a)
-
         // STAGE
         send(STAGE, ["DATA"], { timeFormat: a })
     })
 
-    projects.subscribe((a) => {
+    projects.subscribe(() => {
         sendData(REMOTE, { channel: "PROJECTS" }, true)
-
-        // dynamic values
-        send(OUTPUT, ["PROJECTS"], a)
     })
     folders.subscribe((data) => {
         send(REMOTE, ["FOLDERS"], { folders: data, opened: get(openedFolders) })
     })
     activeProject.subscribe((a) => {
         send(REMOTE, ["PROJECT"], a)
-
-        // dynamic values
-        send(OUTPUT, ["ACTIVE_PROJECT"], a)
-    })
-
-    // dynamic values
-    playingAudio.subscribe(() => {
-        send(OUTPUT, ["PLAYING_AUDIO"], AudioPlayer.getAllPlaying())
     })
     audioData.subscribe((a) => {
         send(OUTPUT, ["AUDIO_DATA"], a)
-    })
-
-    colorbars.subscribe((a) => {
-        send(OUTPUT, ["COLORBARS"], a)
-    })
-    livePrepare.subscribe((a) => {
-        send(OUTPUT, ["LIVE_PREPARE"], a)
     })
 
     //
@@ -497,7 +307,8 @@ const initalOutputData = {
     VOLUME: "volume"
 }
 
-export function sendInitialOutputData() {
+export function sendInitialOutputData(targetId: string) {
+    if (!targetId) return
     Object.keys(initalOutputData).forEach((KEY) => {
         const storeKey = initalOutputData[KEY]
 
@@ -506,12 +317,9 @@ export function sendInitialOutputData() {
         else storeData = get($[storeKey])
         if (storeData === undefined) storeData = {}
 
-        send(OUTPUT, [KEY], storeData)
+        window.api.send(OUTPUT, { channel: KEY, data: storeData, id: targetId })
     })
 
-    setTimeout(() => {
-        send(OUTPUT, ["OUTPUTS"], get(outputs))
-        // used for stage mirror data
-        send(OUTPUT, ["ALL_OUTPUTS"], get(outputs))
-    }, 100)
+    window.api.send(OUTPUT, { channel: "OUTPUTS", data: get(outputs), id: targetId })
+    window.api.send(OUTPUT, { channel: "ALL_OUTPUTS", data: get(outputs), id: targetId })
 }
