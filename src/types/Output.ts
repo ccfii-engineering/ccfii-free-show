@@ -37,6 +37,7 @@ export interface Output {
 }
 
 export interface OutData {
+    presentationMode?: "live" | "cleared"
     refresh?: boolean
     background?: null | OutBackground
     slide?: null | OutSlide

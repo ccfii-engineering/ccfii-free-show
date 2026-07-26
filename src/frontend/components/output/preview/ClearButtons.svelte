@@ -11,12 +11,15 @@
     import MaterialButton from "../../inputs/MaterialButton.svelte"
     import { clearAll, clearBackground, clearOverlays, clearSlide, clearTimers, restoreOutput } from "../clear"
     import { translateText } from "../../../utils/language"
+    import { isPresentationCleared } from "../presentationState"
 
     export let autoChange: any
     export let activeClear: any
 
     $: audioCleared = !Object.keys($playingAudio).length && !$playingMetronome
-    $: allCleared = isOutCleared(null, $outputs) && audioCleared
+    $: activeOutputIds = getActiveOutputs($outputs, true, true, true)
+    $: presentationsCleared = activeOutputIds.length > 0 && activeOutputIds.every((outputId) => isPresentationCleared($outputs[outputId]?.out))
+    $: allCleared = presentationsCleared && audioCleared
     $: if (allCleared) autoChange = true
 
     let enableRestore = false
@@ -26,7 +29,7 @@
         if (restoreTimeout) clearTimeout(restoreTimeout)
         restoreTimeout = setTimeout(() => (enableRestore = true), 1000)
     }
-    $: if (!allCleared) {
+    $: if (!presentationsCleared) {
         enableRestore = false
         outputCache.set(null)
     }

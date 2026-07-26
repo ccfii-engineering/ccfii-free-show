@@ -82,7 +82,7 @@ function publishOutput(outputId: string, output: Output): void {
     const normalizedOutput = {
         ...output,
         id: output.id || outputId,
-        out: { ...(output.out || {}), presentationMode: (output.out as any)?.presentationMode ?? "live" }
+        out: { ...(output.out || {}), presentationMode: output.out?.presentationMode ?? "live" }
     } as Output
     publisher.publishOutput(outputId, normalizedOutput)
     publishMediaControlBaseline(outputId, false)

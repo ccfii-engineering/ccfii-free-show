@@ -28,6 +28,8 @@
     $: myOutput = outputEntry(outputId)
     $: currentOutput = $myOutput || $allOutputs[outputId] || {}
     $: resolution = getOutputResolution(outputId, $outputs, true)
+    $: presentationCleared = currentOutput.out?.presentationMode === "cleared"
+    $: if (presentationCleared) clearPixiImmediately()
 
     // Provide the bridge IMMEDIATELY (before onMount) so child Output/Background instances see it
     // on first render. The bridge buffers updates until pixiReady, then flushes them.
@@ -44,6 +46,14 @@
     const bridge: PixiBackgroundBridge = {
         update(slot, data, transition) {
             if (!isPixiSupported(data?.type)) return false
+            if (presentationCleared) {
+                cancelPendingSlot(slot)
+                if (pixiReady && layerMgr && layerMgrMod) {
+                    if (slot === "style") layerMgrMod.updateStyleBackground(layerMgr, null, {})
+                    else layerMgrMod.updateSlideBackground(layerMgr, null, {})
+                }
+                return true
+            }
             if (data) {
                 // Non-null dispatch — cancel any pending clear for this slot
                 if (slot === "style" && styleBgClearTimer) {
@@ -84,6 +94,7 @@
             return true
         },
         clear(slot) {
+            cancelPendingSlot(slot)
             if (!pixiReady || !layerMgr || !layerMgrMod) return
             if (slot === "style") layerMgrMod.updateStyleBackground(layerMgr, null, {})
             else layerMgrMod.updateSlideBackground(layerMgr, null, {})
@@ -98,6 +109,28 @@
         }
     }
     providePixiBackgroundBridge(bridge)
+
+    function cancelPendingSlot(slot: "style" | "slide") {
+        for (let index = pendingUpdates.length - 1; index >= 0; index--) {
+            if (pendingUpdates[index].slot === slot) pendingUpdates.splice(index, 1)
+        }
+        for (let index = pendingAnimations.length - 1; index >= 0; index--) {
+            if (pendingAnimations[index].slot === slot) pendingAnimations.splice(index, 1)
+        }
+        if (slot === "style" && styleBgClearTimer) {
+            clearTimeout(styleBgClearTimer)
+            styleBgClearTimer = null
+        }
+        if (slot === "slide" && slideBgClearTimer) {
+            clearTimeout(slideBgClearTimer)
+            slideBgClearTimer = null
+        }
+    }
+
+    function clearPixiImmediately() {
+        bridge.clear("style")
+        bridge.clear("slide")
+    }
 
     let listenerId = ""
     onMount(async () => {

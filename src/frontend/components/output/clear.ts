@@ -1,15 +1,18 @@
 import { get } from "svelte/store"
+import { Main } from "../../../types/IPC/Main"
 import type { OutSlide } from "../../../types/Show"
 import { clearAudio } from "../../audio/audioFading"
 import { AudioPlayer } from "../../audio/audioPlayer"
+import { sendMain } from "../../IPC/main"
 import { activeEdit, activePage, activePopup, activeStage, contextActive, customMessageCredits, drawSettings, focusMode, lockedOverlays, outLocked, outputCache, outputs, outputSlideCache, overlays, overlayTimers, playingAudio, playingMetronome, selected, slideTimers, topContextActive, videosData, videosTime } from "../../stores"
 import { customActionActivation } from "../actions/actions"
 import { startMetronome } from "../drawer/audio/metronome"
 import { clone } from "../helpers/array"
-import { clearOverlayTimer, clearPlayingVideo, getAllActiveOutputIds, getAllActiveOutputs, isOutCleared, setOutput } from "../helpers/output"
+import { clearOverlayTimer, clearPlayingVideo, getAllActiveOutputIds, getAllActiveOutputs, setOutput } from "../helpers/output"
 import { _show } from "../helpers/shows"
 import { getActiveTimelinePlayback } from "../timeline/TimelinePlayback"
 import { updateMappedEntries } from "../../utils/mapStoreEntries"
+import { clearPresentation, isPresentationCleared } from "./presentationState"
 
 export function clearAll(button = false) {
     if (get(outLocked)) return
@@ -18,20 +21,30 @@ export function clearAll(button = false) {
     // reset slide cache on Escape
     outputSlideCache.set({})
 
+    const outputIds = getAllActiveOutputIds()
     const audioCleared = !Object.keys(get(playingAudio)).length && !get(playingMetronome)
-    const allCleared = isOutCleared(null) && audioCleared
+    const allCleared = outputIds.length > 0 && outputIds.every((outputId) => isPresentationCleared(get(outputs)[outputId]?.out)) && audioCleared
     if (allCleared) return
 
     storeCache()
 
     getActiveTimelinePlayback()?.stop()
 
-    const keepLastSlide = get(focusMode)
-    clearBackground()
-    clearSlide(!keepLastSlide)
-    clearOverlays()
+    const hasPowerPoint = outputIds.some((outputId) => get(outputs)[outputId]?.out?.slide?.type === "ppt")
+    outputIds.forEach(clearPlayingVideo)
+    outputs.update((current) => updateMappedEntries(current, outputIds, (output) => clearPresentation(output)))
+    lockedOverlays.set([])
+
+    videosData.update((current) => removeOutputKeys(current, outputIds))
+    videosTime.update((current) => removeOutputKeys(current, outputIds))
+    clearRuntimeTimers(outputIds)
+
+    if (hasPowerPoint) sendMain(Main.PRESENTATION_CONTROL, { action: "stop" })
     clearAudio("", { clearPlaylist: true, commonClear: true })
-    clearTimers()
+    customMessageCredits.set("")
+    customActionActivation("output_changed")
+    customActionActivation("background_cleared")
+    customActionActivation("slide_cleared")
 }
 
 function storeCache() {
@@ -66,7 +79,7 @@ export function restoreOutput() {
         return updateMappedEntries(a, Object.keys(get(outputCache)), (entry, id) => {
             if (id.includes("playing")) return entry
             if (!outputIds.includes(id)) return entry
-            return { ...entry, out: get(outputCache)[id] }
+            return { ...entry, out: { ...get(outputCache)[id], presentationMode: "live" } }
         })
     })
 
@@ -171,7 +184,10 @@ export function clearTimers(specificOutputId = "", clearOverlayTimers = true) {
     setOutput("transition", null, false, specificOutputId)
 
     const outputIds = specificOutputId ? [specificOutputId] : getAllActiveOutputIds()
+    clearRuntimeTimers(outputIds, clearOverlayTimers)
+}
 
+function clearRuntimeTimers(outputIds: string[], clearOverlayTimers = true) {
     Object.keys(get(slideTimers)).forEach((id) => {
         if (outputIds.includes(id)) get(slideTimers)[id].timer?.clear()
     })
@@ -187,6 +203,12 @@ export function clearTimers(specificOutputId = "", clearOverlayTimers = true) {
             }
         })
     })
+}
+
+function removeOutputKeys<T>(current: { [key: string]: T }, outputIds: string[]): { [key: string]: T } {
+    const next = { ...current }
+    outputIds.forEach((outputId) => delete next[outputId])
+    return next
 }
 
 export function clearDrawing() {

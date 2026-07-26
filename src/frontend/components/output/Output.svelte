@@ -26,6 +26,7 @@
     import PdfOutput from "./layers/PdfOutput.svelte"
     import SlideContent from "./layers/SlideContent.svelte"
     import Window from "./Window.svelte"
+    import { resolveVisibleBackgrounds } from "./presentationState"
 
     export let outputId = ""
     export let style = ""
@@ -92,12 +93,13 @@
     let lastOutJson = ""
     $: {
         const targetOut = outOverride || currentOutput?.out || {}
-        const json = [getJsonSignature(targetOut.slide || null), getJsonSignature(targetOut.background || null), getIdArraySignature(targetOut.overlays), getIdArraySignature(targetOut.effects), targetOut.refresh ? "1" : "0"].join("|")
+        const json = [targetOut.presentationMode || "live", getJsonSignature(targetOut.slide || null), getJsonSignature(targetOut.background || null), getIdArraySignature(targetOut.overlays), getIdArraySignature(targetOut.effects), targetOut.refresh ? "1" : "0"].join("|")
         if (json !== lastOutJson) {
             lastOutJson = json
             out = clone(targetOut)
         }
     }
+    $: presentationCleared = out.presentationMode === "cleared"
 
     let lastSlideJson = ""
     $: {
@@ -305,12 +307,14 @@
     $: cropping = currentOutput.cropping || currentStyle.cropping
 
     // values
-    $: backgroundColor = currentOutput.transparent ? "transparent" : styleTemplate?.settings?.backgroundColor || currentSlide?.settings?.color || currentStyle.background || slide?.settings?.backgroundColor || "black"
+    $: backgroundColor = currentOutput.transparent ? "transparent" : presentationCleared ? "black" : styleTemplate?.settings?.backgroundColor || currentSlide?.settings?.color || currentStyle.background || slide?.settings?.backgroundColor || "black"
     // background image
-    $: styleBackground = currentStyle?.clearStyleBackgroundOnText && (slide || background) ? "" : currentStyle?.backgroundImage || ""
-    $: styleBackgroundData = { path: styleBackground, ...($media[styleBackground] || {}), loop: true }
+    $: rawStyleBackground = currentStyle?.clearStyleBackgroundOnText && (slide || background) ? "" : currentStyle?.backgroundImage || ""
+    $: rawStyleBackgroundData = rawStyleBackground ? { path: rawStyleBackground, ...($media[rawStyleBackground] || {}), loop: true } : null
     $: templateBackgroundData = { path: templateBackground, loop: true, ...($media[templateBackground] || {}) }
-    $: backgroundData = templateBackground ? templateBackgroundData : background
+    $: visibleBackgrounds = resolveVisibleBackgrounds({ presentationMode: out.presentationMode, explicit: background, template: templateBackground ? templateBackgroundData : null, style: rawStyleBackgroundData })
+    $: styleBackgroundData = visibleBackgrounds.style
+    $: backgroundData = visibleBackgrounds.content
 
     $: overlaysActive = !!(layers.includes("overlays") && clonedOverlays)
 
@@ -325,9 +329,16 @@
     let actualCurrentSlide: Slide | null = null
     let actualCurrentLineId: string | undefined = undefined
     let isSlideClearing = false
+    $: if (presentationCleared) {
+        actualSlide = null
+        actualSlideData = null
+        actualCurrentSlide = null
+        actualCurrentLineId = undefined
+        isSlideClearing = true
+    }
     function updateSlide() {
         // update clearing variable before setting slide value (used for conditions to not show up again while clearing)
-        const slideActive = layers.includes("slide")
+        const slideActive = !presentationCleared && layers.includes("slide")
         isSlideClearing = !slide || !slideActive
 
         setTimeout(() => {
@@ -343,7 +354,7 @@
     <!-- forward the named background slot through to Zoomed for WebGPUOutput's Pixi canvas injection -->
     <svelte:fragment slot="background"><slot name="background" /></svelte:fragment>
     <!-- always show style background (behind other backgrounds) -->
-    {#if styleBackground && actualSlide?.type !== "pdf"}
+    {#if styleBackgroundData && actualSlide?.type !== "pdf"}
         <Background data={styleBackgroundData} {outputId} transition={transitions.media} {currentStyle} {slideFilter} {ratio} animationStyle={animationData.style?.background || ""} mirror styleBackground />
     {/if}
 
@@ -353,23 +364,23 @@
     {/if}
 
     <!-- colorbars for testing -->
-    {#if $colorbars[outputId]}
+    {#if !presentationCleared && $colorbars[outputId]}
         <Image path="./assets/{$colorbars[outputId]}" mediaStyle={{ rendering: "pixelated", fit: "fill" }} />
     {/if}
 
     <!-- effects -->
-    {#if effectsUnderSlide}
+    {#if !presentationCleared && effectsUnderSlide}
         <EffectOutput ids={effectsUnderSlide} transition={transitions.overlay} {mirror} />
     {/if}
 
     <!-- "underlays" -->
-    {#if overlaysActive}
+    {#if !presentationCleared && overlaysActive}
         <!-- && outUnderlays?.length -->
         <Overlays {outputId} overlays={clonedOverlays} activeOverlays={outUnderlays} transition={transitions.overlay} {mirror} {preview} />
     {/if}
 
     <!-- slide -->
-    {#if actualSlide?.type === "pdf" && layers.includes("background")}
+    {#if !presentationCleared && actualSlide?.type === "pdf" && layers.includes("background")}
         <span style="zoom: {1 / ratio};">
             <PdfOutput slide={actualSlide} {currentStyle} transition={transitions.media} />
         </span>
@@ -386,7 +397,7 @@
         <Overlay overlay={{ items: currentMetadataItems }} isClearing={isMetadataClearing || isSlideClearing} {outputId} transition={transitions.text} />
     {/if}
 
-    {#if layers.includes("overlays")}
+    {#if !presentationCleared && layers.includes("overlays")}
         <!-- effects -->
         {#if effectsOverSlide}
             <EffectOutput ids={effectsOverSlide} transition={transitions.overlay} {mirror} />
@@ -399,7 +410,7 @@
         {/if}
     {/if}
 
-    {#if actualSlide?.attributionString && layers.includes("slide")}
+    {#if !presentationCleared && actualSlide?.attributionString && layers.includes("slide")}
         {#if mirror}
             <p class="attributionString">{actualSlide.attributionString.slice(0, 135)}</p>
         {:else}
@@ -408,7 +419,7 @@
     {/if}
 
     <!-- draw -->
-    {#if zoomActive}
+    {#if !presentationCleared && zoomActive}
         <Draw />
     {/if}
 </Zoomed>

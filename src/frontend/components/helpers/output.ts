@@ -29,6 +29,7 @@ import { getFewestOutputLines, getItemWithMostLines, replaceDynamicValues } from
 import { _show } from "./shows"
 import { getStyles } from "./style"
 import { getFirstOutputIdWithAudableBackground } from "./video"
+import { nextPresentationMode } from "../output/presentationState"
 
 export function toggleOutputs(outputIds: string[] | null = null, options: { force?: boolean; autoStartup?: boolean; state?: boolean } = {}) {
     if (outputIds === null) outputIds = getActiveOutputs(get(outputs), false)
@@ -168,7 +169,7 @@ export function setOutput(type: string, data: any, toggle = false, outputId = ""
                 }
             }
 
-            nextOutput = { ...nextOutput, out: { ...nextOutput.out, [type]: clone(outData) } }
+            nextOutput = { ...nextOutput, out: { ...nextOutput.out, presentationMode: nextPresentationMode(nextOutput.out?.presentationMode, type, outData), [type]: clone(outData) } }
 
             // save locked overlays
             if (type === "overlays") lockedOverlays.set(outData)
@@ -446,7 +447,13 @@ export function allOutputsHasStyleTemplate(isScripture: boolean = false) {
 }
 
 export function refreshOut(refresh = true) {
-    outputs.update((a) => updateMappedEntries(a, getAllActiveOutputs().map(({ id }) => id), (entry) => ({ ...entry, out: { ...entry.out, refresh } })))
+    outputs.update((a) =>
+        updateMappedEntries(
+            a,
+            getAllActiveOutputs().map(({ id }) => id),
+            (entry) => ({ ...entry, out: { ...entry.out, refresh } })
+        )
+    )
 
     if (refresh) {
         setTimeout(() => {
@@ -464,7 +471,8 @@ export function isOutCleared(key: string | null = null, updater: Outputs = get(o
         if (!cleared) return
 
         const output = updater[outputId]
-        const keys: string[] = key ? [key] : Object.keys(output.out || {})
+        if (output.out?.presentationMode === "cleared") return
+        const keys: string[] = key ? [key] : Object.keys(output.out || {}).filter((type) => type !== "presentationMode")
         cleared = !keys.find((type: string) => {
             if (!output.out?.[type]) return
 
