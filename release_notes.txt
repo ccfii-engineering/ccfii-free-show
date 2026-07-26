@@ -1,3 +1,16 @@
+<-- Build v1.11.0 -->
+
+What's new in this build:
+
+Presentation Output Reliability
+- Clear All now authoritatively removes every presentation layer, including style and template backgrounds, overlays, effects, transitions, media playback, and slide/overlay timers.
+- Output windows now recover their latest state through validated snapshots, acknowledgements, bounded retries, and safe renderer recreation instead of timing assumptions.
+- Rapid media changes can no longer restore an older background after an output has been cleared.
+
+Output Routing
+- Multi-output, thumbnail, capture, NDI, and Blackmagic routes now preserve exact output targeting and safely remove stale destinations.
+- Output delivery and render health are reported separately so media failures cannot cause renderer restart loops.
+
 <-- Build v1.10.2 -->
 
 What's new in this build:
