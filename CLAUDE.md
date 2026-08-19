@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Agent skills
+
+### Issue tracker
+
+Issues and specifications are tracked in GitHub Issues for `ccfii-engineering/ccfii-free-show`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The repository uses the canonical triage labels `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repository using root `CONTEXT.md` and system-wide ADRs under `docs/adr/`. See `docs/agents/domain.md`.
+
 ## Project Overview
 
 FreeShow is a free, open-source presentation application built with **Electron + Svelte 3 + TypeScript**. It displays song lyrics, media, and slideshows on external screens for churches and venues. Licensed under GPL-3.0.
