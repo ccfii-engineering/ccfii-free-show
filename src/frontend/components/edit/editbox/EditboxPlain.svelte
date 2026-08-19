@@ -89,7 +89,7 @@
             slideItems = slide[$activeEdit.id!]?.items
         }
 
-        if (!slideItems) return
+        if (!slideItems?.[index]) return
 
         let actions = clone(slideItems[index].actions)
         delete actions[action]
@@ -116,7 +116,14 @@
     $: textTransform = !!(styles["text-transform"] && styles["text-transform"] !== "none")
 
     let conditionsUpdater = 0
-    const updaterInterval = setInterval(() => conditionsUpdater++, 3000)
+    let isMic = false
+    $: isMic = JSON.stringify(item?.conditions?.showItem || "").includes('"element":"volume"')
+
+    let updaterInterval: NodeJS.Timeout
+    $: {
+        clearInterval(updaterInterval)
+        updaterInterval = setInterval(() => conditionsUpdater++, isMic ? 100 : 3000)
+    }
     onDestroy(() => clearInterval(updaterInterval))
 
     $: showItemState = isConditionMet(item?.conditions?.showItem, getItemText(item), "default", conditionsUpdater)
@@ -124,7 +131,7 @@
 
 <!-- all icons are square, so only corner resizers need to be active -->
 {#if !hideMovebox}
-    <Movebox {ratio} itemStyle={item?.style} active={$activeEdit.items.includes(index)} onlyCorners={item?.type === "icon"} />
+    <Movebox {ratio} itemStyle={item?.style} active={$activeEdit.items.includes(index)} onlyCorners={item?.type === "icon" && item?.id !== "empty"} />
 {/if}
 
 <div class="actions">
@@ -218,7 +225,7 @@
     {/each}
 
     <!-- gradient -->
-    {#if item?.lines?.find((a) => a.text?.find((a) => a.style?.includes("-gradient")))}
+    {#if Array.isArray(item?.lines) && item.lines.find((a) => Array.isArray(a.text) && a.text.find((a) => a.style?.includes("-gradient")))}
         <div data-title={translateText("popup.color_gradient")} class="actionButton" style="zoom: {1 / ratio};left: 0;inset-inline-end: unset;">
             <span style="padding: 5px;z-index: 3;font-size: 0;">
                 <Icon id="color" white />

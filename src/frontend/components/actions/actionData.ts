@@ -5,10 +5,12 @@ export const actionData = {
     next_project_item: { name: "actions.next_project_item", icon: "project", incompatible: ["previous_project_item", "index_select_project_item"] },
     previous_project_item: { name: "actions.previous_project_item", icon: "project", incompatible: ["next_project_item", "index_select_project_item"] },
     index_select_project_item: { name: "actions.index_select_project_item", icon: "project", input: "index", incompatible: ["next_project_item", "previous_project_item"] },
+    name_start_project_item: { name: "actions.name_start_project_item", icon: "project", input: "strval" },
     mark_active_as_played: { name: "actions.mark_played", icon: "check", input: "toggle" },
 
     // SHOWS
-    name_select_show: { SECTION: "guide_title.show", name: "actions.name_select_show", icon: "showIcon", input: "strval" },
+    id_select_show: { SECTION: "guide_title.show", name: "actions.id_select_show", icon: "showIcon", input: "start_show" },
+    name_select_show: { name: "actions.name_select_show", icon: "showIcon", input: "strval" },
     start_show: { slideId: "startShow", common: true, name: "preview._start", icon: "showIcon", input: "start_show" }, // any play actions are incompatible with clear actions...
     set_template: { name: "actions.set_template_active", icon: "templates", input: "id" },
     set_next_slide_timer: { name: "preview.nextTimer", icon: "timer", input: "numval" },
@@ -46,9 +48,13 @@ export const actionData = {
     id_select_overlay: { common: true, canAddMultiple: true, name: "actions.id_select_overlay", icon: "overlays", input: "id" },
 
     // OUTPUT
-    lock_output: { SECTION: "guide_title.output", canAddMultiple: true, name: "actions.toggle_output_lock", icon: "locked", input: "output_lock" },
-    toggle_output_windows: { name: "actions.toggle_output_windows", icon: "outputs", incompatible: ["toggle_output"] },
-    toggle_output: { canAddMultiple: true, name: "actions.toggle_output_window", icon: "outputs", input: "id", incompatible: ["toggle_output_windows"] },
+    start_webrtc_stream: { SECTION: "guide_title.output", name: "output.start_streaming (WebRTC)", icon: "record", input: "id" },
+    stop_webrtc_stream: { name: "output.stop_streaming (WebRTC)", icon: "stop", input: "id", red: true },
+    start_rtmp_stream: { name: "output.start_streaming (RTMP)", icon: "record", input: "id" },
+    stop_rtmp_stream: { name: "output.stop_streaming (RTMP)", icon: "stop", input: "id", red: true },
+    lock_output: { canAddMultiple: true, name: "actions.toggle_output_lock", icon: "locked", input: "output_lock" },
+    toggle_output_windows: { name: "actions.toggle_output_windows", icon: "outputs", input: "toggle", incompatible: ["toggle_output"] },
+    toggle_output: { canAddMultiple: true, name: "actions.toggle_output_window", icon: "outputs", input: "toggle_output", incompatible: ["toggle_output_windows"] },
     // id_select_output_style: { name: "actions.id_select_output_style", icon: "styles", input: "id" },
     change_output_style: { slideId: "outputStyle", common: true, canAddMultiple: true, name: "actions.change_output_style", icon: "styles", input: "change_output_style" },
     change_transition: { name: "actions.change_transition", icon: "transition", input: "transition" },
@@ -67,6 +73,8 @@ export const actionData = {
     playlist_next: { name: "actions.playlist_next", icon: "playlist", incompatible: ["start_playlist"] },
     start_metronome: { name: "actions.start_metronome", icon: "metronome", input: "metronome" },
     start_audio_effect: { common: true, canAddMultiple: true, name: "actions.start_audio_effect", icon: "effect", input: "audio_effects" },
+    start_microphone: { common: true, name: "actions.start_microphone", icon: "mic", input: "microphone" },
+    stop_microphone: { common: true, name: "actions.stop_microphone", icon: "mic", input: "microphone", red: true },
 
     // TIMERS
     id_start_timer: { SECTION: "tabs.timers", common: true, canAddMultiple: true, name: "actions.id_start_timer", icon: "timer", input: "id", incompatible: ["pause_timers", "stop_timers"] },
@@ -85,7 +93,6 @@ export const actionData = {
 
     // FUNCTIONS
     change_variable: { SECTION: "tabs.functions", common: true, canAddMultiple: true, name: "actions.change_variable", icon: "variable", input: "variable" },
-    start_trigger: { common: true, canAddMultiple: true, slideId: "trigger", name: "actions.start_trigger", icon: "trigger", input: "id" },
 
     change_draw_zoom: { SECTION: "menu.draw", name: "actions.change_draw_zoom", icon: "zoom", input: "draw_zoom" },
 
@@ -93,6 +100,26 @@ export const actionData = {
     // send_midi: { SECTION: "actions.emit_data", canAddMultiple: true, slideId: "sendMidi", name: "actions.send_midi", icon: "music", input: "midi" },
     // send_rest_command: { canAddMultiple: true, name: "actions.send_rest_command", icon: "trigger", input: "rest" },
     emit_action: { SECTION: "actions.emit_data", common: true, canAddMultiple: true, name: "actions.emit_data", icon: "emitter", input: "emitter" },
+
+    // Interactions
+    interaction_start: { SECTION: "tabs.interactions", name: "tabs.interactions: inputs.start", icon: "game", input: "interactions" },
+    interaction_stop: { name: "tabs.interactions: media.stop", icon: "game", input: "interactions" },
+    interaction_next: { canAddMultiple: true, name: "tabs.interactions: media.next", icon: "game", input: "interactions" },
+    interaction_previous: { canAddMultiple: true, name: "tabs.interactions: media.previous", icon: "game", input: "interactions" },
+
+    // OBS Studio
+    obs_set_scene: { SECTION: "OBS Studio", name: "OBS Studio: Set scene", icon: "screen", input: "obs_scene" },
+    obs_start_livestream: { name: "OBS Studio: Start livestream", icon: "camera" },
+    obs_stop_livestream: { name: "OBS Studio: Stop livestream", icon: "camera", red: true },
+    obs_start_recording: { name: "OBS Studio: Start recording", icon: "record" },
+    obs_stop_recording: { name: "OBS Studio: Stop recording", icon: "record", red: true },
+
+    // SPOTIFY
+    spotify_play: { SECTION: "Spotify", name: "Spotify: media.play", icon: "play" },
+    spotify_pause: { name: "Spotify: media.pause", icon: "pause" },
+    spotify_fade_out: { name: "Spotify: media.fade_out", icon: "clear" },
+    spotify_next: { name: "Spotify: media.next", icon: "nextFull" },
+    spotify_previous: { name: "Spotify: media.previous", icon: "previousFull" },
 
     // OTHER
     toggle_log_song_usage: { SECTION: "settings.other", name: "settings.log_song_usage", icon: "history", input: "toggle" },

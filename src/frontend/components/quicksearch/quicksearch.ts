@@ -18,6 +18,7 @@ import {
     currentOutputSettings,
     disabledServers,
     drawerTabsData,
+    editMode,
     focusMode,
     folders,
     groups,
@@ -31,6 +32,7 @@ import {
     projectView,
     quickSearchActive,
     refreshEditSlide,
+    selected,
     selectedProfile,
     settingsTab,
     showRecentlyUsedProjects,
@@ -38,8 +40,7 @@ import {
     slidesOptions,
     sortedShowsList,
     stageShows,
-    styles,
-    textEditActive
+    styles
 } from "../../stores"
 import { triggerFunction } from "../../utils/common"
 import { translateText } from "../../utils/language"
@@ -48,7 +49,10 @@ import { formatSearch, showSearch } from "../../utils/search"
 import { runAction } from "../actions/actions"
 import { sortByClosestMatch } from "../actions/apiHelper"
 import { menuClick } from "../context/menuClick"
+import { getLikelyPosition } from "../edit/scripts/autoPosition"
 import { openDrawer } from "../edit/scripts/edit"
+import { addItem, updateSortedStageItems } from "../edit/scripts/itemHelpers"
+import { slideItems, stageItems } from "../edit/values/items"
 import { keysToID } from "../helpers/array"
 import { duplicate } from "../helpers/clipboard"
 import { history } from "../helpers/history"
@@ -70,7 +74,7 @@ interface QuickSearchValue {
 const MAX_RESULTS_NORMAL = 5
 const MAX_RESULTS_LARGE = 10
 
-export type SearchCategory = "show" | "settings" | "stage" | "overlays" | "projects" | "actions" | "navigation" | "faq" | "shows" | "media" | "audio" | "bible"
+export type SearchCategory = "show" | "settings" | "stage" | "overlays" | "projects" | "actions" | "navigation" | "faq" | "shows" | "media" | "audio" | "bible" | "items"
 export const quickSearchCategoryNames: Record<SearchCategory, string> = {
     show: "formats.show",
     settings: "menu.settings",
@@ -83,7 +87,8 @@ export const quickSearchCategoryNames: Record<SearchCategory, string> = {
     shows: "tabs.shows",
     media: "tabs.media",
     audio: "tabs.audio",
-    bible: "tabs.scripture"
+    bible: "tabs.scripture",
+    items: "tools.items"
 }
 
 export async function quicksearch(searchValue: string, categoryFilter: null | SearchCategory = null) {
@@ -107,6 +112,44 @@ export async function quicksearch(searchValue: string, categoryFilter: null | Se
 
         if (get(activePage) === "edit" && !get(activeEdit)?.id && get(activeShow)?.type === "show") {
             addValues(trimValues(sort(getEditActions())), "custom_actions")
+        }
+
+        const isEditMode = get(activePage) === "edit" && (get(activeEdit).slide !== undefined || get(activeEdit).type === "overlay" || get(activeEdit).type === "template")
+        const isStageMode = get(activePage) === "stage" && get(activeStage).id
+
+        if (isEditMode) {
+            currentCategory = "items"
+            const addItems = slideItems
+                .flatMap((group) => group.items)
+                .flatMap((item) => (item.children ? item.children : [item]))
+                .map((item) => ({
+                    id: item.id,
+                    icon: item.icon,
+                    name: translateText(item.title || item.label)
+                }))
+
+            addValues(trimValues(sort(addItems)), "add_item_edit")
+        } else if (isStageMode) {
+            currentCategory = "items"
+            const stageId = get(activeStage).id || ""
+            const stageShow = get(stageShows)[stageId] || {}
+            const slideTextItemsCount = Object.values(stageShow.items || {}).filter((a: any) => a.type === "slide_text").length
+            const addItems = stageItems
+                .flatMap((group) => group.items)
+                .flatMap((item) => (item.children ? item.children : [item]))
+                .map((item) => {
+                    let name = translateText(item.title || item.label)
+                    if (item.id === "slide_text") {
+                        name = slideTextItemsCount === 1 ? translateText("stage.next_slide_text") : translateText("items.slide_text") + (slideTextItemsCount > 1 ? ` (+${slideTextItemsCount})` : "")
+                    }
+                    return {
+                        id: item.id,
+                        icon: item.icon,
+                        name
+                    }
+                })
+
+            addValues(trimValues(sort(addItems)), "add_item_stage")
         }
     }
 
@@ -232,7 +275,7 @@ const triggerActions = {
         }
 
         if (id === "textedit") {
-            textEditActive.set(!get(textEditActive))
+            editMode.set(get(editMode) === "text_edit" ? "default" : "text_edit")
             return
         }
 
@@ -276,6 +319,22 @@ const triggerActions = {
             return
         }
     },
+    add_item_edit: (id: string) => {
+        if (id === "icon") {
+            selected.set({ id: "slide_icon", data: [{ ...get(activeEdit) }] })
+            activePopup.set("icon")
+        } else {
+            const textVal = id === "text" && get(activeEdit).type === "template" ? translateText("example.text") : ""
+            if (id === "text") {
+                addItem(id as any, null, {}, textVal)
+            } else {
+                addItem(id as any)
+            }
+        }
+    },
+    add_item_stage: (id: string) => {
+        addStageItem(id)
+    },
     settings_output: (id: string) => {
         currentOutputSettings.set(id)
         settingsTab.set("display_settings")
@@ -314,7 +373,7 @@ const triggerActions = {
     },
     action: (id: string) => {
         const action = get(actions)[id]
-        runAction(action)
+        runAction(action, { source: "quicksearch" })
     },
     main_page: (id: string) => {
         if (id === "projects") {
@@ -547,11 +606,9 @@ function getMenubarItems() {
 const drawerSubmenus = [
     // media
     { id: "online", name: "media.online", icon: "web" },
-    { id: "screens", name: "live.screens", icon: "screen", aliases: ["live.windows", "NDI®"] },
-    { id: "cameras", name: "live.cameras", icon: "camera" },
+    { id: "media_inputs", name: "emitters.inputs", icon: "input", aliases: ["live.screens", "live.windows", "NDI®", "live.cameras"] },
     // audio
-    { id: "microphones", name: "live.microphones", icon: "microphone" },
-    { id: "audio_streams", name: "live.audio_streams", icon: "audio_stream" },
+    { id: "audio_inputs", name: "emitters.inputs", icon: "input", aliases: ["live.microphones", "live.audio_streams"] },
     // overlays
     { id: "effects", name: "tabs.effects", icon: "effect" },
     // calendar
@@ -559,8 +616,7 @@ const drawerSubmenus = [
     // functions
     { id: "actions", name: "tabs.actions", icon: "actions", aliases: ["-Macros"] },
     { id: "timer", name: "tabs.timers", icon: "timer" },
-    { id: "variables", name: "tabs.variables", icon: "variable" },
-    { id: "triggers", name: "tabs.triggers", icon: "trigger" }
+    { id: "variables", name: "tabs.variables", icon: "variable" }
 ]
 
 function getDrawerSubmenus() {
@@ -583,8 +639,7 @@ const popups = [
     { id: "action", name: "new.action", icon: "add", data: { drawerTab: "actions" }, aliases: ["-New macro"] },
     { id: "timer", name: "new.timer", icon: "add", data: { drawerTab: "timer" } },
     { id: "variable", name: "new.variable", icon: "add", data: { drawerTab: "variables" } },
-    { id: "trigger", name: "new.trigger", icon: "add", data: { drawerTab: "triggers" } },
-    { id: "audio_stream", name: "new.audio_stream", icon: "add", data: { drawerTab: "audio_streams" } },
+    { id: "audio_stream", name: "new.audio_stream", icon: "add", data: { drawerTab: "audio_inputs" } },
     { id: "output", name: "settings.new_output", icon: "add", data: { settingsTab: "display_settings" } },
     { id: "style", name: "new.style", icon: "add", data: { settingsTab: "styles" } },
     { id: "profile", name: "new.profile", icon: "add", data: { settingsTab: "profiles" } },
@@ -818,4 +873,55 @@ const editActions = [
 
 function getEditActions() {
     return translateNames(editActions)
+}
+
+function addStageItem(itemType: string, textValue = "") {
+    const stageId = get(activeStage).id || ""
+    if (!stageId) return
+
+    const resolution = { width: 1920, height: 1080 }
+    const halfWidth = resolution.width * 0.5
+    const halfHeight = resolution.height * 0.5
+    const DEFAULT_STYLE = `width: ${halfWidth}px;height: ${halfHeight}px;left: ${halfWidth * 0.5}px;top: ${halfHeight * 0.5}px;`
+    const smallItems = ["timer", "clock", "slide_tracker"]
+
+    let itemId = uid(5)
+    stageShows.update((a: any) => {
+        if (!a[stageId]?.items) return a
+
+        let style = DEFAULT_STYLE
+        if (smallItems.includes(itemType) || textValue) {
+            const width = resolution.width * 0.45
+            const left = halfWidth - width * 0.5
+            const height = 150
+            const top = halfHeight - height * 0.5
+            style = `width: ${width}px;height: ${height}px;left: ${left}px;top: ${top}px;`
+        }
+
+        if (Object.keys(a[stageId]?.items).length > 0) {
+            style = getLikelyPosition(Object.values(a[stageId].items), style)
+        }
+
+        let item: any = { type: itemType as any, style, align: "" }
+
+        if (itemType === "text") item.lines = [{ align: "", text: [{ style: "", value: textValue || "" }] }]
+        else if (itemType === "slide_text") {
+            const slideTextItems = Object.values(a[stageId].items || {}).filter((a: any) => a.type === "slide_text")
+            item.slideOffset = slideTextItems.length
+            item.style += "font-size: 800px;"
+        }
+
+        a[stageId].items[itemId] = item
+        a[stageId].modified = Date.now()
+        return a
+    })
+
+    updateSortedStageItems()
+
+    if (Object.keys(get(stageShows)[stageId]?.items || {}).length > 1) {
+        activeStage.update((a) => {
+            a.items = [itemId]
+            return a
+        })
+    }
 }

@@ -1,6 +1,6 @@
 <script lang="ts">
     import type { DrawerTabIds } from "../../../types/Tabs"
-    import { activeDrawerTab, activeEdit, activePage, activePopup, activeProject, activeShow, activeTriggerFunction, dictionary, drawer, drawerOpenedInEdit, drawerTabsData, focusMode, labelsDisabled, os, previousShow, projects, quickTextCache, selected } from "../../stores"
+    import { activeDrawerTab, activeEdit, activePage, activePopup, activeProject, activeShow, activeTriggerFunction, dictionary, drawer, drawerOpenedInEdit, drawerTabsData, focusMode, labelsDisabled, mediaOptions, os, previousShow, projects, quickTextCache, scriptureSettings, selected, showsCache } from "../../stores"
     import { DEFAULT_DRAWER_HEIGHT, DEFAULT_WIDTH, MENU_BAR_HEIGHT } from "../../utils/common"
     import { translateText } from "../../utils/language"
     import { getAccess } from "../../utils/profile"
@@ -12,6 +12,10 @@
     import { history } from "../helpers/history"
     import Icon from "../helpers/Icon.svelte"
     import { selectTextOnFocus } from "../helpers/inputActions"
+    import { setOutput } from "../helpers/output"
+    import { loadShows } from "../helpers/setShow"
+    import { getLayoutRef } from "../helpers/show"
+    import { updateOut } from "../helpers/showActions"
     import T from "../helpers/T.svelte"
     import Button from "../inputs/Button.svelte"
     import MaterialButton from "../inputs/MaterialButton.svelte"
@@ -78,6 +82,7 @@
 
         // if drawer is closed when searching, set category to "all"
         if (e === null && ["shows", "overlays", "templates", "media", "audio"].includes($activeDrawerTab)) {
+            if ($activeDrawerTab === "media") mediaOptions.update((a) => ({ ...a, view: "all" }))
             drawerTabsData.update((a) => {
                 a[$activeDrawerTab].activeSubTab = "all"
                 return a
@@ -132,17 +137,22 @@
 
     let firstMatch: null | any = null
     let searchElem: HTMLInputElement | undefined
-    function keydown(e: KeyboardEvent) {
+    async function keydown(e: KeyboardEvent) {
         if ((e.ctrlKey || e.metaKey) && e.key === "f") {
             if ($activePopup === "show" || shouldOpenReplace()) return
             focusSearch()
 
-            // change to "Show" and "All" when searching when drawer is closed
-            // (not needed now as there is Quick search)
-            // if ($drawer.height <= minHeight) {
-            //     setDrawerTabData("shows", "all")
-            //     activeDrawerTab.set("shows")
-            // }
+            // auto change to "Shows" tab, when closed on a "Media" tab, as commonly people don't change back after adding backgrounds
+            // (not really needed as we have Quick search)
+            const isClosed = $drawer.height <= minHeight
+            const mediaTab = ["media", "audio"].includes($activeDrawerTab)
+            if (isClosed && mediaTab) {
+                activeDrawerTab.set("shows")
+                drawerTabsData.update((a) => {
+                    a.shows.activeSubTab = "all"
+                    return a
+                })
+            }
         } else if ((e.ctrlKey || e.metaKey) && e.key === "d") {
             if (!$selected?.id && !$activeEdit.items.length) click(null)
         } else if (e.key === "Enter") {
@@ -150,6 +160,21 @@
             if ($activeDrawerTab !== "shows") return
 
             let match = $activeShow?.data?.searchInput === true ? { id: $activeShow.id } : firstMatch
+
+            // play
+            if (e.ctrlKey || e.metaKey) {
+                const showId = match.id
+                await loadShows([showId])
+                if (!$showsCache[showId]) return
+
+                let layoutRef = getLayoutRef(showId)
+                let firstEnabledIndex = layoutRef.findIndex((a) => !a.data.disabled)
+                if (firstEnabledIndex === -1) return
+
+                updateOut("active", firstEnabledIndex, layoutRef)
+                setOutput("slide", { id: showId, layout: $showsCache[showId].settings.activeLayout, index: firstEnabledIndex })
+                return
+            }
 
             // create from search
             if (match === "SEARCH_CREATE") {
@@ -229,6 +254,11 @@
             {#if $activeDrawerTab === "scripture"}
                 <div class="clearSearch autocomplete">
                     <Icon id="autofill" white />
+                </div>
+                <div class="clearSearch options" on:mousedown|stopPropagation on:mouseup|stopPropagation>
+                    <Button style="height: 100%;" title={translateText("edit.options")} on:click={() => activePopup.set("drawer_search_options")}>
+                        <Icon id="options" white={!$scriptureSettings.enterSwapped} />
+                    </Button>
                 </div>
             {/if}
             <div class="clearSearch">
@@ -328,11 +358,14 @@
         height: calc(100% - 4px);
         z-index: 1;
     }
+    .clearSearch.options {
+        right: 40px;
+    }
     .clearSearch.autocomplete {
-        right: 45px;
+        right: 90px;
         display: flex;
         align-items: center;
-        opacity: 0.3;
+        opacity: 0.2;
         pointer-events: none;
     }
 

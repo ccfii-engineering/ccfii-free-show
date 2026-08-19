@@ -2,23 +2,24 @@
     import { onDestroy, onMount } from "svelte"
     import type { Item } from "../../../types/Show"
     import { currentWindow, slidesOptions } from "../../stores"
+    import MetronomeVisualizer from "../drawer/audio/MetronomeVisualizer.svelte"
     import Cam from "../drawer/live/Cam.svelte"
     import autosize from "../edit/scripts/autosize"
     import { getStyles } from "../helpers/style"
+    import { getCropState } from "../helpers/cropping"
     import Clock from "../system/Clock.svelte"
     import Captions from "./views/Captions.svelte"
+    import Chart from "./views/Chart.svelte"
     import DynamicEvents from "./views/DynamicEvents.svelte"
     import IconItem from "./views/IconItem.svelte"
-    import ListView from "./views/ListView.svelte"
     import MediaItem from "./views/MediaItem.svelte"
-    import Mirror from "./views/Mirror.svelte"
     import SlideProgress from "./views/SlideProgress.svelte"
+    import Table from "./views/Table.svelte"
     import Timer from "./views/Timer.svelte"
     import Variable from "./views/Variable.svelte"
     import Visualizer from "./views/Visualizer.svelte"
     import Weather from "./views/Weather.svelte"
     import Website from "./views/Website.svelte"
-    import MetronomeVisualizer from "../drawer/audio/MetronomeVisualizer.svelte"
 
     export let item: Item
 
@@ -29,14 +30,12 @@
     export let preview = false
     export let cropPreviewMode = false
     export let isTemplatePreview = false
-    export let mirror = true
-    export let isMirrorItem = false
-    export let disableListTransition = false
     export let smallFontSize = false
     export let fontSize = 0
     export let outputId = ""
 
     export let ratio = 1
+    export let index = -1
     export let ref: {
         type?: "show" | "stage" | "overlay" | "template"
         showId?: string
@@ -60,8 +59,11 @@
 
     $: noAutoSize = item.auto === false && item.textFit === "none"
 
+    let previousItem = "{}"
+    $: newItem = JSON.stringify(item)
+
     // this only applies to the stage slide editor
-    $: if (edit && item && itemElem) calculateAutosize()
+    $: if (edit && item && itemElem && !noAutoSize && newItem !== previousItem) calculateAutosize()
     let autoSize = 0
     let loopStop: NodeJS.Timeout | null = null
     function calculateAutosize() {
@@ -69,6 +71,7 @@
         loopStop = setTimeout(() => {
             loopStop = null
         }, 200)
+        previousItem = newItem
 
         let textQuery = item.type === "slide_tracker" ? ".progress div" : ""
         // timeout to update size after content change (e.g. Clock seconds)
@@ -78,12 +81,13 @@
         }, 50)
     }
 
-    $: cameraStyleString = `object-fit: ${item.fit || "contain"};filter: ${item.filter};transform: scale(${item.flipped ? "-1" : "1"}, ${item.flippedY ? "-1" : "1"});`
+    $: cameraCropState = getCropState(item.cropping, cropPreviewMode, item.style)
+    $: cameraStyleString = `${cameraCropState.mediaCropGeometry}object-fit: ${item.fit || "contain"};filter: ${item.filter};transform: scale(${item.flipped ? "-1" : "1"}, ${item.flippedY ? "-1" : "1"});`
     $: variableStyleString = typeof item.style === "string" ? (item.style.includes("font-size") && item.style.split("font-size:")[1].trim()[0] !== "0" ? "" : `font-size: ${edit ? autoSize : fontSize}px;`) : ""
 </script>
 
 {#if item.type === "media"}
-    <MediaItem id="{ref.showId}_{ref.slideId}" {item} {outputId} slideRef={{ ...ref, slideIndex }} {preview} {mirror} {edit} {cropPreviewMode} />
+    <MediaItem {item} {outputId} slideRef={{ ...ref, slideIndex }} {preview} {edit} {cropPreviewMode} />
 {:else if item.type === "web"}
     <Website src={item.web?.src || ""} navigation={!edit && !item.web?.noNavigation} clickable={!edit && $currentWindow === "output"} {ratio} />
 {:else if item.type === "timer"}
@@ -92,7 +96,7 @@
     <Clock {item} fontStyle={noAutoSize ? "" : `font-size: ${edit ? autoSize : fontSize}px;`} style={false} {...item.clock} />
 {:else if item.type === "camera"}
     {#if item.device}
-        <Cam cam={item.device} item style={cameraStyleString} disablePreview={isTemplatePreview} />
+        <Cam cam={item.device} item style={cameraStyleString} disablePreview={isTemplatePreview} cropping={item.cropping} {cropPreviewMode} />
     {/if}
 {:else if item.type === "slide_tracker"}
     <SlideProgress {item} tracker={item.tracker || {}} autoSize={item.auto === false ? 0 : edit ? autoSize : fontSize} {outputId} />
@@ -100,11 +104,6 @@
     <DynamicEvents {...item.events} textSize={smallFontSize ? (-1.1 * $slidesOptions.columns + 10) * 5 : Number(getStyles(item.style, true)?.["font-size"]) || 80} />
 {:else if item.type === "weather"}
     <Weather data={item.weather || {}} />
-{:else if item.type === "mirror"}
-    <!-- no mirrors in mirrors! -->
-    {#if !isMirrorItem}
-        <Mirror {item} {ref} {ratio} index={slideIndex} {edit} />
-    {/if}
 {:else if item.type === "visualizer"}
     <Visualizer {item} {preview} {edit} />
 {:else if item.type === "captions"}
@@ -113,10 +112,11 @@
     <IconItem {item} {ratio} />
 {:else if item.type === "metronome"}
     <MetronomeVisualizer isItem />
-{:else if item.type === "list"}
-    <!-- moved to textbox in 1.3.3 -->
-    <ListView list={item.list} disableTransition={edit || disableListTransition} />
 {:else if item.type === "variable"}
     <!-- moved to textbox in 1.3.3 -->
     <Variable {item} style={variableStyleString} ref={{ ...ref, slideIndex }} hideText={edit ? false : (ref.type === "stage" && !!$currentWindow) || preview} {edit} />
+{:else if item.type === "chart"}
+    <Chart {item} ref={{ ...ref, slideIndex }} />
+{:else if item.type === "table"}
+    <Table {item} {edit} {ref} {ratio} {index} />
 {/if}

@@ -101,10 +101,12 @@ function mergeOverrideStyles(baseStyle: string, override: TemplateStyleOverride)
 
     // IMPORTANT: Remove font-size from merged result since it will be set separately by fontSizePart
     // This prevents duplicate font-size declarations in the final style string
+    let fontSizePercentage = (parseInt(merged["font-size"]) || 100) / 100
+    if (fontSizePercentage > 2) fontSizePercentage = 1 // likely grow to fit
     delete merged["font-size"]
 
     // Convert back to CSS string with !important for color and font-style to ensure they override
-    const result =
+    let result =
         Object.entries(merged)
             .map(([key, value]) => {
                 // Add !important to style overrides that might be getting overridden
@@ -114,6 +116,8 @@ function mergeOverrideStyles(baseStyle: string, override: TemplateStyleOverride)
                 return `${key}:${value}`
             })
             .join(";") + (Object.keys(merged).length ? ";" : "")
+
+    result += `font-size: calc(var(--base-font-size) * ${fontSizePercentage}) !important;`
 
     return result
 }

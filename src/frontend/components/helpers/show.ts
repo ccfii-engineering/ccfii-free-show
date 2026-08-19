@@ -28,6 +28,8 @@ export function checkName(name = "", showId = "") {
 }
 
 export function formatToFileName(name = "") {
+    if (typeof name !== "string") return ""
+
     name = name.replaceAll(":", ",")
     // remove illegal file name characters
     name = name.trim().replace(/[/\\?%*:|│"<>╠┤╡╝╖┐¬]/g, "")
@@ -39,6 +41,8 @@ export function formatToFileName(name = "") {
 
 // convert any text to a label id format
 export function getLabelId(label: string, replaceNumbers = true) {
+    if (!label) return ""
+
     // TODO: disallow chars in labels: #:;!.,- ??
     label = label
         .toLowerCase()
@@ -127,15 +131,7 @@ export function getGroupName({ show, showId }: { show: Show | null; showId: stri
     if (!name?.length) name = layoutNumber ? "—" : ""
     if (!get(groupNumbers)) return name
 
-    // sort by order when just one layout
-    let slides = keysToID(clone(show.slides || {}))
-    if (Object.keys(show.layouts || {}).length < 2) {
-        const layoutSlides =
-            Object.values(show.layouts || {})[0]
-                ?.slides?.filter(Boolean)
-                ?.map(({ id }) => id) || []
-        slides = slides.sort((a, b) => layoutSlides.indexOf(a.id) - layoutSlides.indexOf(b.id))
-    }
+    let slides = getSortedLayoutSlides(show)
 
     // different slides with same name
     const currentSlide = show.slides?.[slideID] || {}
@@ -153,6 +149,27 @@ export function getGroupName({ show, showId }: { show: Show | null; showId: stri
     if (layoutNumber) name += addHTML ? currentLayoutNumberHTML : currentLayoutNumber
 
     return name
+}
+
+// sort by order when just one layout
+function getSortedLayoutSlides(show: Show) {
+    let slides = keysToID(clone(show.slides || {}))
+    if (Object.keys(show.layouts || {}).length > 1) return slides
+
+    const layoutSlides = (Object.values(show.layouts || {})[0]?.slides || []).filter(Boolean).map(({ id }) => id)
+    if (!layoutSlides.length) return slides
+
+    slides = slides.sort((a, b) => {
+        const idxA = layoutSlides.indexOf(a.id)
+        const idxB = layoutSlides.indexOf(b.id)
+
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB
+        if (idxA !== -1) return -1
+        if (idxB !== -1) return 1
+        return 0
+    })
+
+    return slides
 }
 
 // meta
@@ -266,8 +283,6 @@ export function getCachedShow(id: string, layout = "", updater = get(cachedShows
 
 // update cached show
 export function updateCachedShow(showId: string, show: Show, layoutId = "") {
-    // WIP looped many times when show not loading
-    // console.log(id, show)
     if (!show) return
 
     const layout = GetLayout(showId, layoutId)
@@ -286,15 +301,7 @@ export function updateCachedShow(showId: string, show: Show, layoutId = "") {
         slidesUpdated: cachedShowsData[customId]?.template?.slidesUpdated || false
     }
 
-    // sort by order when just one layout
-    let showSlides = keysToID(clone(show.slides || {}))
-    if (Object.keys(show.layouts || {}).length < 2) {
-        const layoutSlides =
-            Object.values(show.layouts || {})[0]
-                ?.slides?.filter(Boolean)
-                ?.map(({ id }) => id) || []
-        showSlides = showSlides.sort((a, b) => layoutSlides.indexOf(a.id) - layoutSlides.indexOf(b.id))
-    }
+    let showSlides = getSortedLayoutSlides(show)
 
     // create groups
     const addedGroups: { [key: string]: number } = {}
@@ -380,4 +387,34 @@ export function removeTemplatesFromShow(showId: string, slideId?: string, enable
 
 export function getLayoutRef(showId = "active", _updater?: Shows | Show) {
     return _show(showId).layouts("active").ref()[0] || []
+}
+
+// a child slide has no "locked" state of its own, so check its parent (group) slide
+export function isSlideLocked(showId: string, slideId: string, _updater?: Shows | Show | null): boolean {
+    const slides = get(showsCache)[showId]?.slides || {}
+    const slide = slides[slideId]
+    if (!slide) return false
+    if (slide.locked) return true
+
+    // child slides are stored in the parent slide's "children" array
+    if (slide.group !== null) return false
+    const parentId = Object.keys(slides).find((id) => slides[id]?.children?.includes(slideId))
+    return !!slides[parentId || ""]?.locked
+}
+
+export function bindSlidesToOutput(indexes: number[], outputId: string) {
+    const ref = getLayoutRef()
+    const newBindings: string[][] = []
+
+    const add = !ref[indexes[0]]?.data?.bindings?.includes(outputId)
+
+    indexes.forEach((i) => {
+        const bindings: string[] = ref[i]?.data?.bindings ? [...ref[i].data.bindings] : []
+        const existingIndex = bindings.indexOf(outputId)
+        if (add && existingIndex < 0) bindings.push(outputId)
+        else if (!add && existingIndex >= 0) bindings.splice(existingIndex, 1)
+        newBindings.push(bindings)
+    })
+
+    history({ id: "SHOW_LAYOUT", newData: { key: "bindings", data: newBindings, indexes, dataIsArray: false } })
 }

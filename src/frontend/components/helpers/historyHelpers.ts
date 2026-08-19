@@ -2,7 +2,7 @@ import { get } from "svelte/store"
 import { uid } from "uid"
 import { REMOTE } from "../../../types/Channels"
 import { ShowObj } from "../../classes/Show"
-import { activeDrawerTab, activeEdit, activeProject, activeRename, activeShow, activeStage, activeTagFilter, audioPlaylists, currentOutputSettings, dictionary, drawerTabsData, effects, events, focusMode, folders, globalTags, groups, notFound, openedFolders, overlays, playerVideos, profiles, projects, projectTemplates, projectView, shows, showsCache, special, stageShows, styles, theme, themes } from "../../stores"
+import { actions, activeDrawerTab, activeEdit, activeProject, activeRename, activeShow, activeStage, activeTagFilter, audioPlaylists, currentOutputSettings, dictionary, drawerTabsData, editingProjectTemplate, effects, events, focusMode, folders, globalTags, groups, interactions, notFound, openedFolders, overlays, playerVideos, profiles, projects, projectTemplates, projectView, shows, showsCache, special, stageShows, styles, theme, themes } from "../../stores"
 import { translateText } from "../../utils/language"
 import { updateThemeValues } from "../../utils/updateSettings"
 import { EMPTY_CATEGORY, EMPTY_EFFECT, EMPTY_EVENT, EMPTY_LAYOUT, EMPTY_PLAYER_VIDEO, EMPTY_PROJECT, EMPTY_PROJECT_FOLDER, EMPTY_SECTION, EMPTY_SLIDE, EMPTY_STAGE, EMPTY_TAG } from "../../values/empty"
@@ -190,6 +190,14 @@ export const _updaters = {
         },
         timestamp: true
     },
+    project_show_placeholder: {
+        store: projectTemplates,
+        empty: { id: "", type: "show_placeholder", name: "—" },
+        initialize: (data) => {
+            return replaceEmptyValues(data, { id: uid(5) }) // name: translateText("formats.show")
+        },
+        timestamp: true
+    },
 
     project_key: { store: projects, timestamp: true },
     project_folder_key: { store: folders, timestamp: true },
@@ -357,12 +365,20 @@ export const _updaters = {
             if (data.remember?.project && get(projects)[data.remember.project]?.shows) {
                 projects.update((p) => {
                     if (data.remember.index !== undefined && p[data.remember.project].shows.length > data.remember.index) {
-                        p[data.remember.project].shows = addToPos(p[data.remember.project].shows, [{ id }], data.remember.index)
-                        showRef.index = data.remember.index
+                        if (data.remember.replacePlaceholder) {
+                            p[data.remember.project].shows[data.remember.index] = { id }
+                            showRef.index = data.remember.index
+                        } else {
+                            p[data.remember.project].shows = addToPos(p[data.remember.project].shows, [{ id }], data.remember.index)
+                            showRef.index = data.remember.index
+                        }
                     } else {
                         p[data.remember.project].shows.push({ id })
                         showRef.index = p[data.remember.project].shows.length - 1
                     }
+
+                    // update project modified so changes work with cloud sync
+                    p[data.remember.project].modified = Date.now()
 
                     return p
                 })
@@ -435,11 +451,16 @@ export const _updaters = {
         select: (id: string, { subkey }: any, initializing: boolean) => {
             _show(id).set({ key: "settings.activeLayout", value: subkey })
 
-            // set active layout in project
-            if (get(activeShow)?.index !== undefined && get(activeProject) && get(projects)[get(activeProject)!]?.shows?.[get(activeShow)!.index!]) {
-                projects.update((a) => {
-                    a[get(activeProject)!].shows[get(activeShow)!.index!].layout = subkey
-                    a[get(activeProject)!].shows[get(activeShow)!.index!].layoutInfo = { name: _show(id).get("layouts")?.[subkey]?.name || "" }
+            // set active layout in project / template
+            const isTemplate = !!get(editingProjectTemplate)
+            const projectId = isTemplate ? get(editingProjectTemplate) : get(activeProject)
+            const store = isTemplate ? projectTemplates : projects
+            const activeShowIndex = get(activeShow)?.index
+
+            if (activeShowIndex !== undefined && projectId && get(store)[projectId!]?.shows?.[activeShowIndex]) {
+                store.update((a) => {
+                    a[projectId!].shows[activeShowIndex].layout = subkey
+                    a[projectId!].shows[activeShowIndex].layoutInfo = { name: _show(id).get("layouts")?.[subkey]?.name || "" }
                     return a
                 })
             }
@@ -564,6 +585,14 @@ export const _updaters = {
             if (!initializing || data.key) return
             activeRename.set("profile_" + id)
         }
+    },
+    action: {
+        store: actions,
+        empty: { name: "", triggers: [] }
+    },
+    interaction: {
+        store: interactions,
+        empty: { name: "", inputs: [] }
     }
 }
 

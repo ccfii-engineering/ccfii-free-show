@@ -25,12 +25,12 @@ const HALF_MINUTE = 30000
 // https://stackoverflow.com/questions/33761770/what-constraints-should-i-pass-to-getusermedia-in-order-to-get-two-video-media
 // https://blog.addpipe.com/getusermedia-video-constraints/
 const DEFAULT_CAMERA_CONSTRAINTS: MediaTrackConstraints = {
-    deviceId: { exact: "" },
-    groupId: "",
+    // deviceId: { exact: "" },
+    // groupId: "",
     width: { ideal: 1920 }, // 1280
     height: { ideal: 1080 } // 720
     // aspectRatio: 1.777777778,
-    // frameRate: { max: 30 },
+    // frameRate: { ideal: 30, max: 60 },
     // facingMode: { exact: "user" }
 }
 
@@ -53,6 +53,28 @@ class CameraManager {
         return get(special).startupCameras || []
     }
 
+    private updateBadCameras(update: (cameraIds: string[]) => string[]) {
+        special.update((a) => {
+            const badCameras = Array.isArray(a.cameraBad) ? a.cameraBad : []
+            a.cameraBad = update(badCameras)
+            return a
+        })
+    }
+
+    markBadCamera(cameraId: string) {
+        if (!cameraId) return
+        this.updateBadCameras((badCameras) => (badCameras.includes(cameraId) ? badCameras : [...badCameras, cameraId]))
+    }
+
+    clearBadCamera(cameraId: string) {
+        if (!cameraId) return
+        this.updateBadCameras((badCameras) => badCameras.filter((id) => id !== cameraId))
+    }
+
+    private isTimeoutErrorMessage(message: string) {
+        return /timeout/i.test(message || "")
+    }
+
     private async getCameraFromId(cameraId: string) {
         const allCameras = await this.getCamerasList()
         return allCameras.find((a) => a.id === cameraId)
@@ -67,12 +89,13 @@ class CameraManager {
             if (!selectedCameraIds.includes(cameraId)) this.cleanupCamera(cameraId)
         }
 
-        if (!selectedCameraIds.length) return
+        if (!selectedCameraIds.length) {
+            this.stopKeepaliveMonitor()
+            return
+        }
 
         const camerasToWarm = allCameras.filter((camera) => selectedCameraIds.includes(camera.id))
-        for (const camera of camerasToWarm) {
-            await this.warmUpCamera(camera)
-        }
+        await Promise.allSettled(camerasToWarm.map((camera) => this.warmUpCamera(camera)))
 
         this.startKeepaliveMonitor()
     }
@@ -200,28 +223,33 @@ class CameraManager {
     async getCameraStream(cameraId: string, groupId?: string) {
         // get existing "warmed" camera
         const warmStream = this.getWarmCamera(cameraId)
-        if (warmStream) return warmStream
+        if (warmStream) {
+            this.clearBadCamera(cameraId)
+            return warmStream
+        }
 
-        groupId = groupId || (await this.getCameraFromId(cameraId))?.group
         const cameraProperties = {
             video: {
                 ...DEFAULT_CAMERA_CONSTRAINTS,
                 deviceId: { exact: cameraId },
-                groupId
+                groupId: groupId || (await this.getCameraFromId(cameraId))?.group
             }
         }
 
         try {
             const stream = await navigator.mediaDevices.getUserMedia(cameraProperties)
+            this.clearBadCamera(cameraId)
             return stream
         } catch (err) {
-            let msg: string = err.message
-            if (err.name === "NotReadableError") {
+            let msg: string = err?.message || String(err)
+
+            if (err?.name === "NotReadableError") {
                 msg += "<br />Maybe it's in use by another program."
                 sendMain(Main.ACCESS_CAMERA_PERMISSION)
             }
 
-            const error = err.name + ":<br />" + msg
+            const error = err?.name + ":<br />" + msg
+            if (this.isTimeoutErrorMessage(error)) this.markBadCamera(cameraId)
             return error
         }
     }
@@ -239,6 +267,7 @@ class CameraManager {
             this.cleanupCamera(cameraId)
         }
         this.activeCameras.clear()
+        this.stopKeepaliveMonitor()
     }
 
     private cleanupCamera(cameraId: string) {
@@ -258,6 +287,10 @@ class CameraManager {
         }
 
         this.activeCameras.delete(cameraId)
+
+        if (!this.activeCameras.size) {
+            this.stopKeepaliveMonitor()
+        }
     }
 
     stopTracks(cameraStream: MediaStream | null | undefined) {
@@ -269,6 +302,13 @@ class CameraManager {
     private startKeepaliveMonitor() {
         if (this.keepaliveInterval) return
         this.keepaliveInterval = setInterval(() => this.checkAndRestartDeadCameras(), HALF_MINUTE)
+    }
+
+    private stopKeepaliveMonitor() {
+        if (!this.keepaliveInterval) return
+
+        clearInterval(this.keepaliveInterval)
+        this.keepaliveInterval = null
     }
 
     private async checkAndRestartDeadCameras() {

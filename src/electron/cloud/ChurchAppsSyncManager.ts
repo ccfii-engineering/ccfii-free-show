@@ -14,6 +14,7 @@ const SCOPE = "plans"
 const ZIP_TYPE = "application/zip"
 
 class ChurchAppsSyncManager {
+    private static offlineAlerted = false
     provider: ChurchAppsProvider
 
     constructor(provider: ChurchAppsProvider) {
@@ -75,18 +76,25 @@ class ChurchAppsSyncManager {
     }
 
     // Fetch from S3 content server. No auth needed.
+    private TWO_MINUTES = 2 * 60 * 1000
     async getData(churchId: string, teamId: string, outputFolderPath: string, fileName = "current.zip"): Promise<string | null> {
         const randomNumber = Math.floor(Math.random() * 1000000)
         const path = `/${churchId}/files/group/${teamId}/${fileName}?cacheBuster=${randomNumber}`
         console.log("Downloading data...")
 
         return new Promise((resolve) => {
-            httpsRequest(CONTENT_HOSTNAME, path, "GET", {}, {}, response, join(outputFolderPath, fileName))
+            httpsRequest(CONTENT_HOSTNAME, path, "GET", {}, {}, response, join(outputFolderPath, fileName), false, this.TWO_MINUTES)
 
             function response(err: any, filePath?: string) {
                 if (err) {
                     // likely not existing yet
                     if (err.statusCode === 404 || err.statusCode === 403) return resolve(null)
+
+                    // likely offline
+                    if (err.code === "ENOTFOUND") {
+                        ChurchAppsSyncManager.isOffline()
+                        return resolve(null)
+                    }
 
                     console.error("Failed to fetch content:", err)
                     if (fileName !== "current.zip") return resolve(null)
@@ -95,6 +103,8 @@ class ChurchAppsSyncManager {
                     return resolve(null)
                 }
 
+                // Reset offline alert state if successful
+                ChurchAppsSyncManager.offlineAlerted = false
                 return resolve(filePath || null)
             }
         })
@@ -113,36 +123,55 @@ class ChurchAppsSyncManager {
                     console.error("Failed to get token:", err)
                     if (fileName !== "current.zip") return resolve(null)
 
+                    // likely offline
+                    if (err.code === "ENOTFOUND") {
+                        ChurchAppsSyncManager.isOffline()
+                        return resolve(null)
+                    }
+
                     if (err.statusCode === 401) sendToMain(ToMain.ALERT, "Could not upload data. Make sure you are member of a team, then log out and back in.")
                     else sendToMain(ToMain.ALERT, "Failed to upload data: " + err.message)
 
                     return resolve(null)
                 }
 
+                // Reset offline alert state if successful
+                ChurchAppsSyncManager.offlineAlerted = false
                 return resolve(data)
             })
         })
     }
 
+    private static isOffline() {
+        if (ChurchAppsSyncManager.offlineAlerted) return
+        ChurchAppsSyncManager.offlineAlerted = true
+        sendToMain(ToMain.ALERT, "Offline: Data will not be synced to the cloud.")
+    }
+
     async uploadData(teamId: string, filePath: string, fileName = "current.zip"): Promise<boolean> {
-        const presigned = await this.getWriteToken(teamId, fileName)
-        if (!presigned?.url) return false
+        try {
+            const presigned = await this.getWriteToken(teamId, fileName)
+            if (!presigned?.url) return false
 
-        const fileBuffer = fs.readFileSync(filePath)
-        const blob = new Blob([fileBuffer], { type: ZIP_TYPE })
+            const fileBuffer = await fs.promises.readFile(filePath)
+            const blob = new Blob([new Uint8Array(fileBuffer)], { type: ZIP_TYPE })
 
-        const formData = new FormData()
-        formData.append("acl", "public-read")
-        formData.append("Content-Type", ZIP_TYPE)
+            const formData = new FormData()
+            formData.append("acl", "public-read")
+            formData.append("Content-Type", ZIP_TYPE)
 
-        // Loop through all the presigned parameters returned and append them to this request
-        for (const property in presigned.fields) formData.append(property, presigned.fields[property])
+            // Loop through all the presigned parameters returned and append them to this request
+            for (const property in presigned.fields) formData.append(property, presigned.fields[property])
 
-        console.log("Uploading data...")
-        formData.append("file", blob, fileName)
-        await axios.post(presigned.url, formData, { headers: { "Content-Type": "multipart/form-data" } })
+            console.log("Uploading data...")
+            formData.append("file", blob, fileName)
+            await axios.post(presigned.url, formData, { headers: { "Content-Type": "multipart/form-data" }, timeout: 60000 })
 
-        return true
+            return true
+        } catch (err) {
+            console.error("Failed to upload data:", err)
+            return false
+        }
     }
 
     // BACKUP

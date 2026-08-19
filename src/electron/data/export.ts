@@ -20,7 +20,9 @@ import { compressToZip } from "./zip"
 // SHOW: .show, PROJECT: .project, BIBLE: .fsb
 const customJSONExtensions = {
     TEMPLATE: ".fstemplate",
-    THEME: ".fstheme"
+    THEME: ".fstheme",
+    ACTION: ".fsaction",
+    STAGE_LAYOUT: ".fsstage"
 }
 
 export function startExport(_e: Electron.IpcMainEvent, msg: Message) {
@@ -49,7 +51,7 @@ export function startExport(_e: Electron.IpcMainEvent, msg: Message) {
     const customExt = customJSONExtensions[msg.channel as keyof typeof customJSONExtensions]
     if (customExt) {
         const exportFolder = getDataFolderPath("exports")
-        exportJSON(msg.data.content, customExt, exportFolder)
+        exportJSON(msg.data.content, customExt, exportFolder, msg.data.name)
         return
     }
 
@@ -68,7 +70,7 @@ export function startExport(_e: Electron.IpcMainEvent, msg: Message) {
 
     if (msg.data.showIds) {
         // load shows
-        msg.data.shows = getShowsFromIds(msg.data.showIds)
+        msg.data.shows = getShowsFromIds(msg.data.showIds, msg.data.projectItems)
     }
 
     if (msg.data.type === "project") exportProject(msg.data)
@@ -98,16 +100,16 @@ function doneWritingFile(err: NodeJS.ErrnoException | null, exportFolder: string
 
 // ----- PDF -----
 
-const PDFOptions = {
+const PDFOptions: Electron.PrintToPDFOptions = {
     margins: { top: 0, bottom: 0, left: 0, right: 0 },
     // margins: { marginType: "none" }, // prevent default white borders
-    pageSize: "A4" as const,
+    pageSize: "A4",
     printBackground: true,
     landscape: false
 }
 
 export function generatePDF(path: string, options: any = {}) {
-    const pageOptions: Electron.PrintToPDFOptions = PDFOptions
+    const pageOptions: Electron.PrintToPDFOptions = { ...PDFOptions }
 
     if (options.type === "media") {
         // landscape 16:9
@@ -116,6 +118,10 @@ export function generatePDF(path: string, options: any = {}) {
             width: 297000 / 10000 / 3.6, // 297mm
             height: 167062 / 10000 / 3.6 // ~167mm
         }
+        // pageOptions.landscape = true
+    } else {
+        pageOptions.pageSize = "A4"
+        pageOptions.landscape = false
     }
 
     exportWindow?.webContents.printToPDF(pageOptions).then(savePdf).catch(exportMessage)
@@ -140,7 +146,21 @@ function exportMessage(message = "") {
 
 let exportWindow: BrowserWindow | null = null
 export function createPDFWindow(data: any) {
-    exportWindow = new BrowserWindow(exportOptions)
+    const isLandscape = data.options?.type === "media"
+
+    // A4 dimensions in pixels at 96 DPI: 794 x 1123
+    // Widescreen landscape dimensions at 96 DPI: 1123 x 631 (matching the 16:9 printed page)
+    const windowWidth = isLandscape ? 1123 : 794
+    const windowHeight = isLandscape ? 631 : 1123
+
+    let options = { ...exportOptions }
+    if (!isLandscape) {
+        options.width = windowWidth
+        options.height = windowHeight
+        options.useContentSize = true
+    }
+
+    exportWindow = new BrowserWindow(options)
 
     // load path
     if (isProd) exportWindow.loadFile("public/index.html")
@@ -188,7 +208,7 @@ function getSlidesText(show: Show) {
     let text = ""
 
     const slides: Slide[] = []
-    show.layouts?.[show.settings?.activeLayout].slides.forEach((layoutSlide) => {
+    show.layouts?.[show.settings?.activeLayout]?.slides?.forEach((layoutSlide) => {
         const slide = show.slides[layoutSlide.id]
         if (!slide) return
 

@@ -1,6 +1,6 @@
 <script lang="ts">
     import { createEventDispatcher, onDestroy } from "svelte"
-    import { actions, activeEdit, activeStage, outputs, special, timers } from "../../../stores"
+    import { actions, activeEdit, activePage, activeStage, outputs, special, timers } from "../../../stores"
     import { throttle } from "../../../utils/common"
     import { translateText } from "../../../utils/language"
     import { mediaExtensions } from "../../../values/extensions"
@@ -15,10 +15,12 @@
     import MaterialFontDropdown from "../../inputs/MaterialFontDropdown.svelte"
     import MaterialPopupButton from "../../inputs/MaterialPopupButton.svelte"
     import MaterialTextarea from "../../inputs/MaterialTextarea.svelte"
+    import { getIsoLanguages } from "../../main/popups/localization/translation"
     import { SlideTimeline } from "../../timeline/SlideTimeline"
     import { parseShadowValue } from "../scripts/edit"
     import { filterItemStyle, mergeWithStyle } from "../scripts/itemClipboard"
-    import type { EditBoxSection, EditInput2 } from "../values/boxes"
+    import type { EditBoxSection, EditInput } from "../values/boxes"
+    import { captionTranslateLanguages } from "../values/captionLanguages"
     import { sectionColors } from "../values/item"
 
     export let sections: { [key: string]: EditBoxSection } = {}
@@ -28,7 +30,7 @@
     export let isStage = false
     export let type: string = ""
 
-    function getValue(input: EditInput2, _updater: any = null) {
+    function getValue(input: EditInput, _updater: any = null) {
         if (!item) return ""
 
         if (input.type === "toggle") return styles[input.key || ""] || ""
@@ -41,7 +43,9 @@
             value = getFilters(item[input.id] || getStyles(item.style)[input.id])?.[input.key || ""] || input.values.value || input.value
         } else if (input.key) {
             value = styles[input.key || ""]
-            if (input.valueIndex !== undefined) {
+            if (input.type === "checkbox" && (input.key === "box-shadow" || input.key === "text-shadow")) {
+                value = value?.includes("inset") || false
+            } else if (input.valueIndex !== undefined) {
                 if (input.key === "box-shadow" || input.key === "text-shadow") {
                     const arr = parseShadowValue(value)
                     value = arr[input.valueIndex]
@@ -49,7 +53,7 @@
                     value = value?.split(" ")[input.valueIndex]
                 }
             }
-            if (input.extension && value !== "") value = Number(value?.toString().replace(input.extension, ""))
+            if (input.extension && value !== "" && typeof value !== "boolean") value = Number(value?.toString().replace(input.extension, ""))
         } else {
             const parts = input.id.split(".")
             if (parts.length > 1) value = item[parts[0]]?.[parts[1]]
@@ -67,12 +71,12 @@
         if (input.multiplier) value *= input.multiplier
 
         // pre 1.5.0 dropdowns
-        if (input.type === "fontDropdown") value = value.replaceAll("'", "")
+        if (input.type === "fontDropdown" && typeof value === "string") value = value.replaceAll("'", "")
 
         return value
     }
 
-    function getStyleString(input: EditInput2) {
+    function getStyleString(input: EditInput) {
         let style = ""
         const isItem = input.id === "CSS_item"
         const currentStyle = isItem ? item?.style : input.values?.value
@@ -114,10 +118,13 @@
     function changed(e: any, input: any, sectionId = "", onlyTimeline = false) {
         let value = e.detail
 
-        if (input.multiplier) value = value / input.multiplier
+        if (input.multiplier) {
+            if (!value || isNaN(Number(value))) value = input.value || 0
+            value = value / input.multiplier
+        }
 
         // update on change (if another keyframe of same key exists)
-        if ($special.slideTimelineActive && (onlyTimeline || SlideTimeline.hasActionWithKey(input.key || "", type))) {
+        if ($special.slideTimelineActive && $activePage === "edit" && ($activeEdit.type || "show") === "show" && (onlyTimeline || SlideTimeline.hasActionWithKey(input.key || "", type))) {
             let timelineValue = value
 
             if (!onlyTimeline && lastChanged.key === input.key && lastChanged.value === value) return
@@ -139,6 +146,7 @@
                 const sortedKeys = allKeyValues.sort((a, b) => a.valueIndex! - b.valueIndex!)
 
                 let currentValue = styles[input.key || ""] || ""
+                const isInset = (input.key === "box-shadow" || input.key === "text-shadow") && currentValue.includes("inset")
                 let arr
                 if (input.key === "box-shadow" || input.key === "text-shadow") arr = parseShadowValue(currentValue)
                 else arr = currentValue.split(" ").filter(Boolean)
@@ -154,10 +162,17 @@
                 }
 
                 value = arr.join(" ")
+                if (isInset) value = "inset " + value
             } else {
                 // reset
                 value = ""
             }
+        } else if (input.type === "checkbox" && (input.key === "box-shadow" || input.key === "text-shadow")) {
+            let currentValue = styles[input.key || ""] || ""
+            const isInset = value
+            currentValue = currentValue.replace(/\binset\b/gi, "").trim()
+            if (isInset) value = "inset " + currentValue
+            else value = currentValue
         }
 
         /// CUSTOM
@@ -175,17 +190,20 @@
 
         ///
 
-        input.values.value = value
-        const inputKey = `${input.id}${input.key || ""}${input.valueIndex || ""}`
-        throttle(inputKey, clone(input), (value) => dispatch("change", value), 20)
+        const dispatchedInput = clone(input)
+        if (!dispatchedInput.values) dispatchedInput.values = {}
+        dispatchedInput.values.value = value
 
-        input.values.value = e.detail
+        const inputKey = `${input.id}${input.key || ""}${input.valueIndex || ""}`
+        throttle(inputKey, dispatchedInput, (val) => dispatch("change", val), 20)
+
+        if (input.values) input.values.value = e.detail
     }
 
     function hasChangedValues(id, _updater: any = null) {
         if (!sections[id]) return
 
-        let allInputsToCheck: EditInput2[] = []
+        let allInputsToCheck: EditInput[] = []
         let filterOut: string[] = []
 
         sections[id].inputs.flat().forEach((input) => {
@@ -199,7 +217,7 @@
         return hasChanged
     }
 
-    function isDefaultValue(input: EditInput2, defaultValue: any) {
+    function isDefaultValue(input: EditInput, defaultValue: any) {
         if (!defaultValue) defaultValue = input.value
         const currentValue = getValue(input)
 
@@ -263,17 +281,18 @@
 
     ///
 
-    const optionsLists = {
+    $: optionsLists = {
         timers: getSortedTimers($timers, { showHours: item?.timer?.showHours !== false, firstActive: isStage }).map((a) => ({ value: a.id, label: a.name, data: a.extraInfo })),
         actions: sortByName(keysToID($actions)).map((a) => ({ value: a.id, label: a.name || "" })),
-        outputWindows: sortByName(keysToID($outputs).filter((a) => a.stageOutput !== $activeStage.id)).map((a) => ({ value: a.id, label: a.name || "" }))
+        outputWindows: sortByName(keysToID($outputs).filter((a) => a.stageOutput !== $activeStage.id)).map((a) => ({ value: a.id, label: a.name || "" })),
+        captionTranslateLanguages: item?.captions?.googlekey ? [{ value: "", label: "—" }, ...getIsoLanguages()] : captionTranslateLanguages.map((a) => ({ value: a.id, label: a.name }))
     }
     function getOptions(options: string | any[]): any[] {
         if (typeof options === "string") return optionsLists[options] || []
         return options
     }
 
-    function getValues(input: any) {
+    function getValues(input: any, _optionsLists?: any) {
         const values = clone(input.values)
         if (input.type === "dropdown") {
             if (values.options === "timers") values.addNew = "new.timer"
@@ -324,9 +343,9 @@
                     <InputRow>
                         {#each inputRow as input}
                             {#if !input.hidden}
-                                {@const value = getValue(input, { styles, item })}
-                                {@const values = getValues(input)}
-                                {@const hasTimelineAction = $special.slideTimelineActive && SlideTimeline.hasActionAtTime(input.key || "", type, $activeEdit?.items?.length ? $activeEdit.items : [0], timelineUpdater)}
+                                {@const value = getValue(input, { styles, item, customValues })}
+                                {@const values = getValues(input, optionsLists)}
+                                {@const hasTimelineAction = $special.slideTimelineActive && $activePage === "edit" && ($activeEdit.type || "show") === "show" && SlideTimeline.hasActionAtTime(input.key || "", type, $activeEdit?.items?.length ? $activeEdit.items : [0], timelineUpdater)}
 
                                 {#if input.type === "fontDropdown"}
                                     <MaterialFontDropdown label={values.label} {value} style={values.style} fontStyleValue={input.styleValue} on:change={(e) => changed(e, input)} on:fontStyle={(e) => changed(e, { ...input, key: "font" })} enableFontStyles />
@@ -345,7 +364,7 @@
                                 {:else if input.type === "media"}
                                     <MaterialFilePicker label={(value ? values.label : "") || "edit.choose_media"} {value} filter={{ name: "Media files", extensions: mediaExtensions }} on:change={(e) => changed(e, input, id)} autoTrigger={$activeEdit.type !== "template"} allowEmpty />
                                 {:else if input.type === "popup"}
-                                    <MaterialPopupButton {...values} {value} on:change={(e) => changed(e, input, id)} allowEmpty />
+                                    <MaterialPopupButton {...values} {value} on:change={(e) => changed(e, input, id)} allowEmpty={values.allowEmpty !== false} />
                                 {:else if input.type === "tip"}
                                     <p class="tip">
                                         {#if values.label}{translateText(values.label)}{/if}

@@ -1,6 +1,6 @@
 <script lang="ts">
     import { createEventDispatcher } from "svelte"
-    import { activeEdit, activePage, activeProject, activeRename, projectView } from "../../stores"
+    import { activeEdit, activePage, activeProject, activeRename, dictionary, projectView } from "../../stores"
     import { translateText } from "../../utils/language"
 
     export let value = ""
@@ -88,7 +88,12 @@
 
     $: editingActive = edit === id && allowEdit
     function cancelEdit() {
-        if (!editingActive) return
+        if (!edit && $activeRename === null) return
+
+        // check if active rename actually exists anywhere
+        const renameIsActive = !!document.querySelector(".edit.nocontext._rename.name")
+        // can only be canceled by itself or any rename elem if it's not actually active
+        if (renameIsActive && !editingActive) return
 
         edit = false
         activeRename.set(null)
@@ -119,7 +124,7 @@
         {#if value.length}
             {value}
         {:else}
-            <span style="opacity: 0.5;font-style: italic;pointer-events: none;">{translateText("main.unnamed")}</span>
+            <span style="opacity: 0.5;font-style: italic;pointer-events: none;">{translateText("main.unnamed", $dictionary)}</span>
         {/if}
     </p>
 {/if}

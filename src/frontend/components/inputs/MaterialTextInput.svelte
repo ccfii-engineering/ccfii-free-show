@@ -79,25 +79,24 @@
 <div class="textfield {center ? 'centered' : ''} {disabled ? 'disabled' : ''}" data-title={translateText(title)} style={$$props.style || null}>
     <div class="background" />
 
-    {#if type === "text" || showText}
-        <input bind:value type="text" {id} {placeholder} {disabled} {autofocus} use:select use:blurOnEnter class="input edit" on:input={input} on:change={change} on:keydown />
-    {:else if type === "password"}
+    {#if type === "password" && !showText}
         <input bind:value type="password" {id} {placeholder} {disabled} {autofocus} use:select use:blurOnEnter class="input edit" on:input={input} on:change={change} on:keydown />
+    {:else}
+        <input bind:value type="text" {id} {placeholder} {disabled} {autofocus} use:select use:blurOnEnter class="input edit" on:input={input} on:change={change} on:keydown />
     {/if}
 
     <label for={id}>{@html translateText(label, $dictionary)}</label>
 
     <span class="underline" />
 
-    {#if autofill}
-        <div class="remove">
+    <div class="remove">
+        {#if autofill}
             <MaterialButton on:click={() => updateValue(autofill)} title="meta.autofill" white>
                 <Icon id="autofill" white />
             </MaterialButton>
-        </div>
-    {/if}
-    {#if defaultValue !== null}
-        <div class="remove">
+        {/if}
+
+        {#if defaultValue !== null}
             {#if value !== defaultValue}
                 <MaterialButton on:click={reset} title="actions.reset" white>
                     <Icon id="reset" white />
@@ -107,11 +106,9 @@
                     <Icon id="undo" white />
                 </MaterialButton>
             {/if}
-        </div>
-    {/if}
+        {/if}
 
-    {#if type === "password" && !pasteBtn}
-        <div class="remove">
+        {#if type === "password" && (!pasteBtn || value)}
             <MaterialButton
                 on:click={(e) => {
                     showText = !showText
@@ -123,9 +120,7 @@
             >
                 <Icon id={showText ? "eye" : "hide"} white />
             </MaterialButton>
-        </div>
-    {:else if pasteBtn && !disabled}
-        <div class="remove">
+        {:else if pasteBtn && !value && !disabled}
             <MaterialButton
                 on:click={(e) => {
                     const textInput = e.detail.target?.closest(".textfield")?.querySelector("input")
@@ -137,8 +132,8 @@
             >
                 <Icon id="paste" white />
             </MaterialButton>
-        </div>
-    {/if}
+        {/if}
+    </div>
 </div>
 
 <style>
@@ -253,6 +248,8 @@
         right: 4px;
         transform: translateY(-50%);
 
+        display: flex;
+        align-items: center;
         z-index: 2;
     }
     .remove :global(button) {

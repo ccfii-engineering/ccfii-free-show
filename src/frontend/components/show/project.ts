@@ -1,8 +1,11 @@
 import { get } from "svelte/store"
-import { activeEdit, activeProject, activeShow, projects, projectView, saved, showRecentlyUsedProjects, showsCache } from "../../stores"
+import { activeEdit, activeProject, activeShow, projects, projectView, saved, showRecentlyUsedProjects, shows, showsCache } from "../../stores"
 import { keysToID, sortByTimeNew } from "../helpers/array"
+import { history } from "../helpers/history"
+import { generateScriptureShowFromReference } from "../drawer/bible/scripture"
 import type { ProjectShowRef } from "../../../types/Projects"
 import { uid } from "uid"
+import { similarity } from "../../converters/txt"
 
 export function openProject(id: string, openFirstItem: boolean = true) {
     projectView.set(false)
@@ -70,24 +73,33 @@ export function clipboardToProject() {
     const currentProject = get(activeProject)
     if (!currentProject || !get(projects)[currentProject]) return
 
-    navigator.clipboard.readText().then((clipText: string) => {
-        if (!clipText) return
+    navigator.clipboard
+        .readText()
+        .then(async (clipText: string) => {
+            if (!clipText) return
 
-        const content = clipText.toString()
-        const items = textToProjectItems(content)
-        if (!items.length) return
+            const content = clipText.toString()
+            const items = await textToProjectItems(content)
+            if (!items.length) return
 
-        projects.update((a) => {
-            if (!a[currentProject]) return a
+            projects.update((a) => {
+                if (!a[currentProject]) return a
 
-            a[currentProject].shows = [...a[currentProject].shows, ...items]
-            return a
+                a[currentProject].shows = [...a[currentProject].shows, ...items]
+
+                a[currentProject].modified = Date.now()
+                return a
+            })
         })
-    })
+        .catch((e) => {
+            console.warn("Could not read clipboard:", e)
+        })
 }
 
 // each line break is one section
-function textToProjectItems(text: string) {
+async function textToProjectItems(text: string) {
+    if (typeof text !== "string") return []
+
     let items: ProjectShowRef[] = []
 
     // account for bullet/number points
@@ -96,12 +108,40 @@ function textToProjectItems(text: string) {
     // too long, probably not a list of sections
     if (text.split("\n").length > 30) return []
 
-    text.split("\n").forEach((line) => {
-        line = line.trim()
-        if (!line) return
+    const showsList = get(shows)
+    const lines = text.split("\n")
+    for (const line of lines) {
+        let name = line.trim()
+        if (!name) continue
 
-        items.push({ id: uid(5), type: "section", name: line })
-    })
+        // remove any "- " or "* " from the start of the line
+        name = name.replace(/^[-*]\s+/, "")
+
+        // find a show with the closest title match (must be at least 70% similarity)
+        const searchName = name.toLowerCase()
+        const mostSimilar = Object.entries(showsList).reduce(
+            (best, [id, show]) => {
+                const showName = (show.name || "").toLowerCase()
+                const percentage = similarity(searchName, showName)
+                return percentage > 0.7 && percentage > best.percentage ? { id, percentage } : best
+            },
+            { id: "", percentage: 0 }
+        )
+
+        if (mostSimilar.id) {
+            items.push({ id: mostSimilar.id, type: "show", name })
+        } else {
+            const scriptureShow = await generateScriptureShowFromReference(name)
+            if (scriptureShow) {
+                const showId = scriptureShow.id || uid()
+                scriptureShow.id = showId
+                history({ id: "SHOWS", newData: { data: [{ id: showId, show: scriptureShow }] } })
+                items.push({ id: showId, type: "show", name })
+            } else {
+                items.push({ id: uid(5), type: "section", name })
+            }
+        }
+    }
 
     // if there's two line breaks between (& there's multiple lines) it will create a show
     // let sections: string[] = []

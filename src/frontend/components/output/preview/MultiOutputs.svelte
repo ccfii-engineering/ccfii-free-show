@@ -1,11 +1,14 @@
 <script lang="ts">
-    import { activePage, activeStyle, audioChannelsData, outputs, settingsTab, styles, templates, toggleOutputEnabled } from "../../../stores"
+    import { activePage, activeStyle, audioChannelsData, dictionary, outputs, rtmpStatus, selected, settingsTab, styles, templates, toggleOutputEnabled } from "../../../stores"
     import { translateText } from "../../../utils/language"
+    import AudioMeter from "../../drawer/audio/AudioMeter.svelte"
     import { openDrawer } from "../../edit/scripts/edit"
     import Icon from "../../helpers/Icon.svelte"
     import T from "../../helpers/T.svelte"
     import { clone, keysToID, sortByName, sortObject } from "../../helpers/array"
-    import { defaultLayers, getOutputResolution } from "../../helpers/output"
+    import { defaultLayers, getOutputResolution, startStreaming, stopStreaming, startRtmpStreaming, stopRtmpStreaming } from "../../helpers/output"
+    import { getUnhealthyDestinations, hasStreamableDestination } from "../../helpers/rtmpDestinations"
+    import { bindSlidesToOutput, getLayoutRef } from "../../helpers/show"
     import { _show } from "../../helpers/shows"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
     import PreviewOutput from "./PreviewOutput.svelte"
@@ -29,7 +32,7 @@
 
             const outputId = e.target.closest(".outputPreview")?.id
             const output = $outputs[outputId]
-            activeStyle.set(output.style || "")
+            activeStyle.set(output?.style || "")
             settingsTab.set("styles")
             activePage.set("settings")
             return
@@ -94,8 +97,37 @@
     //     }
     // }
 
-    $: slideId = outs[0].out?.slide?.id || ""
+    $: slideId = outs[0]?.out?.slide?.id || ""
     $: isScriptureOutput = slideId === "temp" || _show(slideId).get("reference")?.type === "scripture"
+
+    // drag-and-drop: bind slide to output
+    const SLIDE_DROP_IDS = new Set(["slide"])
+    let dragOverOutputId: string | null = null
+    function isDroppable(outputId: string) {
+        return !$outputs[outputId]?.stageOutput
+    }
+    function handleDragOver(e: DragEvent, outputId: string) {
+        if (!SLIDE_DROP_IDS.has($selected.id || "") || !isDroppable(outputId)) return
+        e.preventDefault()
+        dragOverOutputId = outputId
+    }
+    function handleDragLeave(e: DragEvent, outputId: string) {
+        const related = e.relatedTarget as HTMLElement | null
+        if (related?.closest(`#${CSS.escape(outputId)}`)) return
+        if (dragOverOutputId === outputId) dragOverOutputId = null
+    }
+    function handleDrop(e: DragEvent, outputId: string) {
+        dragOverOutputId = null
+        if (!SLIDE_DROP_IDS.has($selected.id || "") || !isDroppable(outputId)) return
+        e.preventDefault()
+        e.stopPropagation()
+
+        const ref = getLayoutRef()
+        const indexes: number[] = $selected.data.map(({ index }: { index: number }) => index).filter((i: number) => i !== undefined)
+        if (!indexes.length || !ref.length) return
+
+        bindSlidesToOutput(indexes, outputId)
+    }
 </script>
 
 <!-- aspect-ratio: {resolution?.width || 1920}/{resolution?.height || 1080}; -->
@@ -103,7 +135,7 @@
 <!-- role="button"
 tabindex="0"
 aria-label={fullscreen ? "Exit fullscreen preview" : "Toggle fullscreen preview"} -->
-<div on:click={toggleFullscreen} class="multipleOutputs" class:multiple={outs.length > 1} class:fullscreen style={fullscreen ? "width: 100%;height: 100%;" : "width: calc(100% - 6px);"} role="none">
+<div on:click={toggleFullscreen} class="multipleOutputs" class:multiple={outs.length > 1} class:fullscreen style={fullscreen ? "width: 100%;height: 100%;" : "width: calc(100% - 4px);"} role="none">
     {#if fullscreen}
         <MaterialButton class="hide" style="z-index: 2;opacity: 1;inset-inline-end: 10px;" title="actions.close" on:click={() => (fullscreen = false)}>
             <Icon id="close" size={1.2} white />
@@ -118,14 +150,28 @@ aria-label={fullscreen ? "Exit fullscreen preview" : "Toggle fullscreen preview"
         </span>
     {/if}
 
-    {#each outs as output}
+    {#each outs as output (output.id)}
         {@const style = $styles[output.style || ""] || {}}
         {@const layers = Array.isArray(style.layers) ? style.layers : clone(defaultLayers)}
         {@const styleTemplate = isScriptureOutput ? style.templateScripture : style.template}
-        {@const isMuted = $audioChannelsData[output.id]?.isMuted}
+        {@const isMuted = $audioChannelsData[`channel_${output.id}`]?.isMuted}
+        {@const isNetworkOutput = output.ndi || output.webrtc || output.rtmp}
 
-        <div id={output.id} class="outputPreview output_button context #output_preview" style={fullscreen ? (fullscreenId === output.id ? "display: contents;" : "opacity: 0;position: absolute;") : outs.length > 1 ? `border: 2px solid ${output?.color};width: 50%;` : "display: contents;"}>
+        <div id={output.id} class="outputPreview output_button context #output_preview" class:drop-target={!fullscreen && dragOverOutputId === output.id} on:dragover={(e) => handleDragOver(e, output.id)} on:dragleave={(e) => handleDragLeave(e, output.id)} on:drop={(e) => handleDrop(e, output.id)} style={fullscreen ? (fullscreenId === output.id ? "display: contents;" : "opacity: 0;position: absolute;") : outs.length > 1 ? `border: 2px solid ${output?.color};width: 50%;` : "display: contents;"}>
             <PreviewOutput outputId={output.id} {disableTransitions} disabled={outs.length > 1 && !fullscreen && !output?.active} {fullscreen} />
+
+            <!-- LIVE -->
+            {#if !fullscreen && ((output.webrtcData?.url && output.webrtc) || (output.rtmp && hasStreamableDestination(output.rtmpData)))}
+                {@const isRtmp = output.rtmp}
+                {@const isStreaming = isRtmp ? output.rtmpData?.streaming : output.webrtcData?.streaming}
+                {@const unhealthy = isRtmp && isStreaming ? getUnhealthyDestinations(output.rtmpData, $rtmpStatus[output.id]) : []}
+
+                <div class="live" style="background-color: {isStreaming ? (unhealthy.length ? '#ab8000' : '#b60707') : 'var(--primary-darker)'};">
+                    <MaterialButton style="padding: 2px 3px;min-height: 0;" on:click={() => (isRtmp ? (output.rtmpData?.streaming ? stopRtmpStreaming(output.id, true) : startRtmpStreaming(output.id)) : output.webrtcData?.streaming ? stopStreaming(output.id, true) : startStreaming(output.id))} title={unhealthy.length ? `${unhealthy.join(", ")} not live` : isStreaming ? "output.stop_streaming" : "output.start_streaming"}>
+                        {translateText(isStreaming ? "output.is_live" : "output.go_live", $dictionary)}
+                    </MaterialButton>
+                </div>
+            {/if}
 
             <!-- icons -->
             {#if !fullscreen && (layers.length < 3 || styleTemplate || isMuted)}
@@ -149,7 +195,7 @@ aria-label={fullscreen ? "Exit fullscreen preview" : "Toggle fullscreen preview"
 
                     <!-- style template -->
                     {#if styleTemplate && $templates[styleTemplate]}
-                        {#if layers.length}<div class="divider"></div>{/if}
+                        {#if layers.length < 3}<div class="divider"></div>{/if}
 
                         <div class="icon" data-title={`<b>${translateText(`settings.override${isScriptureOutput ? "_scripture" : ""}_with_template`)}</b>:<br>${$templates[styleTemplate].name}`}>
                             <Icon id="templates" size={0.8} white />
@@ -158,12 +204,19 @@ aria-label={fullscreen ? "Exit fullscreen preview" : "Toggle fullscreen preview"
 
                     <!-- muted -->
                     {#if isMuted}
-                        {#if layers.length || styleTemplate}<div class="divider"></div>{/if}
+                        {#if layers.length < 3 || styleTemplate}<div class="divider"></div>{/if}
 
                         <div class="icon muted" data-title={translateText("output.mute")}>
                             <Icon id="muted" size={0.8} white />
                         </div>
                     {/if}
+                </div>
+            {/if}
+
+            <!-- Network Output Audio -->
+            {#if isNetworkOutput}
+                <div class="preview-meter">
+                    <AudioMeter channelId="network_sub_{output.id}" preview />
                 </div>
             {/if}
         </div>
@@ -234,6 +287,26 @@ aria-label={fullscreen ? "Exit fullscreen preview" : "Toggle fullscreen preview"
         position: relative;
     }
 
+    .outputPreview.drop-target::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border: 3px solid var(--secondary);
+        border-radius: 2px;
+        pointer-events: none;
+        z-index: 10;
+    }
+
+    /* LIVE */
+
+    .live {
+        position: absolute;
+        top: 3px;
+        left: 3px;
+
+        font-size: 0.7em;
+    }
+
     /* icons */
 
     .icons {
@@ -264,5 +337,18 @@ aria-label={fullscreen ? "Exit fullscreen preview" : "Toggle fullscreen preview"
     .icons .divider {
         width: 1px;
         background-color: var(--primary-lighter);
+    }
+
+    /* Audio */
+
+    .preview-meter {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        width: 4px;
+        z-index: 5;
+
+        opacity: 0.7;
     }
 </style>

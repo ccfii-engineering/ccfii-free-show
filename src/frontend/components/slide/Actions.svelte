@@ -14,7 +14,7 @@
     import { getLayoutRef } from "../helpers/show"
     import Button from "../inputs/Button.svelte"
 
-    export let slide: Slide
+    export let slide: Slide | null = null
     export let columns: number
     export let index = -1
     export let templateId = ""
@@ -130,7 +130,7 @@
 
     const actionsList = [
         { id: "nextAfterMedia", title: translateText("actions.next_after_media"), icon: "forward" },
-        { id: "animate", title: translateText("popup.animate"), icon: "stars" },
+        { id: "animate", title: translateText("popup.animate"), icon: "stars" }, // DEPRECATED!!
         { id: "receiveMidi", title: translateText("actions.play_on_midi"), icon: "play" }
     ]
 

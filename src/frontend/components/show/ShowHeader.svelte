@@ -2,9 +2,10 @@
     import { fade } from "svelte/transition"
     import { Main } from "../../../types/IPC/Main"
     import { sendMain } from "../../IPC/main"
-    import { openToolsTab, showNotesActive, shows, showsCache, special } from "../../stores"
+    import { activePopup, openToolsTab, outputs, showNotesActive, shows, showsCache, special, styles, templates } from "../../stores"
     import { translateText } from "../../utils/language"
     import Icon from "../helpers/Icon.svelte"
+    import { allOutputsHasStyleTemplate, getFirstActiveOutput } from "../helpers/output"
     import { removeTemplatesFromShow } from "../helpers/show"
     import T from "../helpers/T.svelte"
     import MaterialButton from "../inputs/MaterialButton.svelte"
@@ -67,17 +68,30 @@
             return a
         })
     }
+
+    // TEMPLATE
+
+    $: referenceType = currentShow?.reference?.type
+    $: outputStyleId = getFirstActiveOutput($outputs)?.style || ""
+    $: outputStyleTemplate = allOutputsHasStyleTemplate(referenceType === "scripture") ? $styles[outputStyleId]?.[referenceType === "scripture" ? "templateScripture" : "template"] || "" : ""
+    $: enableStylePreview = !!(outputStyleTemplate && $special.styleTemplatePreview !== false && $templates[outputStyleTemplate])
+
+    $: showTemplateId = currentShow?.settings?.template || ""
+    $: showTemplateIcon = !!(showTemplateId && $templates[showTemplateId])
+    $: enableShowTemplate = showTemplateIcon && (!referenceType || referenceType === "scripture" || open)
 </script>
 
 <svelte:window on:mousedown={mousedown} />
 
 <div class="header" class:shadow={listScrollY > 0}>
-    <p style="width: 100%;max-width: 98%;display: flex;align-items: center;gap: 0.5em;font-size: 0.9em;" data-title={currentShow?.name}>
-        {#if currentShow?.name}
-            {currentShow.name}
-        {:else}
-            <span style="opacity: 0.5;font-style: italic;"><T id="main.unnamed" /></span>
-        {/if}
+    <div class="name-notes" data-title={currentShow?.name}>
+        <div class="name">
+            {#if currentShow?.name}
+                {currentShow.name}
+            {:else}
+                <span style="opacity: 0.5;font-style: italic;"><T id="main.unnamed" /></span>
+            {/if}
+        </div>
 
         {#if notes}
             <span class="notes" role="none" data-title={translateText(notes.title)} on:click={(e) => openTab(e, notes?.tab || "")}>
@@ -85,10 +99,27 @@
                 <p>{@html notes.text}</p>
             </span>
         {/if}
-    </p>
+    </div>
 
     <div class="right">
+        <!-- template icon -->
+        {#if enableStylePreview}
+            <MaterialButton style="width: 32px;height: 100%;padding: 0.3em 0.5em;" title="formats.template: <b>{$templates[outputStyleTemplate]?.name || ''}</b>" on:click={() => activePopup.set("template_info")}>
+                <Icon size={0.8} id="styles" white />
+            </MaterialButton>
+        {:else if enableShowTemplate}
+            <MaterialButton style="width: 32px;height: 100%;padding: 0.3em 0.5em;" class="context #show_template" title="formats.template: <b>{$templates[showTemplateId]?.name || 'info.template'}</b>" on:click={() => activePopup.set("template_info")}>
+                <Icon size={0.8} id="templates" white />
+            </MaterialButton>
+        {/if}
+
+        <!-- zoom icon ? -->
+        <!-- <MaterialButton style="width: 32px;height: 100%;padding: 0.3em 0.5em;" title="actions.zoom" on:click={() => }>
+            <Icon size={0.9} id="zoomIn" white />
+        </MaterialButton> -->
+
         {#if !hideOptions}
+            <!-- show more -->
             <MaterialButton style="width: 32px;height: 100%;padding: 0.3em 0.5em;border-bottom-right-radius: 10px;{showDropdown ? '' : 'opacity: 0.8;'}" title="create_show.more_options" icon="more" on:click={() => (showDropdown = !showDropdown)} white={!showDropdown}>
                 <!-- prevent force "white" -->
                 <span style="display: none;"></span>
@@ -144,7 +175,8 @@
         left: 0;
         width: 100%;
 
-        padding: 0.2em 0.8em;
+        padding: 0.2em;
+        padding-left: 0.8em;
         font-weight: 600;
 
         height: 30px;
@@ -168,12 +200,32 @@
     }
 
     .header .right {
-        position: absolute;
-        top: 0;
         height: 100%;
+
+        display: flex;
+        flex-shrink: 0;
+        margin-left: auto;
     }
-    .header .right {
-        right: 0;
+
+    /* name and notes */
+
+    .name-notes {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 0.5em;
+        font-size: 0.9em;
+        min-width: 0;
+        overflow: hidden;
+    }
+
+    .name-notes .name {
+        flex-shrink: 0;
+        max-width: 90%;
+
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     /* notes */
@@ -189,7 +241,14 @@
         opacity: 0.7;
         font-size: 0.7em;
         font-weight: normal;
-        max-width: 78%;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .notes p {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .notes p :global(*) {

@@ -6,8 +6,8 @@
     import { activePopup, emitters, popupData } from "../../../stores"
     import { emitterData, formatData } from "../../actions/emitters"
     import MidiValues from "../../actions/MidiValues.svelte"
+    import { getDynamicValue } from "../../edit/scripts/itemHelpers"
     import { clone, keysToID, sortByName } from "../../helpers/array"
-    import T from "../../helpers/T.svelte"
     import DynamicList from "../../input/DynamicList.svelte"
     import HRule from "../../input/HRule.svelte"
     import { getValues } from "../../input/inputs"
@@ -15,6 +15,7 @@
     import MaterialButton from "../../inputs/MaterialButton.svelte"
     import MaterialDropdown from "../../inputs/MaterialDropdown.svelte"
     import MaterialTextInput from "../../inputs/MaterialTextInput.svelte"
+    import Tip from "../Tip.svelte"
 
     $: emittersList = sortByName(sortByName(keysToID($emitters)), "type")
 
@@ -155,7 +156,7 @@
         if (signalInputs[0].type !== "dropdown" || signalInputs[0].options[0]?.value) return
 
         requestMain(Main.GET_MIDI_OUTPUTS, undefined, (data) => {
-            if (!data.length || signalInputs[0].type !== "dropdown") return
+            if (!data?.length || signalInputs[0].type !== "dropdown") return
 
             signalInputs[0].options = data.map((a) => ({ value: a.name, label: a.name, ...a }))
             if (!emitter?.signal?.output) updateValue("signal", { output: data[0].name })
@@ -198,7 +199,7 @@
 
     {#if dataPreview}
         <div class="preview">
-            {dataPreview}
+            {dataPreview.includes("{") ? getDynamicValue(dataPreview) : dataPreview}
         </div>
     {/if}
 {:else if editEmitter && emitter}
@@ -224,7 +225,7 @@
     </DynamicList>
 {:else}
     {#if !emittersList.length}
-        <p style="opacity: 0.8;font-size: 0.8em;text-align: center;margin-bottom: 20px;"><T id="emitters.tip" /></p>
+        <Tip type="info" value="emitters.tip" bottom={20} />
     {/if}
 
     <DynamicList items={emittersList} let:item={emitter} on:open={(e) => (editEmitter = e.detail)} on:delete={(e) => deleteEmitter(e.detail)} on:add={createEmitter}>

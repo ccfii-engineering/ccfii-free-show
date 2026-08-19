@@ -16,13 +16,16 @@ export const customActionActivations = [
     { id: "show_opened", name: "actions.activate_show_opened", icon: "slide" },
     { id: "slide_click", name: "actions.activate_slide_clicked", icon: "slide" },
     { id: "group_start", common: true, name: "actions.activate_group_start", icon: "groups", inputs: true },
+    { id: "pdf_start", name: "actions.activate_pdf_start", icon: "pdf" },
 
     { id: "slide_cleared", common: true, name: "actions.activate_slide_cleared", icon: "slide" },
     { id: "background_cleared", common: true, name: "actions.activate_background_cleared", icon: "image" },
 
     { id: "scripture_start", common: true, name: "actions.activate_scripture_start", icon: "scripture" },
 
-    { id: "video_start", common: true, name: "actions.activate_video_starting", icon: "video" },
+    { id: "video_start", common: true, name: "actions.activate_video_starting: actions.any", icon: "video" },
+    { id: "video_start_foreground", name: "actions.activate_video_starting: preview.foreground", icon: "video" },
+    { id: "video_start_background", name: "actions.activate_video_starting: preview.background", icon: "video" },
     { id: "video_end", common: true, name: "actions.activate_video_ending", icon: "video" },
 
     { id: "audio_start", common: true, name: "actions.activate_audio_starting", icon: "music" },
@@ -34,9 +37,3 @@ export const customActionActivations = [
 
     { id: "midi_signal_received", common: true, name: "midi.activate", icon: "companion", inputs: true }
 ]
-
-// WIP Custom activations
-// background_start
-// slide_start
-// overlay_start
-// overlay_cleared

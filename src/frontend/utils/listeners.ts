@@ -6,20 +6,9 @@ import { getShowCacheId, updateCachedShow, updateCachedShows, updateShowsList } 
 import { $, actions, actionTags, activeProject, activeScripture, activeShow, activeTimers, audioChannelsData, audioData, cachedShowsData, driveKeys, events, folders, groups, openedFolders, outputs, outputSlideCache, overlayCategories, overlays, projects, refreshSlideThumbnails, runningActions, scriptures, shows, showsCache, stageShows, templateCategories, templates, timeFormat, timers, triggers, variables, variableTags, volume } from "../stores"
 import { hasNewerUpdate } from "./common"
 import { driveConnect } from "./drive"
-import { convertBackgrounds, getMixerPayload } from "./remoteTalk"
+import { convertBackgrounds } from "./remoteTalk"
 import { send } from "./request"
 import { arrayToObject, eachConnection, filterObjectArray, sendData, timedout } from "./sendData"
-
-// simple debounce helper (shared for mixer pushes)
-const debounce = (fn: (...args: any[]) => void, wait: number) => {
-    let t: any
-    return (...args: any[]) => {
-        clearTimeout(t)
-        t = setTimeout(() => fn(...args), wait)
-    }
-}
-
-const sendRemoteMixer = debounce(() => send(REMOTE, ["GET_MIXER"], getMixerPayload()), 50)
 
 export function storeSubscriber() {
     shows.subscribe(async (data) => {
@@ -125,9 +114,6 @@ export function storeSubscriber() {
         // used for stage mirror data
         send(OUTPUT, ["ALL_OUTPUTS"], data)
 
-        // REMOTE mixer updates (labels/available outputs)
-        sendRemoteMixer()
-
         // let it update properly
         setTimeout(() => {
             sendData(REMOTE, { channel: "OUT" })
@@ -185,15 +171,6 @@ export function storeSubscriber() {
     variableTags.subscribe((data) => {
         // REMOTE
         send(REMOTE, ["VARIABLE_TAGS"], data)
-    })
-
-    volume.subscribe(() => {
-        // REMOTE mixer updates
-        sendRemoteMixer()
-    })
-    audioChannelsData.subscribe(() => {
-        // REMOTE mixer updates
-        sendRemoteMixer()
     })
 
     timeFormat.subscribe((a) => {

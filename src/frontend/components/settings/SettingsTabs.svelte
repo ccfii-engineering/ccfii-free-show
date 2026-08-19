@@ -6,7 +6,7 @@
     import T from "../helpers/T.svelte"
     import Button from "../inputs/Button.svelte"
 
-    const tabs: SettingsTabs[] = ["general", "display_settings", "styles", "connection", "files", "profiles", "theme", "other"]
+    const tabs: SettingsTabs[] = ["general", "display_settings", "styles", "audio", "connection", "files", "profiles", "theme", "other"]
 
     let activeTabs: SettingsTabs[] = []
     $: profile = $profiles[$activeProfile || ""]
@@ -14,7 +14,7 @@
     else activeTabs = clone(tabs)
 
     function keydown(e: KeyboardEvent) {
-        if (e.target?.closest(".edit") || e.ctrlKey || e.metaKey) return
+        if (e.target?.closest?.(".edit") || e.ctrlKey || e.metaKey) return
 
         let nextTab = -1
         let currentTabIndex = activeTabs.findIndex((tab) => tab === $settingsTab)

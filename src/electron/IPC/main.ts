@@ -8,14 +8,14 @@ import { mainResponses } from "./responsesMain"
 
 export function sendToMain<ID extends ToMain>(id: ID, value: ToMainSendValue<ID>, listenerId?: string) {
     if (!Object.values(ToMain).includes(id)) throw new Error(`Invalid channel: ${id}`)
-    if (!mainWindow || mainWindow.isDestroyed()) return
+    if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents || mainWindow.webContents.isDestroyed?.()) return
 
     mainWindow.webContents.send(MAIN, { channel: id, data: value }, listenerId)
 }
 
 export function sendMain<ID extends Main>(id: ID, value: ToMainSendValue2<ID>, listenerId?: string) {
     if (!Object.values(Main).includes(id)) throw new Error(`Invalid channel: ${id}`)
-    if (!mainWindow || mainWindow.isDestroyed()) return
+    if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents || mainWindow.webContents.isDestroyed?.()) return
 
     mainWindow.webContents.send(MAIN, { channel: id, data: value }, listenerId)
 }
@@ -38,36 +38,58 @@ export async function receiveMain(e: Electron.IpcMainEvent, msg: MainReceiveValu
 }
 
 const currentlyAwaiting: string[] = []
+// single shared MAIN listener that routes each reply to its awaiting request by listenerId
+const pendingToMain = new Map<string, (msg: ToMainReceiveValue) => void>()
+let toMainDispatcherRegistered = false
+function ensureToMainDispatcher() {
+    if (toMainDispatcherRegistered) return
+    toMainDispatcherRegistered = true
+    ipcMain.on(MAIN, (_e: IpcMainEvent, msg: ToMainReceiveValue, listenId: string) => {
+        if (!listenId) return
+        const resolver = pendingToMain.get(listenId)
+        if (resolver) resolver(msg)
+    })
+}
+
 // @ts-ignore
 export async function requestToMain<ID extends ToMain, R = Awaited<ToMainReturnPayloads[ID]>>(id: ID, value: ToMainSendValue<ID>, callback?: (data: R | null) => void, timeoutMs = 15000) {
     const listenerId = id + uid(5)
     currentlyAwaiting.push(listenerId)
-
-    sendToMain(id, value, listenerId)
+    ensureToMainDispatcher()
 
     // LISTENER
     const waitingTimeout = timeoutMs
     let timeout: NodeJS.Timeout | null = null
+    let settled = false
+    const cleanup = () => {
+        if (timeout) clearTimeout(timeout)
+        pendingToMain.delete(listenerId)
+
+        const waitIndex = currentlyAwaiting.indexOf(listenerId)
+        if (waitIndex > -1) currentlyAwaiting.splice(waitIndex, 1)
+    }
+
     const returnData: R | null = await new Promise((resolve) => {
         timeout = setTimeout(() => {
+            if (settled) return
+            settled = true
+
             if (!isProd) console.error(`IPC Message Timed Out: ${id}`)
-            ipcMain.removeListener(MAIN, receive)
+            cleanup()
             resolve(null)
         }, waitingTimeout)
 
-        ipcMain.on(MAIN, receive)
+        pendingToMain.set(listenerId, (msg: ToMainReceiveValue) => {
+            if (settled) return
+            if (msg.channel !== id) return
 
-        function receive(_e: IpcMainEvent, msg: ToMainReceiveValue, listenId: string) {
-            if (msg.channel !== id || listenId !== listenerId) return
-
-            if (timeout) clearTimeout(timeout)
+            settled = true
+            cleanup()
             resolve(msg.data as R)
-            ipcMain.removeListener(MAIN, receive)
-        }
-    })
+        })
 
-    const waitIndex = currentlyAwaiting.indexOf(listenerId)
-    if (waitIndex > -1) currentlyAwaiting.splice(waitIndex, 1)
+        sendToMain(id, value, listenerId)
+    })
 
     if (callback) callback(returnData)
     return returnData

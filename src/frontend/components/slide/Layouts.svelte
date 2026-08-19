@@ -2,7 +2,8 @@
     import { uid } from "uid"
     import type { ClickEvent } from "../../../types/Main"
     import { changeSlidesView } from "../../show/slides"
-    import { actions, activeEdit, activePage, activePopup, activeProject, activeShow, activeStyle, alertMessage, labelsDisabled, outputs, projects, settingsTab, showsCache, slidesOptions, special, styles, templates } from "../../stores"
+    import { actions, activePopup, activeProject, activeShow, alertMessage, editingProjectTemplate, labelsDisabled, projects, projectTemplates, showsCache, slidesOptions } from "../../stores"
+    import { translateText } from "../../utils/language"
     import { getAccess } from "../../utils/profile"
     import { getActionIcon, runAction } from "../actions/actions"
     import Icon from "../helpers/Icon.svelte"
@@ -10,7 +11,6 @@
     import { keysToID, sortByName } from "../helpers/array"
     import { duplicate } from "../helpers/clipboard"
     import { history } from "../helpers/history"
-    import { allOutputsHasStyleTemplate, getAllEnabledOutputs, getFirstActiveOutput } from "../helpers/output"
     import { _show } from "../helpers/shows"
     import { joinTime, secondsToTime } from "../helpers/time"
     import FloatingInputs from "../input/FloatingInputs.svelte"
@@ -25,6 +25,11 @@
     $: layouts = currentShow.layouts
     $: activeLayout = currentShow.settings?.activeLayout
 
+    $: isTemplate = !!$editingProjectTemplate
+    $: projectId = isTemplate ? $editingProjectTemplate : $activeProject
+    $: store = isTemplate ? projectTemplates : projects
+    $: project = $store[projectId!]
+
     $: sortedLayouts = sortByName(keysToID(layouts || {}))
 
     let totalTime = "0s"
@@ -32,20 +37,23 @@
     $: layoutSlides = layouts?.[activeLayout]?.slides || []
     $: if (layoutSlides.length) getTotalTime()
     function getTotalTime() {
-        let ref = _show()
-            .layouts("active")
-            .ref()[0]
-            .filter((a) => !a.data.disabled)
-        let total = ref.reduce((value, slide) => (value += Number(slide.data.nextTimer || 0)), 0)
+        let ref =
+            _show()
+                .layouts("active")
+                .ref()[0]
+                ?.filter((a) => a?.data && !a.data.disabled) || []
+        let total = ref.reduce((value, slide) => (value += Number(slide?.data?.nextTimer || 0)), 0)
 
         totalTime = total ? (total > 59 ? joinTime(secondsToTime(total)) : total + "s") : "0s"
 
-        isTranslated = !!layoutSlides.find((a) =>
-            _show()
-                .slides([a.id])
-                .get("items")
-                .flat()
-                .find((a) => a?.language)
+        isTranslated = !!layoutSlides.find(
+            (a) =>
+                a?.id &&
+                _show()
+                    .slides([a.id])
+                    .get("items")
+                    ?.flat()
+                    ?.find((item) => item?.language)
         )
     }
 
@@ -65,9 +73,12 @@
         const newName = e.detail.value
         history({ id: "UPDATE", newData: { key: "layouts", keys: [currentLayout], subkey: "name", data: newName }, oldData: { id: showId }, location: { page: "show", id: "show_key" } })
 
-        if ($projects[$activeProject!]?.shows?.[$activeShow?.index ?? -1]?.layout === currentLayout) {
-            projects.update((a) => {
-                a[$activeProject!].shows[$activeShow!.index!].layoutInfo = { name: newName }
+        const showIndex = $activeShow?.index
+        if (project?.shows?.[showIndex ?? -1]?.layout === currentLayout) {
+            store.update((a) => {
+                if (a[projectId!]?.shows?.[showIndex!]) {
+                    a[projectId!].shows[showIndex!].layoutInfo = { name: newName }
+                }
                 return a
             })
         }
@@ -77,17 +88,22 @@
         if (!$showsCache[showId]) return
 
         showsCache.update((a) => {
-            if (!a[showId].settings) a[showId].settings = { activeLayout: "", template: null }
-            a[showId].settings.activeLayout = id
+            if (a[showId]) {
+                if (!a[showId].settings) a[showId].settings = { activeLayout: "", template: null }
+                a[showId].settings.activeLayout = id
+            }
             return a
         })
 
         // set active layout in project
         if (sortedLayouts?.length < 2) return
-        if (($activeShow?.type === undefined || $activeShow?.type === "show") && $activeShow?.index !== undefined && $activeProject && $projects[$activeProject]?.shows?.[$activeShow.index]) {
-            projects.update((a) => {
-                a[$activeProject!].shows[$activeShow!.index!].layout = id
-                a[$activeProject!].shows[$activeShow!.index!].layoutInfo = layoutInfo
+        const showIndex = $activeShow?.index
+        if (($activeShow?.type === undefined || $activeShow?.type === "show") && showIndex !== undefined && projectId && project?.shows?.[showIndex]) {
+            store.update((a) => {
+                if (a[projectId!]?.shows?.[showIndex]) {
+                    a[projectId!].shows[showIndex].layout = id
+                    a[projectId!].shows[showIndex].layoutInfo = layoutInfo
+                }
                 return a
             })
         }
@@ -106,31 +122,13 @@
             return
         }
 
-        runAction($actions[customAction])
+        runAction($actions[customAction], { source: "click" })
     }
 
     let profile = getAccess("shows")
     $: isLocked = currentShow?.locked || profile.global === "read" || profile[currentShow?.category || ""] === "read"
 
     $: referenceType = currentShow?.reference?.type
-
-    // style template
-    $: outputStyleId = getFirstActiveOutput($outputs)?.style || ""
-    $: outputStyleTemplate = allOutputsHasStyleTemplate(referenceType === "scripture") ? $styles[outputStyleId]?.[referenceType === "scripture" ? "templateScripture" : "template"] || "" : ""
-    function editStyleTemplate() {
-        activeStyle.set(outputStyleId)
-        settingsTab.set("styles")
-        activePage.set("settings")
-        // scroll to bottom
-        setTimeout(() => {
-            document.querySelector(".row")?.querySelector(".center")?.querySelector(".scroll")?.scrollTo(0, 1000)
-        }, 80)
-    }
-
-    const outputsCount = getAllEnabledOutputs().length
-    $: enableStylePreview = !!(outputStyleTemplate && $special.styleTemplatePreview !== false && $templates[outputStyleTemplate])
-    $: showTemplateId = currentShow?.settings?.template || ""
-    $: showTemplateIcon = !!(showTemplateId && $templates[showTemplateId])
 </script>
 
 {#if referenceType === "lessons"}
@@ -164,7 +162,7 @@
             <MaterialButton
                 title="show.locked"
                 on:click={() => {
-                    alertMessage.set(currentShow?.locked ? "show.locked" : "profile.locked")
+                    alertMessage.set(`${translateText(currentShow?.locked ? "show.locked" : "profile.locked")}<br><br>Unlock it by clicking the three dots in the top right corner.`)
                     activePopup.set("alert")
                 }}
             >
@@ -182,40 +180,6 @@
                     <Icon size={1.1} id="clock" white={totalTime === "0s"} />
                 </MaterialButton>
             {/if}
-
-            {#if enableStylePreview && outputsCount === 1 ? false : showTemplateIcon && (!referenceType || referenceType === "scripture" || open)}
-                {#if open}
-                    <div class="divider"></div>
-                {/if}
-
-                <MaterialButton
-                    class="context #show_template"
-                    title="menu.edit: <b>{$templates[showTemplateId].name || 'info.template'}</b>"
-                    on:click={() => {
-                        activeEdit.set({ type: "template", id: showTemplateId, items: [] })
-                        activePage.set("edit")
-                    }}
-                >
-                    <Icon size={1.1} id="templates" />
-                </MaterialButton>
-                <!-- use context menu to remove! -->
-                <!-- {#if open}
-                    <MaterialButton title="actions.remove_template_from_show" on:click={() => removeTemplatesFromShow($activeShow?.id || "", true)}>
-                        <Icon size={1.1} id="remove_circle" />
-                    </MaterialButton>
-                {/if} -->
-            {/if}
-
-            <!-- output style template -->
-            {#if enableStylePreview}
-                {#if open}
-                    <div class="divider"></div>
-                {/if}
-
-                <MaterialButton title="formats.template: {$templates[outputStyleTemplate].name || ''}" on:click={editStyleTemplate}>
-                    <Icon size={1.1} id="styles" />
-                </MaterialButton>
-            {/if}
         {/if}
 
         {#if open}
@@ -228,28 +192,12 @@
             <Icon size={1.3} id={$slidesOptions.mode} white={$slidesOptions.mode === "grid"} />
         </MaterialButton>
     </FloatingInputs>
-{:else}
-    <!-- template (so you can remove it if you want to) -->
-    {#if enableStylePreview && outputsCount === 1 ? false : showTemplateIcon && (!referenceType || referenceType === "scripture")}
-        <FloatingInputs>
-            <MaterialButton
-                class="context #show_template"
-                title="menu.edit: <b>{$templates[showTemplateId].name || 'info.template'}</b>"
-                on:click={() => {
-                    activeEdit.set({ type: "template", id: showTemplateId, items: [] })
-                    activePage.set("edit")
-                }}
-            >
-                <Icon size={1.1} id="templates" />
-            </MaterialButton>
-        </FloatingInputs>
-    {/if}
 {/if}
 
 {#if $slidesOptions.mode !== "simple"}
     <FloatingInputs style="max-width: {referenceType ? 90 : 70}%;" side="left" onlyOne={!reference && !multipleLayouts}>
         {#if reference}
-            <Reference show={currentShow} />
+            <Reference {showId} show={currentShow} />
         {:else if layouts}
             {#if multipleLayouts}
                 <span class="layouts">
@@ -269,7 +217,7 @@
                 </span>
             {/if}
 
-            <MaterialButton disabled={!layoutSlides.length || isLocked || !layoutSlides?.some((a) => currentShow?.slides?.[a.id]?.group && currentShow?.slides?.[a.id]?.group !== ".")} on:click={addLayout} style="white-space: nowrap;" title="show.new_layout" center>
+            <MaterialButton disabled={!layoutSlides.length || isLocked || !layoutSlides?.some((a) => a && currentShow?.slides?.[a.id]?.group && currentShow?.slides?.[a.id]?.group !== ".")} on:click={addLayout} style="white-space: nowrap;" title="show.new_layout" center>
                 <Icon id="add" size={1.1} white={multipleLayouts} />
                 {#if !multipleLayouts && !$labelsDisabled}<T id="show.new_layout" />{/if}
             </MaterialButton>

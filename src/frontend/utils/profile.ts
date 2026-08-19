@@ -14,14 +14,15 @@ export function openProfileByName(profileName: string) {
     }
 
     // find profile by name (case-insensitive)
-    const profileId = Object.keys(get(profiles)).find((id) => (get(profiles)[id].name || "").toLowerCase() === profileName.toLowerCase())
+    const normalizedName = profileName.toLowerCase()
+    const profileId = Object.keys(get(profiles)).find((id) => (get(profiles)[id]?.name?.toString() || "").toLowerCase() === normalizedName)
     if (!profileId) return
 
     activeProfile.set(profileId)
 
     // run action
     const actionId = get(profiles)[profileId]?.action
-    if (actionId) runActionId(actionId)
+    if (actionId) runActionId(actionId, "profile")
 }
 
 export function autoOpenLastUsedProfile() {
@@ -46,3 +47,12 @@ export function checkPassword(password: string, encoded: string) {
 }
 const k = "bw46feskw4"
 const encrypt = (text) => Array.from(text, (char: string, i) => ("0" + (char.charCodeAt(0) ^ k.charCodeAt(i % k.length)).toString(16)).slice(-2)).join("")
+
+export function isGroupHidden(groupId: string): boolean {
+    const profile = getAccess("groups")
+    const currentLocalLevel = profile[groupId] || "write"
+    const currentGlobalLevel = profile.global || "write"
+
+    if (currentGlobalLevel === "none") return true
+    return currentLocalLevel === "none"
+}

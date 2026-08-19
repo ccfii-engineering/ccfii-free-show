@@ -1,23 +1,21 @@
+import fs from "fs"
 import path from "path"
 import { Main } from "../../types/IPC/Main"
 import { ToMain } from "../../types/IPC/ToMain"
 import type { SaveActions } from "../../types/Save"
-import type { Show, Shows, TrimmedShow } from "../../types/Show"
+import type { Show, Shows } from "../../types/Show"
 import { sendMain, sendToMain } from "../IPC/main"
-import { copyFileAsync, deleteFolder, doesPathExist, getDataFolderPath, getFileStats, getTimePointString, loadShows, makeDir, openInSystem, readFile, readFileAsync, readFolder, selectFilesDialog, writeFile, writeFileAsync } from "../utils/files"
-import { wait } from "../utils/helpers"
-import { _store, getStore, setStore, storeFilesData } from "./store"
+import { deleteFile, deleteFolder, doesPathExist, getDataFolderPath, getFileStats, getTimePointString, loadShows, makeDir, openInSystem, readFile, readFolder, selectFilesDialog, writeFile } from "../utils/files"
+import { _store, setStore, storeFilesData } from "./store"
+import { compressToZip, decompressZip } from "./zip"
 
-export async function startBackup({ customTriggers, customOutputLocation }: { customTriggers?: SaveActions; customOutputLocation?: string } = {}): Promise<void> {
-    const shows = getStore("SHOWS")
-
-    const isCloudSync = !!customOutputLocation
-
+export async function startBackup({ customTriggers, isCloudSync }: { customTriggers?: SaveActions; isCloudSync?: boolean } = {}): Promise<{ entries?: { name: string; content?: string | Buffer; filePath?: string }[]; path?: string } | void> {
     // no need to backup shows on auto backup (as that just takes a lot of space)
     const isAutoBackup = !!customTriggers?.isAutoBackup
 
     const folderName = getTimePointString() + (isAutoBackup ? "_auto" : "")
-    const backupFolder = customOutputLocation ?? getDataFolderPath("backups", folderName)
+    const backupFolder = path.join(getDataFolderPath("backups"), folderName)
+    const entries: { name: string; content?: string | Buffer; filePath?: string }[] = []
 
     // CONFIGS
     await Promise.all(
@@ -37,69 +35,55 @@ export async function startBackup({ customTriggers, customOutputLocation }: { cu
     }
 
     // SHOWS
-    if (!isAutoBackup || customTriggers?.backupShows) await syncAllShows()
+    await syncAllShows()
 
-    if (isCloudSync) return
+    if (isCloudSync) return { entries }
 
-    sendToMain(ToMain.BACKUP, { finished: true, path: backupFolder })
+    const zipPath = backupFolder + ".zip"
+    try {
+        await compressToZip(entries, zipPath)
+    } catch (err) {
+        console.error("Could not create backup:", err)
+        sendToMain(ToMain.ALERT, "Could not create the backup file!")
+        sendToMain(ToMain.BACKUP, { finished: false, path: zipPath })
+        return
+    }
 
-    if (!isAutoBackup) openInSystem(backupFolder, true)
+    sendToMain(ToMain.BACKUP, { finished: true, path: zipPath })
+
+    if (!isAutoBackup) openInSystem(zipPath, true)
 
     /// //
 
-    async function syncStores(id: keyof typeof _store) {
-        const currentData = getStore(id)
-        if (!currentData) return
-
-        const name = id + ".json"
-        const content: string = JSON.stringify(currentData)
-        const filePath: string = path.resolve(backupFolder, name)
-        await writeFileAsync(filePath, content)
+    function syncStores(id: keyof typeof _store) {
+        const store = _store[id]
+        if (store) entries.push({ name: id + ".json", filePath: store.path })
     }
 
     async function syncBibles() {
         const biblesPath = getDataFolderPath("scriptures")
+        if (!fs.existsSync(biblesPath)) return
+
         const bibleFiles = readFolder(biblesPath)
 
-        await Promise.all(
-            bibleFiles.map(async (fileName) => {
-                const sourcePath = path.join(biblesPath, fileName)
-                const destPath = path.join(backupFolder, `BIBLE_${fileName}`)
-                await copyFileAsync(sourcePath, destPath)
-            })
-        )
+        bibleFiles.forEach((fileName) => {
+            const sourcePath = path.join(biblesPath, fileName)
+            const destPath = `BIBLE_${fileName}`
+            entries.push({ name: destPath, filePath: sourcePath })
+        })
     }
 
     async function syncAllShows() {
-        if (!shows) return
-
-        const name = "SHOWS_CONTENT.json"
-        const allShows: Shows = {}
         const showsPath = getDataFolderPath("shows")
+        if (!fs.existsSync(showsPath)) return
 
-        // avoid opening too many files at once (EMFILE error)
-        const entries = Object.entries(shows)
-        const BATCH_SIZE = 20
-        for (let i = 0; i < entries.length; i += BATCH_SIZE) {
-            const batch = entries.slice(i, i + BATCH_SIZE)
-            await Promise.all(
-                batch.map(async ([id, show]: [string, TrimmedShow]) => {
-                    const fileName = (show.name || id) + ".show"
-                    const localShowPath = path.join(showsPath, fileName)
+        const showFilesOnDisk = readFolder(showsPath)
 
-                    const localContent = await readFileAsync(localShowPath)
-                    if (localContent && isValidJSON(localContent)) allShows[id] = JSON.parse(localContent)[1]
-                })
-            )
+        for (const fileName of showFilesOnDisk) {
+            if (fileName.toLowerCase().endsWith(".show")) {
+                entries.push({ name: "SHOWS/" + fileName, filePath: path.join(showsPath, fileName) })
+            }
         }
-
-        // ensure all shows are added correctly
-        // https://github.com/ChurchApps/FreeShow/issues/1492
-        await wait(Object.keys(shows).length * 0.4)
-
-        const content: string = JSON.stringify(allShows)
-        const filePath: string = path.resolve(backupFolder, name)
-        await writeFileAsync(filePath, content)
     }
 }
 
@@ -111,16 +95,18 @@ export function getBackups() {
     files.forEach((name) => {
         const filePath = path.resolve(backupsFolder, name)
         const stat = getFileStats(filePath)
-        if (!stat?.folder) return
+        if (!stat) return
 
-        let size = 0
-        readFolder(filePath).forEach((fileName) => {
-            const fileStat = getFileStats(path.resolve(filePath, fileName))
-            if (fileStat) size += fileStat.stat.size
-        })
-        if (size === 0) return
-
-        backups.push({ path: filePath, name, date: stat.stat.ctimeMs, size })
+        if (name.endsWith(".zip")) {
+            backups.push({ path: filePath, name: name.replace(".zip", ""), date: stat.stat.ctimeMs, size: stat.stat.size })
+        } else if (stat.folder) {
+            let size = 0
+            readFolder(filePath).forEach((fileName) => {
+                const fileStat = getFileStats(path.resolve(filePath, fileName))
+                if (fileStat) size += fileStat.stat.size
+            })
+            if (size > 0) backups.push({ path: filePath, name, date: stat.stat.ctimeMs, size })
+        }
     })
 
     return backups
@@ -132,21 +118,37 @@ export function deleteBackup(data: { path: string }) {
     const backupsFolder = getDataFolderPath("backups")
     const folderPath = path.resolve(backupsFolder, data.path)
 
-    deleteFolder(folderPath)
+    const stats = getFileStats(folderPath)
+    if (stats?.folder) deleteFolder(folderPath)
+    else deleteFile(folderPath)
 }
 
 // RESTORE
 
-// WIP should be case insensitive
-export function restoreFiles(data?: { path: string }) {
-    let files: string[] = []
+export async function restoreFiles(data?: { path: string }) {
+    let files: { name: string; content: string | Buffer }[] = []
 
     if (data?.path) {
-        // WIP check if folder or zip file
-        files = readFolder(data.path).map((name) => path.join(data.path, name))
+        if (data.path.endsWith(".zip")) {
+            const decompressed = await decompressZip([data.path], false)
+            files = decompressed.map((d) => ({ name: d.name, content: d.content }))
+        } else {
+            files = readFolder(data.path).map((name) => ({ name, content: readFile(path.join(data.path, name)) || "" }))
+        }
     } else {
         const initialPath = getDataFolderPath("backups")
-        files = selectFilesDialog("", { name: "FreeShow Backup Files", extensions: ["json"] }, true, initialPath)
+        const selectedPaths = selectFilesDialog("", { name: "FreeShow Backup Files", extensions: ["json", "zip"] }, true, initialPath)
+
+        if (selectedPaths?.length) {
+            for (const p of selectedPaths) {
+                if (p.endsWith(".zip")) {
+                    const decompressed = await decompressZip([p], false)
+                    files.push(...decompressed.map((d) => ({ name: d.name, content: d.content })))
+                } else {
+                    files.push({ name: path.basename(p), content: readFile(p) || "" })
+                }
+            }
+        }
     }
 
     if (!files?.length) return sendToMain(ToMain.RESTORE2, { finished: false })
@@ -157,30 +159,42 @@ export function restoreFiles(data?: { path: string }) {
         .filter(([_, data]) => data.portable)
         .map(([key, _]) => key)
 
-    files.forEach((filePath: string) => {
+    let showsRestored = false
+    files.forEach((file: { name: string; content: string | Buffer }) => {
+        if (typeof file.content !== "string") return
+        const filePath = file.name
+
         if (filePath.includes("SHOWS_CONTENT")) {
-            restoreShows(filePath)
+            restoreShows(file.content)
+            showsRestored = true
+            return
+        }
+
+        if (filePath.startsWith("SHOWS/")) {
+            restoreSingleShow(file.name, file.content)
+            showsRestored = true
             return
         }
 
         if (filePath.includes("SETTINGS")) {
-            restoreStore(filePath, "SETTINGS")
+            restoreStore(file.content, "SETTINGS")
             return
         }
 
         const storeId = portableStoreFiles.find((a) => filePath.includes(a))
 
         if (!storeId) return
-        restoreStore(filePath, storeId as keyof typeof _store)
+        restoreStore(file.content, storeId as keyof typeof _store)
     })
+
+    if (showsRestored) sendMain(Main.SHOWS, loadShows())
 
     sendToMain(ToMain.RESTORE2, { finished: true })
     return
 
     /// //
 
-    function restoreStore(filePath: string, storeId: keyof typeof _store) {
-        const file = readFile(filePath)
+    function restoreStore(file: string, storeId: keyof typeof _store) {
         if (!_store[storeId] || !file || !isValidJSON(file)) return
 
         const data = JSON.parse(file)
@@ -195,8 +209,7 @@ export function restoreFiles(data?: { path: string }) {
         sendMain(storeId as Main, data)
     }
 
-    function restoreShows(filePath: string) {
-        const file = readFile(filePath)
+    function restoreShows(file: string) {
         if (!file || !isValidJSON(file)) return
 
         const shows: Shows = JSON.parse(file)
@@ -210,8 +223,16 @@ export function restoreFiles(data?: { path: string }) {
             const showPath: string = path.resolve(showsPath, (value.name || id) + ".show")
             writeFile(showPath, JSON.stringify([id, value]), id)
         }
+    }
 
-        sendMain(Main.SHOWS, loadShows())
+    function restoreSingleShow(name: string, content: string) {
+        if (!content || !isValidJSON(content)) return
+
+        const fileName = path.basename(name)
+        const showPath = path.resolve(showsPath, fileName)
+
+        if (!doesPathExist(showsPath)) makeDir(showsPath)
+        writeFile(showPath, content)
     }
 }
 

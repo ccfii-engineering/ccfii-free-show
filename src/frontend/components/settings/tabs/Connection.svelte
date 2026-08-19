@@ -3,7 +3,7 @@
     import type { ContentProviderId } from "../../../../electron/contentProviders/base/types"
     import { Main } from "../../../../types/IPC/Main"
     import { requestMain, sendMain } from "../../../IPC/main"
-    import { activePage, activePopup, activeShow, activeTriggerFunction, cloudSyncData, companion, connections, contentProviderData, disabledServers, maxConnections, outputs, popupData, ports, projectTemplates, providerConnections, serverData, special } from "../../../stores"
+    import { activePage, activePopup, activeShow, activeTriggerFunction, cloudSyncData, companion, connections, contentProviderData, disabledServers, maxConnections, notFound, obsData, outputs, popupData, ports, projectTemplates, providerConnections, serverData, special } from "../../../stores"
     import { translateText } from "../../../utils/language"
     import { contentProviderSync } from "../../../utils/startup"
     import { keysToID, sortByName } from "../../helpers/array"
@@ -14,12 +14,16 @@
     import Title from "../../input/Title.svelte"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
     import MaterialDropdown from "../../inputs/MaterialDropdown.svelte"
+    import MaterialNumberInput from "../../inputs/MaterialNumberInput.svelte"
+    import MaterialTextInput from "../../inputs/MaterialTextInput.svelte"
     import MaterialToggleSwitch from "../../inputs/MaterialToggleSwitch.svelte"
+    import Tip from "../../main/Tip.svelte"
+    import { startRemoteController, stopRemoteController } from "../../../utils/remoteController"
 
     let ip = "localhost"
 
     onMount(async () => {
-        ip = (await requestMain(Main.IP))[0]
+        ip = ((await requestMain(Main.IP)) || ["localhost"])[0]
     })
 
     // WIP reset in popups
@@ -74,8 +78,12 @@
     }
 
     // restart servers on toggle on/off
-    let initialServerState = JSON.stringify($disabledServers)
-    $: if (JSON.stringify($disabledServers) !== initialServerState) restart()
+    let initial = true
+    $: {
+        $disabledServers
+        if (initial) initial = false
+        else restart()
+    }
 
     $: if ($activeTriggerFunction.includes("open_connection_") && ip !== "localhost") openConnection()
     function openConnection() {
@@ -124,7 +132,7 @@
             }
 
             requestMain(Main.PROVIDER_DISCONNECT, { providerId }, (a) => {
-                if (!a.success) return
+                if (!a?.success) return
                 providerConnections.update((c) => {
                     c[providerId] = false
                     return c
@@ -135,8 +143,10 @@
 
     function syncContentProvider() {
         contentProviderSync()
+
         activeShow.set(null)
         activePage.set("show")
+        notFound.set({ show: [], bible: [] })
     }
 
     function updateProvider(id: ContentProviderId, key: string, value: any) {
@@ -149,17 +159,33 @@
 
     $: projectTemplateOptions = [{ value: "", label: translateText("main.none") }, ...sortByName(keysToID($projectTemplates)).map(({ id, name }) => ({ value: id, label: name }))]
 
-    // TEMP solution
-    let showAll = false
-    let taps = 0
-    function tap() {
-        taps++
-        setTimeout(() => {
-            taps = 0
-        }, 1500)
+    $: providerOriginOptions = [
+        { value: "", label: "Ask when existing show is found" },
+        { value: "local", label: "Always use local instance" },
+        { value: "online", label: "Always use online instance" }
+    ]
 
-        if (taps >= 3) showAll = true
+    // Remote Control
+
+    function toggleRemoteController(value: boolean) {
+        special.update((a) => ({ ...a, remoteController: value }))
+
+        if (value) {
+            popupData.set({ remoteController: true })
+            activePopup.set("connect")
+            if ($special.remoteControllerId) startRemoteController()
+        } else {
+            stopRemoteController()
+        }
     }
+
+    // OBS Controller
+
+    let obsWasDisabled = !$obsData.enabled
+
+    let obsIP = $obsData.ip || "localhost"
+    let obsPort = $obsData.port || 4455
+    $: if (obsIP || obsPort) obsData.update((d) => ({ ...d, ip: obsIP, port: obsPort }))
 </script>
 
 {#each servers as server}
@@ -203,11 +229,28 @@
     </InputRow>
 {/each}
 
+<InputRow>
+    <MaterialButton
+        style="flex: 1;justify-content: space-between;"
+        disabled={!$special.remoteController}
+        on:click={() => {
+            popupData.set({ remoteController: true })
+            activePopup.set("connect")
+        }}
+    >
+        <span style="display: flex;align-items: center;justify-content: center;gap: 15px;">
+            <Icon id="web" size={1.1} />
+
+            Remote Clicker
+        </span>
+    </MaterialButton>
+
+    <MaterialToggleSwitch label="" checked={$special.remoteController} on:change={(e) => toggleRemoteController(e.detail)} />
+</InputRow>
+
 {#if !$providerConnections.planningcenter && (!$providerConnections.churchApps || cloudOnly.churchApps) && !$providerConnections.amazinglife}
     <!-- No provider connected - show connection options -->
-    <div class="tapping" on:click={tap}>
-        <Title label="settings.content_provider" icon="list" />
-    </div>
+    <Title label="settings.content_provider" icon="list" />
 
     <InputRow>
         <MaterialButton on:click={() => contentProviderConnect("planningcenter")} style="flex: 1;" icon="login">
@@ -221,13 +264,11 @@
         </MaterialButton>
     </InputRow>
 
-    {#if showAll}
-        <InputRow>
-            <MaterialButton on:click={() => contentProviderConnect("amazinglife")} style="flex: 1;" icon="login">
-                <T id="settings.connect_to" replace={["APlay"]} />
-            </MaterialButton>
-        </InputRow>
-    {/if}
+    <InputRow>
+        <MaterialButton on:click={() => contentProviderConnect("amazinglife")} style="flex: 1;" icon="login">
+            <T id="settings.connect_to" replace={["APlay"]} />
+        </MaterialButton>
+    </InputRow>
 {:else if $providerConnections.planningcenter}
     <!-- Planning Center connected -->
     <Title label="Content Provider: Planning Center" icon="list" />
@@ -243,7 +284,19 @@
             <Icon id="launch" white />
         </MaterialButton>
     </InputRow>
-    <MaterialToggleSwitch label="Always use local instance of songs" checked={$contentProviderData.planningcenter?.localAlways} defaultValue={false} on:change={(e) => updateProvider("planningcenter", "localAlways", e.detail)} />
+
+    <MaterialToggleSwitch label="settings.auto_sync_startup" checked={$contentProviderData.planningcenter?.autoSync !== false} on:change={(e) => updateProvider("planningcenter", "autoSync", e.detail)} />
+
+    {#if $contentProviderData.planningcenter?.autoSync !== false}
+        <InputRow>
+            <!-- <MaterialPopupButton label="popup.sync_folders" value="" name="" icon="folder" popupId="sync_folders" on:click={() => activePopup.set("sync_folders")} style="flex: 1;" /> -->
+            <MaterialButton icon="folder" on:click={() => activePopup.set("sync_folders")} style="flex: 1;">
+                <T id="popup.sync_folders" />
+            </MaterialButton>
+        </InputRow>
+    {/if}
+
+    <MaterialDropdown label="Song origin" options={providerOriginOptions} value={$contentProviderData.planningcenter?.songOrigin || ""} on:change={(e) => updateProvider("planningcenter", "songOrigin", e.detail)} />
     {#if Object.keys($projectTemplates).length}
         <MaterialDropdown label="actions.project_template" options={projectTemplateOptions} value={$contentProviderData.planningcenter?.projectTemplate || ""} on:change={(e) => updateProvider("planningcenter", "projectTemplate", e.detail)} />
     {/if}
@@ -264,8 +317,10 @@
         </MaterialButton>
     </InputRow>
 
+    <MaterialDropdown label="Song origin" options={providerOriginOptions} value={$contentProviderData.churchApps?.songOrigin || ""} on:change={(e) => updateProvider("churchApps", "songOrigin", e.detail)} />
+
     {#if $cloudSyncData.enabled}
-        <p class="tip">Note: This is unrelated to the Cloud sync found in "Files". This is for the content manager / curriculum.</p>
+        <Tip type="warning" value="This is unrelated to the Cloud sync found in 'Files'. This is for the content manager / curriculum." top={20} />
     {/if}
 {:else if $providerConnections.amazinglife}
     <!-- APlay connected -->
@@ -282,27 +337,27 @@
     </InputRow>
 {/if}
 
-<!-- <CombinedInput>
-    <Button style="width: 100%;" on:click={restart} center>
-        <Icon id="refresh" right />
-        <T id="settings.restart" />
-    </Button>
-</CombinedInput> -->
+<!-- OBS Studio Controller -->
+<Title label="OBS Studio" icon="record" />
 
-<!-- <div>
-  <p><T id="settings.device_name" /></p>
-  <TextInput style="max-width: 50%;" value={$os.name} light />
-</div> -->
+<InputRow arrow={$obsData.enabled}>
+    <MaterialToggleSwitch
+        label="OBS Studio Controller"
+        style="width: 100%;"
+        checked={$obsData.enabled}
+        defaultValue={false}
+        on:change={(e) => {
+            if (!e.detail) obsWasDisabled = true
+            obsData.update((a) => ({ ...a, enabled: e.detail }))
+        }}
+    />
 
-<!-- <div>
-  <p><T id="settings.allowed_connections" /></p>
-  <span>(all, only phones, (laptops), ...)</span>
-</div> -->
+    <div slot="menu">
+        <MaterialTextInput label="IP" value={obsIP} defaultValue="localhost" placeholder="localhost" on:change={(e) => (obsIP = e.detail)} />
+        <MaterialNumberInput label="settings.port" value={obsPort} defaultValue={4455} placeholder="4455" on:change={(e) => (obsPort = e.detail)} />
+    </div>
+</InputRow>
 
-<style>
-    .tip {
-        font-size: 0.8em;
-        opacity: 0.6;
-        margin: 10px 0;
-    }
-</style>
+{#if $obsData.enabled && obsWasDisabled}
+    <Tip value="edit.position: guide_title.drawer > tabs.functions > OBS Studio" top={15} />
+{/if}

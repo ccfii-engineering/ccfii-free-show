@@ -3,11 +3,13 @@ import { replaceVirtualBreaks } from "../../../show/slides"
 
 // add new style to text by selection
 export function addStyle(selection: { start: number; end: number }[], item: Item, style: string | any[]): Item {
-    item.lines?.forEach((line, i) => {
+    if (!Array.isArray(item.lines)) return item
+
+    item.lines.forEach((line, i) => {
         const newText: any[] = []
         let pos = 0
-        if (selection[i]?.start !== undefined) {
-            line.text?.forEach((text) => {
+        if (selection[i]?.start !== undefined && Array.isArray(line.text)) {
+            line.text.forEach((text) => {
                 const value = text.value || ""
                 const length = value.length
 
@@ -18,7 +20,8 @@ export function addStyle(selection: { start: number; end: number }[], item: Item
 
                 if ((pos < selection[i].start && pos + length > selection[i].start) || (pos < selection[i].end && pos + length > selection[i].end) || (pos >= selection[i].start && pos + length <= selection[i].end)) {
                     if (from > 0) newText.push({ value: value.slice(0, from), style: text.style })
-                    if (to - from > 0 && to - from <= length) {
+                    // also style covered empty text (e.g. an empty textbox), otherwise it would keep the old style
+                    if ((to - from > 0 || length === 0) && to - from <= length) {
                         let newStyle = ""
                         if (Array.isArray(style)) newStyle = addStyleString(text.style, style)
                         else newStyle = style
@@ -42,8 +45,11 @@ export function addStyle(selection: { start: number; end: number }[], item: Item
 
 // combine duplicate styles
 function combine(item: Item): Item {
-    item.lines?.forEach((line) => {
-        const a = [...(line.text || [])]
+    if (!Array.isArray(item.lines)) return item
+
+    item.lines.forEach((line) => {
+        if (!Array.isArray(line.text)) return
+        const a = [...line.text]
         for (let i = 0; i < a.length; i++) {
             if (a[i + 1]) {
                 const d1: any[] = []
@@ -73,6 +79,7 @@ function combine(item: Item): Item {
 // add new style to string and remove old
 export function addStyleString(oldStyle: string, style: any[]): string {
     if (!oldStyle) return style[1] !== null ? style.join(":") + ";" : ""
+    if (typeof oldStyle !== "string") return ""
 
     let array: string[] = oldStyle.split(";")
     // remove last if empty
@@ -130,59 +137,74 @@ export function addFilterString(oldFilter: string, filter: any[]): string {
 export function getSelectionRange(): { start: number; end: number }[] {
     const selection: null | Selection = window.getSelection()
     const sel: any[] = []
-    let start: null | number = null
-    let end: null | number = null
-
     if (!selection?.anchorNode) return sel
 
-    const parent: Element = selection.anchorNode.parentElement!.closest(".edit")!
-    let startNode = selection.anchorNode.parentNode
-    let endNode = selection.focusNode?.parentNode
-    const startOffset = selection.anchorOffset
-    let endOffset = selection.focusOffset
+    const anchorElem = selection.anchorNode.nodeType === Node.ELEMENT_NODE ? (selection.anchorNode as Element) : selection.anchorNode.parentElement
+    const parent = anchorElem?.closest(".edit")
+    if (!parent) return sel
 
-    // selecting empty lines
-    if (endNode?.classList.contains("break")) endNode = endNode.children[0]
-    if (startNode?.classList.contains("break")) startNode = startNode.children[0]
+    const lines = Array.from(parent.childNodes)
+    if (!lines.length) return sel
+    lines.forEach((_line, i) => (sel[i] = {}))
 
-    if (!parent?.closest(".edit")) return sel
+    const lineLength = (lineNode: Node) => {
+        const text = (lineNode as HTMLElement).innerText ?? lineNode.textContent ?? ""
+        return text.replaceAll("\n", "").length
+    }
 
-    new Array(...parent.childNodes).forEach((br, line: number) => {
-        if (!sel[line]) sel[line] = {}
-        let count = 0
-
-        new Array(...br.childNodes).forEach((child: any) => {
-            if (selection.containsNode(child, true)) {
-                // if start not set & child is start & (child is not end or end is bigger than start)
-                if (start === null && child === startNode && (child !== endNode || endOffset > startOffset)) {
-                    start = count + startOffset
-                    sel[line].start = start
-                } else if ((start === null && child === endNode) || (child === startNode && startOffset > endOffset)) {
-                    start = count + endOffset
-                    sel[line].start = start
-                    endNode = startNode
-                    startNode = selection.focusNode?.parentNode || null
-                    endOffset = startOffset
-                }
-
-                if (start !== null) {
-                    if (!sel[line].start) sel[line].start = 0
-
-                    // WIP empty lines: child is not startNode but should be (don't think it's an issue)
-                    if ((child === startNode && child !== endNode) || selection.containsNode(child)) {
-                        if (end === null) end = count
-                        end += child.innerText?.length || 0
-                        sel[line].end = end
-                    } else {
-                        end = count + endOffset
-                        sel[line].end = end
-                    }
-                }
+    const getBoundary = (node: Node, offset: number) => {
+        let lineIndex = lines.findIndex((line) => line === node || line.contains(node))
+        if (lineIndex < 0) {
+            if (node === parent) {
+                lineIndex = Math.min(offset, lines.length - 1)
+                if (lineIndex < 0) return null
+                return { line: lineIndex, pos: lineLength(lines[lineIndex]) }
             }
+            return null
+        }
 
-            count += child.innerText?.replaceAll("\n", "")?.length || 0
-        })
-    })
+        const line = lines[lineIndex]
+        const range = document.createRange()
+        range.setStart(line, 0)
+
+        try {
+            range.setEnd(node, offset)
+        } catch (_err) {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+                const safeOffset = Math.max(0, Math.min((node as Element).childNodes.length, offset))
+                range.setEnd(node, safeOffset)
+            } else {
+                const textLen = node.textContent?.length ?? 0
+                const safeOffset = Math.max(0, Math.min(textLen, offset))
+                range.setEnd(node, safeOffset)
+            }
+        }
+
+        return { line: lineIndex, pos: range.toString().replaceAll("\n", "").length }
+    }
+
+    if (!selection.rangeCount) return sel
+    const range = selection.getRangeAt(0)
+    const start = getBoundary(range.startContainer, range.startOffset)
+    const end = getBoundary(range.endContainer, range.endOffset)
+    if (!start || !end) return sel
+
+    if (selection.isCollapsed) {
+        sel[start.line] = { start: start.pos, end: start.pos }
+        return sel
+    }
+
+    for (let i = start.line; i <= end.line; i++) {
+        if (i === start.line && i === end.line) {
+            sel[i] = { start: start.pos, end: end.pos }
+        } else if (i === start.line) {
+            sel[i] = { start: start.pos, end: lineLength(lines[i]) }
+        } else if (i === end.line) {
+            sel[i] = { start: 0, end: end.pos }
+        } else {
+            sel[i] = { start: 0, end: lineLength(lines[i]) }
+        }
+    }
 
     return sel
 }
@@ -190,9 +212,15 @@ export function getSelectionRange(): { start: number; end: number }[] {
 // return item style at text length pos
 export function getItemStyleAtPos(lines: Line[], pos: null | { start: number; end: number }[]) {
     let style = ""
-    ;(pos || lines).forEach((_a: any, i: number) => {
+    const iter = pos || lines
+    if (!Array.isArray(iter)) return style
+
+    iter.forEach((_a: any, i: number) => {
         let currentPos = 0
-        lines[i]?.text?.some((text) => {
+        const textArr = lines[i]?.text
+        if (!Array.isArray(textArr)) return
+
+        textArr.some((text) => {
             const value = text.value || ""
 
             // if (pos) console.log(currentPos, pos[i].end, currentPos <= pos[i].end, currentPos + value.length >= pos[i].end)
@@ -207,7 +235,7 @@ export function getItemStyleAtPos(lines: Line[], pos: null | { start: number; en
     })
 
     // filter out empty lines
-    lines = lines.filter((a) => a.text.length)
+    lines = lines.filter((a) => a?.text?.length)
 
     if (!style.length && lines.length) style = lines[lines.length - 1].text[lines[lines.length - 1].text.length - 1]?.style || ""
 
@@ -219,19 +247,23 @@ export function getLastLineAlign(item: Item, selection: any): string {
     if (!selection?.length) return item?.lines?.[0]?.align || ""
 
     let last = ""
-    item?.lines?.forEach((line, i) => {
-        if (!selection || selection[i]?.start !== undefined) last = line.align
-    })
+    if (Array.isArray(item?.lines)) {
+        item.lines.forEach((line, i) => {
+            if (!selection || selection[i]?.start !== undefined) last = line.align
+        })
+    }
     return last
 }
 
-export function getTextLines(slide: Slide | { items: Item[] }) {
-    const lines: string[] = []
-    if (!slide?.items) return lines
+// normally returns array of text lines: ["Line 1", "Line 2", "", "Line 1"]
+// itemSeperated: ["Line 1<br>Line 2", "Line 1"]
+export function getTextLines(slide: Slide | { items: Item[] }, itemSeperated: boolean = false) {
+    if (!Array.isArray(slide?.items)) return []
 
-    slide.items.forEach((item, i) => {
+    const items: string[][] = []
+    slide.items.forEach((item) => {
         if (!getItemText(item)?.length) return
-        if (i > 0) lines.push("")
+        const lines: string[] = []
 
         let fullText = ""
         item.lines?.forEach((line) => {
@@ -248,9 +280,19 @@ export function getTextLines(slide: Slide | { items: Item[] }) {
         })
 
         if (!fullText.length) lines.pop()
+        if (lines.length || itemSeperated) items.push(lines.map((a) => replaceVirtualBreaks(a)))
     })
 
-    return lines.map((a) => replaceVirtualBreaks(a))
+    if (itemSeperated) {
+        // convert [["Line 1, Line 2"], ["Line 1"]] to ["Line 1<br>Line 2", "Line 1"]
+        return items.map((a) => a.join("<br>"))
+    }
+
+    // flatten and push "" in between
+    return items.reduce((value, item) => {
+        if (value.length && item.length) value.push("")
+        return [...value, ...item]
+    }, [] as string[])
 }
 
 // get text of slides
@@ -268,9 +310,15 @@ export function getSlideText(slide: Slide) {
 export function getItemText(item: Item | null): string {
     let text = ""
 
-    for (const line of item?.lines ?? []) {
-        for (const t of line.text ?? []) {
-            if (t.value) text += t.value
+    const lines = item?.lines
+    if (Array.isArray(lines)) {
+        for (const line of lines) {
+            const textArr = line.text
+            if (Array.isArray(textArr)) {
+                for (const t of textArr) {
+                    if (t.value) text += t.value
+                }
+            }
         }
     }
 
@@ -279,7 +327,7 @@ export function getItemText(item: Item | null): string {
 
 export function getItemTextArray(item: Item): string[] {
     const text: string[] = []
-    if (!item?.lines) return []
+    if (!Array.isArray(item?.lines)) return []
 
     item.lines.forEach((line) => {
         if (!Array.isArray(line?.text)) return
@@ -294,36 +342,42 @@ export function getItemTextArray(item: Item): string[] {
 
 export function getLineText(line: Line): string {
     let text = ""
-    line?.text?.forEach((content) => {
+    const textArr = line?.text
+    if (!Array.isArray(textArr)) return ""
+    textArr.forEach((content) => {
         text += content.value
     })
     return text
 }
 
 export function setCaret(element: any, { line = 0, pos = 0 }, toEnd = false) {
-    if (!element) return
+    if (!element?.childNodes?.length) return
     const range = document.createRange()
     const sel = window.getSelection()
 
-    const lineElem = element.childNodes[line]
+    const lineElem = element.childNodes[Math.min(line, element.childNodes.length - 1)]
     if (!lineElem) return
+
+    // count like getSelectionRange: include plain text nodes, don't count line breaks
+    const nodeTextLength = (node: any) => (((node?.innerText ?? node?.textContent) || "") as string).replaceAll("\n", "").length
 
     // get child elem
     let childElem = -1
     let currentTextLength = 0
     lineElem.childNodes.forEach((elem, i) => {
-        if (!elem?.innerText || childElem >= 0) return
-        if (pos <= currentTextLength + elem.innerText.length) {
+        if (childElem >= 0) return
+        const textLength = nodeTextLength(elem)
+        if (pos <= currentTextLength + textLength) {
             childElem = i
             return
         }
-        currentTextLength += elem.innerText.length
+        currentTextLength += textLength
     })
 
     // pasted on non-existent line
     if (childElem < 0) {
         childElem = lineElem.childNodes.length - 1
-        pos = lineElem.childNodes[childElem]?.innerText?.length ?? 0
+        pos = nodeTextLength(lineElem.childNodes[childElem])
         currentTextLength = 0
     }
 
@@ -337,28 +391,44 @@ export function setCaret(element: any, { line = 0, pos = 0 }, toEnd = false) {
 
     // get end child elem
     const lastEndChild = lastLineElem.childNodes[lastLineElem.childNodes.length - 1]
-    let currentEndTextLength = lastEndChild?.innerText?.length ?? 0
+    let currentEndTextLength = lastEndChild ? nodeTextLength(lastEndChild) : 0
 
-    const breakElem = lastEndChild.childNodes[0]?.nodeName === "BR"
-    if (line === 0 && breakElem) return
+    const startChild = lineElem.childNodes[childElem]
+    const startElem = startChild?.nodeType === Node.TEXT_NODE ? startChild : startChild?.childNodes[0]
+    const endElem = lastEndChild?.nodeType === Node.TEXT_NODE ? lastEndChild : lastEndChild?.childNodes[0]
 
-    const startElem = lineElem.childNodes[childElem]?.childNodes[0]
-    const endElem = lastEndChild.childNodes[0]
-
-    // If startElem is a BR element, set caret before it and not inside it
-    if (startElem?.nodeName === "BR") {
-        const parentSpan = lineElem.childNodes[childElem]
-        range.setStart(parentSpan, 0)
-    } else if (startElem) {
-        const offset = pos - currentTextLength
-        const startElemLength = startElem.length ?? startElem.textContent?.length ?? 0
-        const safeStartOffset = Math.max(0, Math.min(startElemLength, offset))
-        range.setStart(startElem, safeStartOffset)
+    // always position the range, a fresh unpositioned range would collapse the caret to the start
+    try {
+        if (startElem?.nodeName === "BR") {
+            // if startElem is a BR element, set caret before it and not inside it
+            range.setStart(startElem.parentNode || lineElem, 0)
+        } else if (startElem?.nodeType === Node.TEXT_NODE) {
+            const offset = pos - currentTextLength
+            const startElemLength = startElem.length ?? startElem.textContent?.length ?? 0
+            range.setStart(startElem, Math.max(0, Math.min(startElemLength, offset)))
+        } else if (startChild) {
+            range.setStart(lineElem, Math.max(0, Math.min(lineElem.childNodes.length, childElem)))
+        } else {
+            range.setStart(lineElem, 0)
+        }
+    } catch {
+        range.selectNodeContents(lineElem)
+        range.collapse(false)
     }
-    if (toEnd) {
-        const safeEndOffset = Math.max(0, Math.min(currentEndTextLength, endElem?.length ?? 0))
-        range.setEnd(endElem, safeEndOffset)
-    } else range.collapse(true)
+
+    if (toEnd && lastEndChild) {
+        let safeEndOffset = 0
+        if (endElem?.nodeType === Node.TEXT_NODE) {
+            safeEndOffset = Math.max(0, Math.min(endElem.length ?? endElem.textContent?.length ?? 0, currentEndTextLength))
+        } else if (endElem?.nodeType === Node.ELEMENT_NODE) {
+            safeEndOffset = Math.max(0, Math.min(endElem.childNodes.length, currentEndTextLength))
+        }
+        try {
+            range.setEnd(endElem || lastEndChild, safeEndOffset)
+        } catch {
+            range.collapse(true)
+        }
+    } else if (!toEnd) range.collapse(true)
 
     sel?.removeAllRanges()
     sel?.addRange(range)

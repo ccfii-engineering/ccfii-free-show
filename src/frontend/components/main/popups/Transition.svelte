@@ -55,6 +55,7 @@
                 slideItems[i].actions.transition = value
             })
 
+            if (indexes.some((i) => !slideItems[i])) return
             let actions = indexes.map((i) => slideItems[i].actions)
 
             if ($activeEdit.type === "overlay" || $activeEdit.type === "template") {
@@ -82,7 +83,7 @@
             else slideMediaTransition = value
 
             let globalValues = $transitionData[id]
-            if (value.type === globalValues.type && value.duration === globalValues.duration && value.easing === globalValues.easing && !specificScenatios.find((a) => value[a])) value = null
+            if (value.type === globalValues.type && value.duration === globalValues.duration && value.easing === globalValues.easing && !specificScenatios.find((a) => value[a])) value = undefined
 
             let type = id === "text" ? "transition" : "mediaTransition"
             let indexes = $selected.data.map((a) => a.index)
@@ -259,6 +260,19 @@
         { value: "top_bottom", label: translateText("edit.top_bottom") }
     ]
 
+    $: slideDirection = currentTransition.custom?.direction || slideTypes[0].value
+    const getCorrectedDirection = (value: string, _updater: any = null) => {
+        // Svelte uses the inverse of the In for the out, so it makes sense to invert this
+        if (selectedSpecific === "out") {
+            if (value === "left_right") return "right_left"
+            if (value === "right_left") return "left_right"
+            if (value === "bottom_top") return "top_bottom"
+            if (value === "top_bottom") return "bottom_top"
+        }
+        return value
+    }
+    $: correctedSlideDirection = getCorrectedDirection(slideDirection, selectedSpecific)
+
     let showMore = false
 </script>
 
@@ -298,7 +312,7 @@
 </div>
 
 {#if currentTransition.type === "slide"}
-    <MaterialDropdown label="transition.direction" style="margin-bottom: 10px;" options={slideTypes} value={currentTransition.custom?.direction || slideTypes[0].value} on:change={(e) => changeTransition(selectedType, "custom", { ...(currentTransition.custom || {}), direction: e.detail })} />
+    <MaterialDropdown label="transition.direction" style="margin-bottom: 10px;" options={slideTypes} value={correctedSlideDirection} on:change={(e) => changeTransition(selectedType, "custom", { ...(currentTransition.custom || {}), direction: getCorrectedDirection(e.detail) })} />
 {/if}
 
 <InputRow>

@@ -4,14 +4,14 @@
     import { history } from "../../helpers/history"
     import { getLayoutRef } from "../../helpers/show"
     import { addFilterString } from "../scripts/textStyle"
-    import { EditInput2 } from "../values/boxes"
+    import { EditInput } from "../values/boxes"
     import { slideFilterSections } from "../values/filters"
     import EditValues from "./EditValues.svelte"
 
     let currentSlideFilterSections = clone(slideFilterSections)
     $: if (currentSlideNumber) currentSlideFilterSections = clone(slideFilterSections)
 
-    $: if (!filterData["backdrop-filter"]) {
+    $: if (!filterData?.["backdrop-filter"]) {
         delete currentSlideFilterSections.backdrop_filters
     }
 
@@ -23,9 +23,10 @@
     $: currentSlideData = ref?.[currentSlideNumber]?.data || null
 
     $: isTemplate = $activeEdit.type === "template"
-    $: filterData = isTemplate ? $templates[currentId] : currentSlideData
+    $: filterData = (isTemplate ? $templates[currentId] : currentSlideData) || {}
 
-    export function valueChanged(input: EditInput2) {
+    export function valueChanged(input: EditInput) {
+        if (!currentSlideData) return
         let value = input.values.value
         value = addFilterString(currentSlideData[input.id] || "", [input.key, value])
 

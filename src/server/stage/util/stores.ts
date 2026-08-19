@@ -16,11 +16,13 @@ export let updateTransposed: Writable<number> = writable(1)
 export let isConnected = writable(false)
 export let layouts: Writable<{ id: string; name: string; password: boolean }[] | null> = writable(null)
 export let selectedLayout = writable("")
-export let stageLayout: Writable<StageLayout | null> = writable(null)
+export let stageLayout: Writable<(StageLayout & { id?: string }) | null> = writable(null)
+export let passwordRequiredLayout: Writable<{ id: string; name: string } | null> = writable(null)
 
 export let output: Writable<Output | null> = writable(null)
 export let outputSlideCache: Writable<any> = writable({})
 export let background: Writable<any> = writable({})
+export let media: Writable<{ [key: string]: string }> = writable({})
 export let stream: Writable<any> = writable({})
 // export let videoTime: Writable<number> = writable(0)
 
@@ -58,9 +60,11 @@ export const _ = {
     layouts,
     selectedLayout,
     stageLayout,
+    passwordRequiredLayout,
 
     output,
     background,
+    media,
     stream,
 
     showsCache,

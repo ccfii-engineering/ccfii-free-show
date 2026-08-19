@@ -14,7 +14,7 @@ import { runAction } from "./actions"
 export function midiInListen() {
     Object.entries(get(actions)).forEach(([id, action]) => {
         action = convertOldMidiToNewAction(action)
-        if (!action.midi) return
+        if (!action.midi || action.enabled === false) return
 
         if (!action.shows?.length) {
             console.info("MIDI INPUT LISTENER: ", action.midi)
@@ -93,10 +93,12 @@ export function receivedMidi(msg) {
     const action: Action = convertOldMidiToNewAction(msgAction)
     if (action.enabled === false) return
 
+    const hasindex = action.triggers?.[0]?.includes("index_") ?? false
+
     // get index
     if (!msg.values) msg.values = {}
     let index = msg.values.velocity ?? -1
-    if (action.midi?.values?.velocity !== undefined && action.midi.values.velocity < 0) index = -1
+    if (!hasindex && action.midi?.values?.velocity !== undefined && action.midi.values.velocity < 0) index = -1
 
     if (msg.type === "control") {
         index = msg.values.value || 0
@@ -112,7 +114,6 @@ export function receivedMidi(msg) {
     // some programs send note off with velocity 0 upon release/stop, these should not be detected
     if (diff_type && index === 0) return
 
-    const hasindex = action.triggers?.[0]?.includes("index_") ?? false
     if (hasindex && index < 0) {
         newToast("toast.midi_no_velocity")
         index = 0
@@ -122,7 +123,7 @@ export function receivedMidi(msg) {
     // 0 & 1 = 0
     if (index > 0) index--
 
-    runAction(action, { midiIndex: index })
+    runAction(action, { midiIndex: index, source: "midi" })
 
     const actionShows = action?.shows || []
     if (!actionShows?.length) return

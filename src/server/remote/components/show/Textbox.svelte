@@ -117,14 +117,19 @@
     .break {
         width: 100%;
 
+        font-size: 0; /* auto size fix */
         /* height: 100%; */
 
         overflow-wrap: break-word;
         /* line-break: after-white-space;
     -webkit-line-break: after-white-space; */
 
-        /* balanced breaking, looks much cleaner */
-        text-wrap: balance;
+        text-wrap: balance; /* balanced breaking, looks much cleaner */
+        white-space: pre-wrap; /* preserve special spaces from Text edit */
+    }
+
+    .break span {
+        font-size: 100px;
     }
 
     /* span {

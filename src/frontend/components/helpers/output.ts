@@ -2,16 +2,17 @@ import { get } from "svelte/store"
 import { uid } from "uid"
 import { OUTPUT } from "../../../types/Channels"
 import { Main } from "../../../types/IPC/Main"
-import type { Output, Outputs } from "../../../types/Output"
+import type { Output, Outputs, RtmpDestination } from "../../../types/Output"
 import type { Resolution, Styles } from "../../../types/Settings"
 import type { Item, Layout, LayoutRef, Media, OutSlide, Show, Slide, SlideData, Template, TemplateSettings, Transition } from "../../../types/Show"
 import { AudioAnalyser } from "../../audio/audioAnalyser"
 import { fadeinAllPlayingAudio, fadeoutAllPlayingAudio } from "../../audio/audioFading"
-import { sendMain } from "../../IPC/main"
+import { requestMain, sendMain } from "../../IPC/main"
 import { actions, activeProject, activeRename, activeTimers, allOutputs, categories, connections, currentOutputSettings, customMessageCredits, disabledServers, effects, lockedOverlays, media, outputDisplay, outputs, outputSlideCache, outputState, overlays, overlayTimers, playingVideos, projects, scriptures, scriptureSettings, serverData, showsCache, special, stageShows, styles, templates, theme, themes, transitionData, usageLog } from "../../stores"
 import { trackScriptureUsage } from "../../utils/analytics"
 import { isMainWindow, isOutputWindow, newToast } from "../../utils/common"
 import { translateText } from "../../utils/language"
+import { confirmCustom } from "../../utils/popup"
 import { updateMappedEntries } from "../../utils/mapStoreEntries"
 import { send } from "../../utils/request"
 import { sendBackgroundToStage } from "../../utils/stageTalk"
@@ -24,6 +25,7 @@ import type { EditInput } from "../edit/values/boxes"
 import { clearBackground, clearSlide } from "../output/clear"
 import { areObjectsEqual, clone, keysToID, removeDuplicates, sortByName, sortObject } from "./array"
 import { getExtension, getFileName, getMediaLayerType, removeExtension } from "./media"
+import { createDestination, hasStreamableDestination } from "./rtmpDestinations"
 import { getLayoutRef } from "./show"
 import { getFewestOutputLines, getItemWithMostLines, replaceDynamicValues } from "./showActions"
 import { _show } from "./shows"
@@ -1626,4 +1628,95 @@ export function getBlending() {
     const center = 50 + Number(blending.offset || 0)
     if (blending.centered) return `-webkit-mask-image: linear-gradient(${blending.rotate ?? 90}deg, rgb(0, 0, 0) ${center - blending.left}%, rgba(0, 0, 0, ${opacity}) ${center}%, rgb(0, 0, 0) ${center + Number(blending.right)}%);`
     return `-webkit-mask-image: linear-gradient(${blending.rotate ?? 90}deg, rgba(0, 0, 0, ${opacity}) 0%, rgb(0, 0, 0) ${blending.left}%, rgb(0, 0, 0) ${100 - blending.right}%, rgba(0, 0, 0, ${opacity}) 100%);`
+}
+
+export async function checkFFmpeg(): Promise<boolean> {
+    const result = await requestMain(Main.FFMPEG_CHECK)
+    if (result?.installed) return true
+
+    if (await confirmCustom("To create an RTMP output, FreeShow needs to download and install FFmpeg. Do you want to proceed?")) {
+        const downloadResult = await requestMain(Main.FFMPEG_DOWNLOAD)
+        if (downloadResult?.success) {
+            newToast("FFmpeg installed successfully!")
+            sendMain(Main.ENCODER_DETECT)
+            return true
+        }
+
+        newToast(translateText("Failed to download FFmpeg: ") + (downloadResult?.error || "Unknown error"))
+    }
+
+    return false
+}
+
+export function startStreaming(outputId = "") {
+    const outputIds = outputId ? [outputId] : getAllActiveOutputIds()
+    outputIds.forEach((id) => updateOutputWebrtcData(id, "streaming", true))
+}
+
+export async function stopStreaming(outputId = "", confirmStop = false) {
+    if (confirmStop && !(await confirmCustom(translateText("output.confirm_stop")))) return
+    const outputIds = outputId ? [outputId] : getAllActiveOutputIds()
+    outputIds.forEach((id) => updateOutputWebrtcData(id, "streaming", false))
+}
+
+export function updateOutputWebrtcData(outputId: string, key: string, value: any) {
+    const output = get(outputs)[outputId]
+    if (!output) return null
+    const newData = { ...(output.webrtcData || {}), [key]: value }
+    if (key === "streaming" && (!output.webrtc || !output.webrtcData?.url)) return null
+    outputs.update((allOutputs: any) => {
+        if (allOutputs[outputId]) allOutputs[outputId].webrtcData = newData
+        return allOutputs
+    })
+    if (key === "streaming") value ? AudioAnalyser.recorderActivate() : AudioAnalyser.recorderDeactivate()
+    send(OUTPUT, ["SET_VALUE"], { id: outputId, key: "webrtcData", value: newData })
+    return newData
+}
+
+export function startRtmpStreaming(outputId = "") {
+    const outputIds = outputId ? [outputId] : getAllActiveOutputIds()
+    outputIds.forEach((id) => updateOutputRtmpData(id, "streaming", true))
+}
+
+export async function stopRtmpStreaming(outputId = "", confirmStop = false) {
+    if (confirmStop && !(await confirmCustom(translateText("output.confirm_stop")))) return
+    const outputIds = outputId ? [outputId] : getAllActiveOutputIds()
+    outputIds.forEach((id) => updateOutputRtmpData(id, "streaming", false))
+}
+
+export function updateOutputRtmpData(outputId: string, key: string, value: any) {
+    const output = get(outputs)[outputId]
+    if (!output) return null
+    const newData = { ...(output.rtmpData || {}), [key]: value }
+    if (key === "streaming" && (!output.rtmp || !hasStreamableDestination(newData))) return null
+    outputs.update((allOutputs: any) => {
+        if (allOutputs[outputId]) allOutputs[outputId].rtmpData = newData
+        return allOutputs
+    })
+    if (key === "streaming") value ? AudioAnalyser.recorderActivate() : AudioAnalyser.recorderDeactivate()
+    send(OUTPUT, ["SET_VALUE"], { id: outputId, key: "rtmpData", value: newData })
+    return newData
+}
+
+export function addRtmpDestination(outputId: string) {
+    const existing = get(outputs)[outputId]?.rtmpData?.destinations || []
+    updateOutputRtmpData(outputId, "destinations", [...existing, createDestination()])
+}
+
+export function updateRtmpDestination(outputId: string, destinationId: string, key: keyof RtmpDestination, value: any) {
+    const existing = get(outputs)[outputId]?.rtmpData?.destinations || []
+    updateOutputRtmpData(
+        outputId,
+        "destinations",
+        existing.map((destination) => (destination.id === destinationId ? { ...destination, [key]: value } : destination))
+    )
+}
+
+export function removeRtmpDestination(outputId: string, destinationId: string) {
+    const existing = get(outputs)[outputId]?.rtmpData?.destinations || []
+    updateOutputRtmpData(
+        outputId,
+        "destinations",
+        existing.filter((destination) => destination.id !== destinationId)
+    )
 }

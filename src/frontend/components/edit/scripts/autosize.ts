@@ -94,10 +94,26 @@ export default function autosize(elem: HTMLElement, { type, textQuery, defaultFo
     }
 
     function addStyleToElemText(currentFontSize: number) {
+        for (const elemWithChordSize of Array.from(boxElem!.querySelectorAll("[data-chord-size-ratio]"))) {
+            const htmlElem = elemWithChordSize as HTMLElement
+            const chordSizeRatio = Number(htmlElem.dataset.chordSizeRatio || "") || 0
+            if (!chordSizeRatio) continue
+
+            htmlElem.style.setProperty("--font-size", `${currentFontSize}px`)
+            htmlElem.style.setProperty("--chord-size", `${currentFontSize * chordSizeRatio}px`)
+        }
+
         let i = 0
         for (const textElem of Array.from(textChildren)) {
-            if (!styles[i]) styles[i] = textElem.getAttribute("style") || ""
-            textElem.setAttribute("style", styles[i] + `;overflow:visible;font-size: ${currentFontSize}px !important;`)
+            const htmlTextElem = textElem as HTMLElement
+            if (!styles[i]) styles[i] = htmlTextElem.getAttribute("style") || ""
+            const autosizeRatio = Number(htmlTextElem.dataset.autosizeRatio || "") || 1
+            if (styles[i].includes("var(--base-font-size)")) {
+                const newStyle = styles[i].replace(/--base-font-size:\s*[^;]+;?/gi, `--base-font-size: ${currentFontSize * autosizeRatio}px;`)
+                htmlTextElem.setAttribute("style", newStyle + ";overflow:visible;")
+            } else {
+                htmlTextElem.setAttribute("style", styles[i] + `;overflow:visible;font-size: ${currentFontSize * autosizeRatio}px !important;`)
+            }
             i++
         }
     }
@@ -119,9 +135,10 @@ export default function autosize(elem: HTMLElement, { type, textQuery, defaultFo
         cloned.style.height = `${newHeight}px`
         cloned.style.padding = "0"
 
-        // "align-items: flex-end;" does not work with auto size
-        cloned.style.alignItems = "center"
-        if (cloned.querySelector(".edit")) (cloned.querySelector(".edit") as HTMLElement).style.justifyContent = "center"
+        // scrollHeight only measures overflow below the box: with flex-end (and half of it with center) overflow is invisible to it,
+        // so measure with flex-start - vertical alignment does not affect the content size, the computed fit is the same
+        cloned.style.alignItems = "flex-start"
+        if (cloned.querySelector(".edit")) (cloned.querySelector(".edit") as HTMLElement).style.justifyContent = "flex-start"
 
         for (const elemHide of Array.from(cloned.querySelectorAll(".hideFromAutosize"))) {
             ;(elemHide as HTMLElement).style.display = "none"
@@ -130,6 +147,17 @@ export default function autosize(elem: HTMLElement, { type, textQuery, defaultFo
         // fix chords size
         for (const chordElem of Array.from(cloned.querySelectorAll(".chords"))) {
             ;(chordElem as HTMLElement).style.maxHeight = "65px"
+        }
+
+        // scrolling text should not include repeated text in measurement
+        const scrollWrapper = cloned.querySelector(".scrollWrapper") as HTMLElement
+        if (scrollWrapper) scrollWrapper.style.setProperty("--copyCountHorizontal", "0")
+        // only keep first scrollContent element
+        const scrollContents = cloned.querySelectorAll(".scrollContent")
+        if (scrollContents.length > 1) {
+            scrollContents.forEach((elem, index) => {
+                if (index > 0) elem.remove()
+            })
         }
 
         // CRITICAL FIX FOR LIST ITEMS:

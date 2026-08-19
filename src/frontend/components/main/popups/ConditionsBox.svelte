@@ -1,8 +1,8 @@
 <script lang="ts">
     import { createEventDispatcher } from "svelte"
-    import { timers } from "../../../stores"
+    import { audioRouting, timers } from "../../../stores"
     import { translateText } from "../../../utils/language"
-    import { sortByName } from "../../helpers/array"
+    import { clone, sortByName } from "../../helpers/array"
     import { getDynamicIds, getVariablesIds } from "../../helpers/showActions"
     import MaterialDropdown from "../../inputs/MaterialDropdown.svelte"
     import MaterialNumberInput from "../../inputs/MaterialNumberInput.svelte"
@@ -20,7 +20,8 @@
             { value: "text", label: translateText("edit.text") },
             { value: "timer", label: translateText("items.timer") },
             { value: "variable", label: translateText("items.variable") },
-            { value: "dynamicValue", label: translateText("actions.dynamic_value") }
+            { value: "dynamicValue", label: translateText("actions.dynamic_value") },
+            { value: "volume", label: translateText("media.volume") }
         ],
         operator: [
             { value: "is", label: translateText("conditions.is") },
@@ -30,29 +31,54 @@
         ],
         data: [{ value: "value", label: translateText("conditions.value") }] // { id: "state" }
     }
+    const numberOperators = [
+        { value: "isAbove", label: translateText("conditions.is_above") },
+        { value: "isBelow", label: translateText("conditions.is_below") }
+    ]
 
     // WIP time_hours/video_time etc. should be treated as number like timer, instead of string
 
     const customOperators = {
         timer: [
             { value: "isRunning", label: translateText("conditions.is_running") },
+            ...clone(numberOperators), //
+            { value: "is", label: translateText("conditions.is") },
+            { value: "isNot", label: translateText("conditions.is_not") }
+        ],
+        // text: [{ value: "has_text", name: translateText("conditions.has_text") }, ...conditions.operator],
+        variable: [
+            ...clone(conditionValues.operator),
+            // only valid for values that can be converted into a valid number
+            ...clone(numberOperators)
+        ],
+        dynamicValue: [
+            ...clone(conditionValues.operator),
+            // only valid for values that can be converted into a valid number
+            ...clone(numberOperators)
+        ],
+        volume: [
             { value: "isAbove", label: translateText("conditions.is_above") },
             { value: "isBelow", label: translateText("conditions.is_below") },
             { value: "is", label: translateText("conditions.is") },
             { value: "isNot", label: translateText("conditions.is_not") }
         ]
-        // text: [{ value: "has_text", name: translateText("conditions.has_text") }, ...conditions.operator],
     }
     const customData = {
         timer: [{ value: "seconds", label: translateText("conditions.seconds") }]
     }
     const noData: string[] = ["isRunning"] // ["has_text"]
 
-    const elementOptions = {
+    $: channelNodesList = ($audioRouting?.channels || [{ id: "main", name: translateText("audio.main") }]).map((c) => ({
+        value: c.id,
+        label: c.name || (c.id === "main" ? translateText("audio.main") : c.id)
+    }))
+
+    $: elementOptions = {
         timer: [{ value: "", label: translateText("stage.first_active_timer") }, ...convertToOptions($timers)],
         variable: getVariables(),
         // , text.includes("{scripture") ? "scripture" : null
-        dynamicValue: getDynamicIds(true).map((a) => ({ value: a, label: a }))
+        dynamicValue: getDynamicIds(true).map((a) => ({ value: a, label: a })),
+        volume: channelNodesList
     }
     export function convertToOptions(object) {
         const options = Object.keys(object).map((id) => ({ value: id, label: object[id].name }))
@@ -103,7 +129,7 @@
 
             {#if conditionId === "data"}
                 {#if value.value === "value"}
-                    <MaterialTextInput label="variables.value" placeholder={translateText("conditions.empty")} value={typeof input.value === "string" ? input.value : ""} on:change={(e) => setValue("value", e)} />
+                    <MaterialTextInput label="variables.value" placeholder={input.element === "volume" ? "-60 → 0" : translateText("conditions.empty")} value={typeof input.value === "string" ? input.value : ""} on:change={(e) => setValue("value", e)} />
                 {:else if value.value === "seconds"}
                     <MaterialNumberInput label="timer.seconds" value={typeof input.seconds === "number" ? input.seconds : 0} max={800000} on:change={(e) => setValue("seconds", e)} />
                 {/if}

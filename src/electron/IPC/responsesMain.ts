@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/electron/main"
 import type { BrowserWindow, DesktopCapturerSource } from "electron"
 import { app, desktopCapturer, screen, shell, systemPreferences } from "electron"
 import os from "os"
@@ -6,10 +7,11 @@ import { getMainWindow, isProd, mainWindow, maximizeMain, setGlobalMenu } from "
 import type { MainResponses } from "../../types/IPC/Main"
 import { Main } from "../../types/IPC/Main"
 import { ToMain } from "../../types/IPC/ToMain"
-import { sendToMain } from "./main"
 import type { ErrorLog, LyricSearchResult, OS } from "../../types/Main"
+import { getAudioMetadata } from "../audio/audio"
 import { openNowPlaying, setPlayingState, unsetPlayingAudio } from "../audio/nowPlaying"
-import { canSync, getSyncTeams, hasDataChanged, hasTeamData, markAsNewSync, syncData } from "../cloud/syncManager"
+import { CaptureHelper } from "../capture/CaptureHelper"
+import { canSync, getSyncTeams, hasDataChanged, hasTeamData, markAsNewSync, restoreCloudBackup, syncData } from "../cloud/syncManager"
 import { ContentProviderRegistry } from "../contentProviders"
 import { ChurchAppsChat } from "../contentProviders/churchApps/ChurchAppsChat"
 import { deleteBackup, getBackups, restoreFiles } from "../data/backup"
@@ -26,14 +28,19 @@ import { closeServers, startServers, updateServerData } from "../servers"
 import { processAudioData, timecodeStart, timecodeStop, updateTimecodeValue } from "../timecode/timecode"
 import { apiReturnData, emitOSC, startWebSocketAndRest, stopApiListener } from "../utils/api"
 import { closeMain } from "../utils/close"
+import { detectEncoders, setRtmpEncoderSetting } from "../streaming/encoderDetection"
+import { downloadFfmpeg, resolveFfmpegPath } from "../streaming/ffmpegManager"
 import { addToMediaFolder, bundleMediaFiles, getDataFolderPath, getDataFolderRoot, getFileInfo, getMediaCodec, getMediaSyncFolderPath, getMediaTracks, getPaths, getSimularPaths, loadFile, loadShows, locateMediaFile, openInSystem, readExifData, readFile, readFolder, readFolderContent, selectFiles, selectFilesDialog, selectFolder, setMediaSyncFolderPath, writeFile } from "../utils/files"
 import { getMachineId } from "../utils/helpers"
 import { LyricSearch } from "../utils/LyricSearch"
 import { closeMidiInPorts, getMidiInputs, getMidiOutputs, receiveMidi, sendMidi } from "../utils/midi"
 import { deleteShows, deleteShowsNotIndexed, getAllShows, getEmptyShows, refreshAllShows } from "../utils/shows"
 import { correctSpelling } from "../utils/spellcheck"
+import { executeSpotifyCommand, getSpotifyState } from "../utils/spotify"
 import checkForUpdates from "../utils/updater"
+import { sendToMain } from "./main"
 
+// no need to await Promise returns here
 export const mainResponses: MainResponses = {
     // DEV
     [Main.LOG]: (data) => console.info(data),
@@ -76,7 +83,7 @@ export const mainResponses: MainResponses = {
     [Main.BIBLE]: (data) => loadScripture(data),
     [Main.SHOW]: (data) => loadShow(data),
     // MAIN
-    [Main.SHOWS]: () => loadShows(),
+    [Main.SHOWS]: () => loadShows(true),
     [Main.AUTO_UPDATE]: () => checkForUpdates(),
     [Main.URL]: (data) => openURL(data),
     [Main.LANGUAGE]: (data) => setGlobalMenu(data.strings),
@@ -119,6 +126,7 @@ export const mainResponses: MainResponses = {
     [Main.NOW_PLAYING]: (data) => setPlayingState(data),
     [Main.NOW_PLAYING_UNSET]: () => unsetPlayingAudio(),
     // [Main.MEDIA_BASE64]: (data) => storeMedia(data),
+    [Main.READ_AUDIO_METADATA]: async (data) => await getAudioMetadata(data.filePath),
     [Main.CAPTURE_SLIDE]: (data) => captureSlide(data),
     [Main.ACCESS_CAMERA_PERMISSION]: () => getPermission("camera"),
     [Main.ACCESS_MICROPHONE_PERMISSION]: () => getPermission("microphone"),
@@ -160,8 +168,6 @@ export const mainResponses: MainResponses = {
     [Main.MEDIA_FOLDER_COPY]: (data) => addToMediaFolder(data.paths),
     [Main.READ_BIBLES_FOLDER]: () => readBiblesFolder(),
     [Main.FILE_INFO]: (data) => getFileInfo(data),
-    // useWorker flag (default on) controls whether to route through the
-    // utilityProcess indexer or stay on main; renderer sets this from special.workerIndexer.
     [Main.READ_FOLDER]: async (data) => {
         const requestId = data.requestId
         return readFolderContent(data, (batch) => {
@@ -178,6 +184,7 @@ export const mainResponses: MainResponses = {
     [Main.CLOUD_DATA]: (data) => hasTeamData(data),
     [Main.CLOUD_CHANGED]: (data) => hasDataChanged(data),
     [Main.CLOUD_SYNC]: (data) => syncData(data),
+    [Main.RESTORE_CLOUD_BACKUP]: (data) => restoreCloudBackup(data),
     [Main.GET_CONVERSATION_ID]: (data) => getConversationId(data.teamId),
     [Main.SEND_SOCKET_MESSAGE]: (data) => sendSocketMessage(data),
     // Provider-based routing
@@ -189,9 +196,12 @@ export const mainResponses: MainResponses = {
         ContentProviderRegistry.disconnect(data.providerId, data.scope)
         return { success: true }
     },
-    [Main.PROVIDER_STARTUP_LOAD]: async (data) => {
-        await ContentProviderRegistry.startupLoad(data.providerId, data.scope || "", data.data, data.cloudOnly)
-    },
+    [Main.PROVIDER_STARTUP_LOAD]: (data) => ContentProviderRegistry.startupLoad(data.providerId, data.scope || "", data.data, data.cloudOnly),
+    [Main.PROVIDER_FETCH_FOLDERS]: (data) => ContentProviderRegistry.fetchFolderTree(data.providerId),
+    [Main.PCO_FETCH_SERVICE_TREE]: () => ContentProviderRegistry.fetchServiceTree("planningcenter"),
+    [Main.PCO_LOAD_PLAN]: (data) => ContentProviderRegistry.loadSinglePlan(data.serviceTypeId, data.planId),
+    [Main.PCO_LIVE_GET]: (data) => ContentProviderRegistry.getPcoLiveData(data.serviceTypeId, data.planId).catch(() => null),
+    [Main.PCO_PUSHER_AUTH]: (data) => ContentProviderRegistry.getPcoPusherAuth(data.socketId, data.channelName, data.serviceTypeId),
     // Content Library
     [Main.GET_CONTENT_PROVIDERS]: () => {
         const providers = ContentProviderRegistry.getAvailableProviders()
@@ -233,7 +243,37 @@ export const mainResponses: MainResponses = {
     [Main.TIMECODE_STOP]: () => timecodeStop(),
     [Main.TIMECODE_VALUE]: (data) => updateTimecodeValue(data),
     [Main.TIMECODE_STATUS]: (data) => console.log(data),
-    [Main.TIMECODE_AUDIO_DATA]: (data) => processAudioData(data)
+    [Main.TIMECODE_AUDIO_DATA]: (data) => processAudioData(data),
+    // Spotify
+    [Main.SPOTIFY_GET_STATE]: () => getSpotifyState(),
+    [Main.SPOTIFY_COMMAND]: async (data) => {
+        await executeSpotifyCommand(data.command, data.value)
+        return true
+    },
+    // FFmpeg
+    [Main.FFMPEG_CHECK]: async () => {
+        const path = await resolveFfmpegPath()
+        return { installed: !!path, path: path || undefined }
+    },
+    [Main.ENCODER_DETECT]: (data) => detectEncoders(data?.force),
+    [Main.SET_RTMP_ENCODER]: (data) => {
+        setRtmpEncoderSetting(data.encoder)
+        // apply now rather than lying dormant until some unrelated capture event restarts the encode
+        CaptureHelper.Lifecycle.updateRtmpState()
+    },
+    [Main.FFMPEG_DOWNLOAD]: async () => {
+        try {
+            await downloadFfmpeg((progress) => {
+                sendToMain(ToMain.MEDIA_DOWNLOAD_PROGRESS, { url: "ffmpeg", name: "FFmpeg", progress, total: 100, status: "downloading" })
+            })
+            sendToMain(ToMain.MEDIA_DOWNLOAD_PROGRESS, { url: "ffmpeg", name: "FFmpeg", progress: 100, total: 100, status: "complete" })
+            return { success: true }
+        } catch (error: any) {
+            console.error("FFmpeg download error:", error)
+            sendToMain(ToMain.MEDIA_DOWNLOAD_PROGRESS, { url: "ffmpeg", name: "FFmpeg", progress: 0, total: 0, status: "error" })
+            return { success: false, error: error?.message || "Unknown download error" }
+        }
+    }
 }
 
 /// ///////
@@ -457,6 +497,28 @@ export function createLog(err: Error) {
         message: err.message,
         stack: err.stack
     } as ErrorLog
+}
+
+export function autoErrorReport() {
+    if (!isProd) return
+    if (config.get("autoErrorReporting") === false) return
+
+    // prevent random forks from sending error reports
+    // dots to prevent auto find/replace
+    const originalName = "f.r.e.e.s.h.o.w".replace(/\./g, "")
+    if (app.name !== originalName) return
+
+    console.info("Starting Sentry error reporting...")
+
+    Sentry.init({
+        dsn: "https://5d1069c3cb6faaa6e7ad0d9dc0145361@o4510419080445952.ingest.us.sentry.io/4510419082346496",
+        beforeSend(event) {
+            // filter out known non-critical errors
+            const errorMessage = event.exception?.values?.[0]?.value || ""
+            const shouldFilter = ERROR_FILTER.some((filter) => errorMessage.includes(filter))
+            return shouldFilter ? null : event
+        }
+    })
 }
 
 // STORE MEDIA AS BASE64

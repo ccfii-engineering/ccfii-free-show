@@ -1,11 +1,36 @@
+import { isAudioEnabled } from "../../audio/processAudio"
 import { BlackmagicSender } from "../../blackmagic/BlackmagicSender"
 import { OutputHelper } from "../../output/OutputHelper"
+import { getRtmpEncoderSetting } from "../../streaming/encoderDetection"
+import { RtmpStreamer } from "../../streaming/RtmpStreamer"
 import { CaptureHelper } from "../CaptureHelper"
 import { CaptureTransmitter } from "./CaptureTransmitter"
 
 export class CaptureLifecycle {
     private static captureLoopToken: { [key: string]: number } = {}
     private static activeCaptures: Set<string> = new Set()
+
+    static updateRtmpState() {
+        OutputHelper.getAllOutputs().forEach((output) => {
+            if (!output.id) return
+            if (!output.rtmpData?.streaming) {
+                if (RtmpStreamer.isRunning(output.id)) RtmpStreamer.stop(output.id)
+                return
+            }
+
+            const destinations = (output.rtmpData.destinations || []).filter((destination) => destination.enabled && destination.url)
+            if (!destinations.length) {
+                if (RtmpStreamer.isRunning(output.id)) RtmpStreamer.stop(output.id)
+                return
+            }
+
+            const bounds = output.intendedBounds || output.window?.getBounds() || { width: 1920, height: 1080 }
+            const fps = output.rtmpData.fps ? Number(output.rtmpData.fps) : 30
+            const bitrate = output.rtmpData.bitrate ? Number(output.rtmpData.bitrate) : 4000
+            if (output.captureOptions?.framerates) output.captureOptions.framerates.rtmp = fps
+            RtmpStreamer.update(output.id, { width: bounds.width, height: bounds.height, fps, bitrate, enableAudio: isAudioEnabled(), encoder: getRtmpEncoderSetting() }, destinations)
+        })
+    }
 
     static startCapture(id: string, toggle: { [key: string]: boolean } = {}) {
         const output = OutputHelper.getOutput(id)

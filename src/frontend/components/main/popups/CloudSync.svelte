@@ -1,24 +1,27 @@
 <script lang="ts">
-    import { activePopup, popupData } from "../../../stores"
+    import { popupData } from "../../../stores"
     import { chooseTeam } from "../../../utils/cloudSync"
     import MaterialMultiChoice from "../../inputs/MaterialMultiChoice.svelte"
+    import Tip from "../Tip.svelte"
 
     const type = $popupData.type
     const teams = $popupData.teams || []
 
+    let selected = false
     function teamChosen(e: any) {
-        if (!Array.isArray(teams)) return
+        if (selected || !Array.isArray(teams)) return
 
         const selectedId = e.detail
         const team = teams.find((a) => a.id === selectedId)
 
-        activePopup.set(null)
+        selected = true
         chooseTeam({ ...team, count: teams.length })
     }
 </script>
 
 {#if type === "choose_team"}
-    <p class="tip">Select a team where you want to sync the data.</p>
+    <Tip type="info" value="Select a team where you want to sync the data." bottom={20} />
+
     <MaterialMultiChoice options={teams} on:click={teamChosen} highlightFirst={false} />
 
     <!-- <CombinedInput style="margin-top: 10px;width: initial;">
@@ -27,12 +30,3 @@
         </MaterialButton>
     </CombinedInput> -->
 {/if}
-
-<style>
-    .tip {
-        margin-bottom: 10px;
-
-        opacity: 0.7;
-        font-size: 0.8em;
-    }
-</style>

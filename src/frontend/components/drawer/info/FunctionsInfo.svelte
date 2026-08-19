@@ -1,8 +1,9 @@
 <script lang="ts">
     import { onMount } from "svelte"
     import { actionHistory, activeTimers, drawerTabsData } from "../../../stores"
-    import T from "../../helpers/T.svelte"
     import TimerInfo from "../timers/TimerInfo.svelte"
+    import OBSInfo from "./OBSInfo.svelte"
+    import InteractionsInfo from "../pages/InteractionsInfo.svelte"
 
     $: type = $drawerTabsData.functions?.activeSubTab || ""
 
@@ -35,10 +36,10 @@
     {/if}
 {:else if type === "variables"}
     <!-- VARIABLE -->
-{:else if type === "triggers"}
-    <div class="scroll" style="padding: 10px;">
-        <T id="tips.trigger" />
-    </div>
+{:else if type === "interactions"}
+    <InteractionsInfo />
+{:else if type === "obs"}
+    <OBSInfo />
 {/if}
 
 <style>

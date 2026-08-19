@@ -3,7 +3,7 @@ import { CONTROLLER, REMOTE, STAGE } from "../../types/Channels"
 import type { ClientMessage, Clients } from "../../types/Socket"
 import { API_ACTIONS } from "../components/actions/api"
 import { checkWindowCapture } from "../components/helpers/output"
-import { connections, shows } from "../stores"
+import { connections, remotePassword, shows } from "../stores"
 import { isMainWindow } from "./common"
 import { receiveCONTROLLER } from "./controllerTalk"
 import { receiveREMOTE } from "./remoteTalk"
@@ -42,6 +42,9 @@ export function client(id: Clients, msg: ClientMessage) {
             return c
         })
         console.info("SERVER: " + msgId + " disconnected")
+
+        // stop output capture when the last mirror viewer disconnects
+        if (id === "STAGE") checkWindowCapture()
     } else sendData(id, msg)
 }
 
@@ -67,6 +70,15 @@ export async function sendData(id: Clients, msg: ClientMessage, check = false) {
 
     let connectionId = msg.id
     if (!connectionId) connectionId = Object.keys(get(connections)[id] || {})[0]
+
+    // when a REMOTE password is set, only honor control/API messages from connections that have authenticated
+    if (id === REMOTE && get(remotePassword).length) {
+        const PRE_AUTH_CHANNELS = ["PASSWORD", "ACCESS"]
+        if (!PRE_AUTH_CHANNELS.includes(channel)) {
+            const entered = get(connections).REMOTE?.[connectionId || ""]?.entered
+            if (!entered) return
+        }
+    }
 
     if (channel === "API") {
         if (!msg.data) msg.data = {}
@@ -128,12 +140,12 @@ export function timedout(id: Clients, msg: ClientMessage, run: () => void) {
 // check previous
 const sent: any = { REMOTE: {}, STAGE: {} }
 function checkSent(id: Clients, msg: any): boolean {
-    let match = true
-    if (sent[id][msg.channel] !== JSON.stringify(msg.data)) {
-        sent[id][msg.channel] = JSON.stringify(msg.data)
-        match = false
+    const serialized = JSON.stringify(msg.data)
+    if (sent[id][msg.channel] !== serialized) {
+        sent[id][msg.channel] = serialized
+        return false
     }
-    return match
+    return true
 }
 
 // send data per connection to all

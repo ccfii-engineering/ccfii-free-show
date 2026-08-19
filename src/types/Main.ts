@@ -18,6 +18,18 @@ export interface OS {
     arch: string
 }
 
+export interface SpotifyState {
+    isPlaying: boolean
+    title: string
+    artist: string
+    albumArt?: string
+    positionSec: number
+    durationSec: number
+    platform: NodeJS.Platform
+    volume: number
+    bgColor?: string
+}
+
 export interface Option {
     name: string
     extra?: string
@@ -92,7 +104,7 @@ export type SelectIds =
     | "timer"
     | "global_timer"
     | "variable"
-    | "trigger"
+    | "interaction"
     | "audio_stream"
     | "chord"
     | "midi"
@@ -100,6 +112,7 @@ export type SelectIds =
     | "style"
     | "output"
     | "profile"
+    | "audio_channel"
     | "tag"
     | "bible_book"
 
@@ -141,6 +154,7 @@ export interface SlidesOptions {
 export interface MediaOptions {
     columns: number
     mode: "grid" | "list"
+    view?: "all" | "image" | "video" | "folder"
 }
 
 export interface ActiveEdit {
@@ -153,7 +167,7 @@ export interface ActiveEdit {
     data?: any // camera data
 }
 
-export type FileFolder = { isFolder: false; path: string; name: string; thumbnailPath?: string; stats: Stats } | { isFolder: true; path: string; name: string; files: string[] }
+export type FileFolder = { isFolder: false; path: string; name: string; thumbnailPath?: string; stats: Stats } | { isFolder: true; path: string; name: string; files: string[]; noMedia?: boolean }
 
 export type MediaFit = "contain" | "cover" | "fill" | "blur"
 export interface Media {
@@ -164,17 +178,21 @@ export interface MediaStyle {
     filter?: string
     flipped?: boolean
     flippedY?: boolean
+    blend?: string
     fit?: MediaFit | ""
     fitOptions?: any
     speed?: string
     fromTime?: number
     toTime?: number
+    softLoop?: number
     videoType?: string // default | "background" | "foreground"
     audioType?: AudioType // default | "music" | "effect"
     favourite?: boolean
     audio?: boolean
     loop?: boolean // audio
     volume?: number // audio
+    pitch?: number // audio
+    tempo?: number // audio
     rendering?: string // image rendering
     info?: any // cached codec/mime data
     tracks?: Subtitle[]
@@ -182,9 +200,10 @@ export interface MediaStyle {
     tags?: string[] // media tags
     name?: string // display name for content provider media (encrypted videos)
     contentFile?: any // ContentFile from content provider (imported type would create circular dependency)
-    licenseChecked?: boolean // whether license has been checked for this media
+    licenseExpiresAt?: number // unix ms; content provider license is valid while Date.now() < licenseExpiresAt
     pingbackUrl?: string // URL for sending pingback after playback
     cropping?: Partial<Cropping>
+    style?: string // used to transfer styles from main item to cropped part (like border radius)
 
     ignoreLayer?: boolean // foreground background type
 }
@@ -251,6 +270,8 @@ export interface Variable {
 
     // random number
     animate?: boolean
+    animateTowardsResult?: boolean
+    animationDuration?: number
     eachNumberOnce?: boolean
     sets?: { name: string; minValue?: number; maxValue?: number }[]
     setName?: string // chosen random set
@@ -264,6 +285,51 @@ export interface Variable {
     activeTextSet?: number
     textSetKeys?: string[]
     textSets?: { [key: string]: string }[]
+}
+
+export interface Interaction {
+    name: string
+    inputs: InteractionInput[]
+    options?: Options
+    history?: { time: number; leaderboard?: { name: string; score: number }[]; inputs: { question: string; answers: { name: string; value: any }[] }[] }[]
+    lastConnection?: { id: string; secret: string }
+}
+type Options = {
+    requireName?: boolean // default = true
+    randomNames?: boolean // default = false
+    allAtOnce?: boolean // default = false
+    maxTime?: number // seconds, default = no limit
+    scoreSystem?: "incremental" | "falloff" | "speed" // default = "incremental"
+    scorePoints?: number // default for incremental = 1, falloff = 10, speed = 100
+}
+
+export type InteractionInput = Heading | TextQuestion | NumberQuestion | MultipleChoiceQuestion
+interface Heading {
+    type: "heading"
+    question: string
+    inputType?: "none"
+}
+interface QuestionBase {
+    question: string
+}
+interface TextQuestion extends QuestionBase {
+    type: "text"
+    inputType: "input" // "textarea"
+    answer?: string // text does not need a precise answer
+    allowMultiple?: boolean
+}
+interface NumberQuestion extends QuestionBase {
+    type: "number"
+    inputType: "input" | "slider" | "number_range" | "time_range"
+    answer?: number
+    min?: number // 0
+    max?: number // 1000
+}
+interface MultipleChoiceQuestion extends QuestionBase {
+    type: "multi_choice"
+    inputType: "buttons" | "checkbox" | "dropdown" | "radio"
+    options?: { value: string; isAnswer?: boolean }[]
+    randomize?: boolean
 }
 
 export interface Trigger {
@@ -335,7 +401,7 @@ export type Popups =
     | "find_replace"
     | "timer"
     | "variable"
-    | "trigger"
+    | "interaction_input"
     | "audio_stream"
     | "now_playing"
     | "aspect_ratio"
@@ -345,12 +411,13 @@ export type Popups =
     | "metadata_display"
     | "import_scripture"
     | "create_collection"
-    | "scripture_show"
     | "edit_event"
+    | "edit_chart"
     | "choose_chord"
     | "choose_screen"
     | "choose_camera"
-    | "choose_output"
+    | "choose_output_input"
+    | "choose_output_type"
     | "choose_style"
     | "change_output_values"
     | "output_selector"
@@ -358,12 +425,12 @@ export type Popups =
     | "assign_shortcut"
     | "dynamic_values"
     | "conditions"
-    | "animate"
     | "translate"
     | "next_timer"
     | "display_duration"
     | "manage_tags"
     | "about"
+    | "update_manager"
     | "shortcuts"
     | "unsaved"
     | "restore"
@@ -385,6 +452,12 @@ export type Popups =
     | "effect_items"
     | "timeline"
     | "timecode"
+    | "drawer_search_options"
+    | "template_info"
+    | "cleaning_utility"
+    | "pco_picker"
+    | "sync_folders"
+    | "node_options"
 
 export type DefaultProjectNames = "date" | "today" | "sunday" | "week" | "custom" | "blank"
 

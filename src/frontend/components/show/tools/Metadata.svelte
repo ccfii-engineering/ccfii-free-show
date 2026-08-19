@@ -18,6 +18,8 @@
     function getValues() {
         values = getCustomMetadata()
 
+        if (!meta || !Object.keys(meta).length) return
+
         const defaultKeys = Object.keys(initializeMetadata({}))
         Object.entries(meta).forEach(([key, value]) => {
             if (!value && defaultKeys.includes(key) && $customMetadata.disabled?.includes(key)) return
@@ -71,9 +73,9 @@
 
     const autofillValues = {
         // get only numbers at the start or end
-        number: () => values.number || currentShow.name.match(/^\d+/)?.[0] || currentShow.name.match(/\d+$/)?.[0],
+        number: () => values.number || currentShow.name?.match(/^\d+/)?.[0] || currentShow.name?.match(/\d+$/)?.[0],
         // remove numbers
-        title: () => currentShow.name.replace(/[0-9\-.,!:;]/g, "").trim()
+        title: () => (currentShow.name || "").replace(/[0-9\-.,!:;]/g, "").trim()
     }
 </script>
 

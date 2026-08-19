@@ -10,7 +10,7 @@ module.exports = {
             provider: "github"
         }
     ],
-    files: ["build/electron/**", "build/types/**", "public/**", "!node_modules/@napi-rs"],
+    files: ["build/electron/**", "build/common/**", "build/types/**", "public/**", "!node_modules/@napi-rs"],
     extraResources: [
         {
             from: "node_modules/slideshow/",

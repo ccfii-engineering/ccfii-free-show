@@ -1,12 +1,13 @@
 <script lang="ts">
     import { Show } from "../../../../types/Show"
-    import { activePage, activePopup, popupData, shows, showsCache } from "../../../stores"
-    import { getSlideText } from "../../edit/scripts/textStyle"
+    import { activePopup, popupData, shows, showsCache } from "../../../stores"
+    import { getTextLines } from "../../edit/scripts/textStyle"
     import { history } from "../../helpers/history"
     import { loadShows } from "../../helpers/setShow"
     import T from "../../helpers/T.svelte"
     import { dateToString } from "../../helpers/time"
     import HRule from "../../input/HRule.svelte"
+    import InputRow from "../../input/InputRow.svelte"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
     import MaterialTextarea from "../../inputs/MaterialTextarea.svelte"
     import Center from "../../system/Center.svelte"
@@ -43,11 +44,15 @@
 
         deleteShows(deleteIds)
         // loading = false
-        activePopup.set(null)
-        activePage.set("show")
+        close()
     }
 
+    const oldest = getOldestShows()
     function deleteOldest() {
+        deleteShows(oldest)
+        close()
+    }
+    function getOldestShows() {
         let deleteIds: string[] = []
 
         data.forEach(({ ids }) => {
@@ -72,12 +77,15 @@
             deleteIds.push(...ids)
         })
 
-        deleteShows(deleteIds)
-        activePopup.set(null)
-        activePage.set("show")
+        return deleteIds
     }
 
+    const newest = getNewestShows()
     function deleteNewest() {
+        deleteShows(newest)
+        close()
+    }
+    function getNewestShows() {
         let deleteIds: string[] = []
 
         data.forEach(({ ids }) => {
@@ -100,9 +108,16 @@
             deleteIds.push(...ids)
         })
 
-        deleteShows(deleteIds)
-        activePopup.set(null)
-        activePage.set("show")
+        return deleteIds
+    }
+
+    function close() {
+        // activePage.set("show")
+
+        // give time for deletion to run
+        setTimeout(() => {
+            if ($activePopup === "delete_duplicated_shows") activePopup.set(null)
+        }, 500)
     }
 
     // MANUAL
@@ -133,8 +148,7 @@
     let loadedTexts: string[] = []
     function next() {
         if (!data[manualIndex + 1]) {
-            activePopup.set(null)
-            activePage.set("show")
+            close()
             return
         }
 
@@ -169,7 +183,7 @@
 
         let texts: string[] = []
         Object.values(show.slides || {}).forEach((slide) => {
-            texts.push(getSlideText(slide))
+            texts.push(getTextLines(slide).join("\n"))
         })
 
         return texts.join("\n\n")
@@ -183,7 +197,7 @@
         {#each getIds(manualIndex, data) as showId, i}
             {@const show = $shows[showId] || {}}
             <div class="show">
-                <p style="display: flex;align-items: center;justify-content: space-between;padding: 5px 0;">
+                <p style="display: flex;align-items: center;justify-content: space-between;padding-bottom: 5px;">
                     <span>{show.name || "—"}</span>
                     <!-- creation/modified date! -->
                     <span style="opacity: 0.5;font-size: 0.7em;">{dateToString(show.timestamps?.modified || "", true)}</span>
@@ -202,43 +216,66 @@
         {/each}
     </div>
 
-    <MaterialButton variant="outlined" icon="forward" on:click={next}>
+    <MaterialButton variant="outlined" icon="forward" info="({manualIndex + 1}/{data.length})" on:click={next}>
         <T id="guide.skip" />
     </MaterialButton>
-
-    <!-- {#if !loadedTexts.length}
-        {#if loading}
-            <Loader></Loader>
-        {:else}
-            <CombinedInput>
-                <Button style="width: 100%;" on:click={loadContent} center>Load content</Button>
-            </CombinedInput>
-        {/if}
-    {/if} -->
 {:else if loading}
     <Center style="overflow: hidden;">
         <Loader />
     </Center>
 {:else}
-    <MaterialButton variant="outlined" on:click={deleteManual}>
+    <MaterialButton variant="outlined" icon="launch" info="{data.length} ({data.map((d) => d.ids.length).reduce((a, b) => a + b, 0)})" on:click={deleteManual} white>
         <T id="show.delete_manual" />
     </MaterialButton>
 
     <HRule />
 
-    <MaterialButton variant="outlined" on:click={deleteMatching} red>
-        <T id="show.delete_match" />
-    </MaterialButton>
+    <div class="list">
+        <MaterialButton variant="outlined" icon="delete" on:click={deleteMatching} red white>
+            <T id="show.delete_match" />
+        </MaterialButton>
 
-    <MaterialButton variant="outlined" on:click={deleteOldest} red>
-        <T id="show.delete_keep_last_modified" />
-    </MaterialButton>
-    <MaterialButton variant="outlined" on:click={deleteNewest} red>
-        <T id="show.delete_keep_first_created" />
-    </MaterialButton>
+        <InputRow arrow>
+            <MaterialButton disabled={!oldest.length} variant="outlined" icon="delete" info={"" + oldest.length} style="width: 100%;" on:click={deleteOldest} red white>
+                <T id="show.delete_keep_last_modified" />
+            </MaterialButton>
+
+            <div slot="menu">
+                <ul style="list-style-position: inside;margin-left: 20px;">
+                    {#each oldest as id}
+                        {#if $shows[id]}
+                            <li>{$shows[id].name}</li>
+                        {/if}
+                    {/each}
+                </ul>
+            </div>
+        </InputRow>
+
+        <InputRow arrow>
+            <MaterialButton disabled={!newest.length} variant="outlined" icon="delete" info={"" + newest.length} style="width: 100%;" on:click={deleteNewest} red white>
+                <T id="show.delete_keep_first_created" />
+            </MaterialButton>
+
+            <div slot="menu">
+                <ul style="list-style-position: inside;margin-left: 20px;">
+                    {#each newest as id}
+                        {#if $shows[id]}
+                            <li>{$shows[id].name}</li>
+                        {/if}
+                    {/each}
+                </ul>
+            </div>
+        </InputRow>
+    </div>
 {/if}
 
 <style>
+    .list {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+
     .shows {
         display: flex;
         flex-direction: column;

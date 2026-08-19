@@ -2,7 +2,7 @@ import type { Item, Line } from "../../../types/Show"
 
 // add new style to text by selection
 export function addStyle(selection: { start: number; end: number }[], item: Item, style: any[]): Item {
-    item.lines?.forEach(lineStyle)
+    if (Array.isArray(item.lines)) item.lines.forEach(lineStyle)
 
     return combine(item)
 
@@ -15,7 +15,7 @@ export function addStyle(selection: { start: number; end: number }[], item: Item
             line.text = newText
         }
 
-        line.text?.forEach(textStyle)
+        if (Array.isArray(line.text)) line.text.forEach(textStyle)
         line.text = newText
 
         function textStyle(text: any) {
@@ -44,7 +44,7 @@ export function addStyle(selection: { start: number; end: number }[], item: Item
 
 // combine duplicate styles
 function combine(item: Item): Item {
-    item.lines?.forEach(setLineStyle)
+    if (Array.isArray(item.lines)) item.lines.forEach(setLineStyle)
 
     return item
 
@@ -80,6 +80,8 @@ function combine(item: Item): Item {
 
 // add new style to string and remove old
 export function addStyleString(oldStyle: string, style: any[]): string {
+    if (typeof oldStyle !== "string") return ""
+
     let array: string[] = oldStyle.split(";")
     // remove last if empty
     if (!array[array.length - 1].length) array.pop()
@@ -169,23 +171,28 @@ export function getSelectionRange(): { start: number; end: number }[] {
 // return item style at text length pos
 export function getItemStyleAtPos(lines: Line[], pos: null | { start: number; end: number }[]) {
     let style: string = ""
-    ;(pos || lines).forEach((_a: any, i: number) => {
-        let currentPos: number = 0
-        lines[i]?.text.some((text: any): any => {
-            const value = text.value || ""
+    const items = pos || lines
+    if (Array.isArray(items)) {
+        items.forEach((_a: any, i: number) => {
+            let currentPos: number = 0
+            if (Array.isArray(lines[i]?.text)) {
+                lines[i].text.some((text: any): any => {
+                    const value = text.value || ""
 
-            // if (pos) console.log(currentPos, pos[i].end, currentPos <= pos[i].end, currentPos + value.length >= pos[i].end)
-            if (pos?.[i] && currentPos <= pos[i].end && currentPos + value.length >= pos[i].end) {
-                style = text.style
-                return true
+                    // if (pos) console.log(currentPos, pos[i].end, currentPos <= pos[i].end, currentPos + value.length >= pos[i].end)
+                    if (pos?.[i] && currentPos <= pos[i].end && currentPos + value.length >= pos[i].end) {
+                        style = text.style
+                        return true
+                    }
+
+                    currentPos += value.length
+                })
             }
-
-            currentPos += value.length
         })
-    })
+    }
 
     // filter out empty lines
-    lines = lines.filter((a) => a.text.length)
+    if (Array.isArray(lines)) lines = lines.filter((a) => a?.text?.length)
 
     if (!style.length && lines.length) style = lines[lines.length - 1].text[lines[lines.length - 1].text.length - 1]?.style || ""
 
@@ -195,9 +202,11 @@ export function getItemStyleAtPos(lines: Line[], pos: null | { start: number; en
 // get item align at selected pos
 export function getLastLineAlign(item: Item, selection: any): string {
     let last: string = ""
-    item?.lines!.forEach((line: any, i: number) => {
-        if (!selection || selection[i]?.start) last = line.align
-    })
+    if (Array.isArray(item?.lines)) {
+        item.lines.forEach((line: any, i: number) => {
+            if (!selection || selection[i]?.start) last = line.align
+        })
+    }
     return last
 }
 
@@ -205,9 +214,13 @@ export function getLastLineAlign(item: Item, selection: any): string {
 export function getItemText(item: Item): string {
     let text = ""
 
-    for (const line of item?.lines ?? []) {
-        for (const t of line.text ?? []) {
-            if (t.value) text += t.value
+    if (Array.isArray(item?.lines)) {
+        for (const line of item.lines) {
+            if (Array.isArray(line?.text)) {
+                for (const t of line.text) {
+                    if (t.value) text += t.value
+                }
+            }
         }
     }
 
@@ -216,9 +229,11 @@ export function getItemText(item: Item): string {
 
 export function getLineText(line: any): string {
     let text: string = ""
-    line.text?.forEach((content: any) => {
-        text += content.value
-    })
+    if (Array.isArray(line?.text)) {
+        line.text.forEach((content: any) => {
+            text += content.value || ""
+        })
+    }
     return text
 }
 
@@ -227,11 +242,15 @@ export function getItemLines(item: Item): string[] {
     if (!item) return []
 
     let lines: string[] = []
-    item.lines?.forEach((line: any) => {
-        let text = ""
-        line.text?.forEach((content: any) => (text += content.value))
-        lines.push(text)
-    })
+    if (Array.isArray(item.lines)) {
+        item.lines.forEach((line: any) => {
+            let text = ""
+            if (Array.isArray(line?.text)) {
+                line.text.forEach((content: any) => (text += content.value || ""))
+            }
+            lines.push(text)
+        })
+    }
 
     return lines
 }

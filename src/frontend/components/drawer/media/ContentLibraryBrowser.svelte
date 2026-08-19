@@ -13,13 +13,13 @@
     export let providerId: ContentProviderId
     export let columns: number = 5
     export let searchValue: string = ""
+    export let currentCategory: ContentLibraryCategory | null = null
+    export let getContentCategory: (item: ContentFileWithExtras) => ContentLibraryCategory | null = () => null
 
     let library: ContentLibraryCategory[] = []
     let currentPath: ContentLibraryCategory[] = []
-    let currentCategory: ContentLibraryCategory | null = null
-    // Extend ContentFile for presentation support
-    type ContentFileWithPresentation = ContentFile & { isPresentation?: boolean; slideCount?: number }
-    let content: ContentFileWithPresentation[] = []
+    type ContentFileWithExtras = ContentFile & { [key: string]: any }
+    let content: ContentFileWithExtras[] = []
     let loading = false
     let error: string | null = null
     let viewingContent = false
@@ -33,6 +33,7 @@
         error = null
         try {
             requestMain(Main.GET_CONTENT_LIBRARY, { providerId }, (data) => {
+                if (!data) return
                 library = data
                 loading = false
                 viewingContent = false
@@ -78,10 +79,20 @@
         loading = true
         error = null
         try {
-            requestMain(Main.GET_PROVIDER_CONTENT, { providerId, key }, (data) => {
-                content = data
-                loading = false
-            })
+            requestMain(
+                Main.GET_PROVIDER_CONTENT,
+                { providerId, key },
+                (data) => {
+                    if (!data) {
+                        error = "Failed to load content."
+                        loading = false
+                        return
+                    }
+                    content = data
+                    loading = false
+                },
+                60000
+            )
         } catch (e) {
             error = `Failed to load content: ${e}`
             loading = false
@@ -96,6 +107,10 @@
 
     $: categories = viewingContent ? [] : currentCategory?.children || library
     $: showBackButton = currentPath.length > 0 || currentCategory !== null
+
+    $: listMode = $mediaOptions.mode === "list"
+    // inline widths would override the stylesheet, so the list width has to be set here as well
+    $: cardWidth = listMode ? "100%" : `calc(${100 / columns}% - 4px)`
 
     const filter = (s: string) => s.toLowerCase().replace(/[.,\/#!?$%\^&\*;:{}=\-_`~() ]/g, "")
     $: filteredCategories = searchValue.length > 1 ? categories.filter((cat) => filter(cat.name).includes(filter(searchValue))) : categories
@@ -127,23 +142,19 @@
             <p style="color: var(--error); opacity: 0.8;">{error}</p>
         </Center>
     {:else if content.length > 0}
-        <div class="grid" style="padding: 10px;" class:list={$mediaOptions.mode === "list"}>
+        <div class="grid" style="padding: 10px;" class:list={listMode}>
             <!-- <div class="context #media" style="display: contents;">
                 <MediaGrid items={filteredContent} {columns} let:item>
                     <Media credits={{}} name={item.name || ""} path={item.url} thumbnailPath={item.thumbnail || ""} type={item.type} shiftRange={[]} active="online" contentProvider={providerId} contentFileData={item} />
                 </MediaGrid>
             </div> -->
             {#each filteredContent as item}
-                {#if item.isPresentation}
+                {@const category = getContentCategory(item)}
+                {#if category}
                     <button
                         class="category-card"
-                        style="width: calc({100 / columns}% - 4px);"
-                        on:click={() =>
-                            navigateToCategory({
-                                name: item.name || "Untitled presentation",
-                                thumbnail: item.thumbnail,
-                                key: `presentation:${item.mediaId}`
-                            })}
+                        style="width: {cardWidth};"
+                        on:click={() => navigateToCategory(category)}
                     >
                         {#if item.thumbnail}
                             <img src={item.thumbnail} alt={item.name} />
@@ -154,20 +165,22 @@
                         {/if}
                         <span class="category-name">
                             {item.name}
-                            <span style="margin-left: 10px;opacity: 0.5;font-size: 0.9em;">{item.slideCount || 1}</span>
+                            {#if item.slideCount}
+                                <span style="margin-left: 10px;opacity: 0.5;font-size: 0.9em;">{item.slideCount}</span>
+                            {/if}
                         </span>
                     </button>
                 {:else}
-                    <div class="card" style="width: {100 / columns}%;">
+                    <div class="card" style="width: {listMode ? 100 : 100 / columns}%;">
                         <Media credits={{}} name={item.name || ""} path={item.url} thumbnailPath={item.thumbnail || ""} type={item.type} shiftRange={[]} active="online" contentProvider={providerId} contentFileData={item} />
                     </div>
                 {/if}
             {/each}
         </div>
     {:else if categories.length > 0}
-        <div class="categories">
+        <div class="categories" class:list={listMode}>
             {#each filteredCategories as category}
-                <button class="category-card" style="width: calc({100 / columns}% - 4px);" on:click={() => navigateToCategory(category)}>
+                <button class="category-card" style="width: {cardWidth};" on:click={() => navigateToCategory(category)}>
                     {#if category.thumbnail}
                         <img src={category.thumbnail} alt={category.name} />
                     {:else}
@@ -263,5 +276,38 @@
 
     .grid.list {
         display: block;
+    }
+
+    /* list mode: stack cards as compact rows instead of a wrapped grid */
+    .categories.list {
+        display: block;
+    }
+
+    .categories.list .category-card,
+    .grid.list .category-card {
+        flex-direction: row;
+        align-items: center;
+        margin-bottom: 4px;
+    }
+
+    .categories.list .category-card img,
+    .grid.list .category-card img,
+    .categories.list .placeholder,
+    .grid.list .placeholder {
+        width: 80px;
+        height: 45px;
+        flex-shrink: 0;
+    }
+
+    .categories.list .category-name,
+    .grid.list .category-name {
+        flex: 1;
+        justify-content: flex-start;
+        text-align: start;
+    }
+
+    .categories.list .category-card:hover,
+    .grid.list .category-card:hover {
+        transform: none;
     }
 </style>

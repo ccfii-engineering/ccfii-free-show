@@ -3,7 +3,7 @@
     import { get } from "svelte/store"
     import { uid } from "uid"
     import type { Tag } from "../../../../types/Show"
-    import { actionTags, activeActionTagFilter, activeMediaTagFilter, activePlayerTagFilter, activeTagFilter, globalTags, mediaTags, playerTags, popupData, variableTags } from "../../../stores"
+    import { actionTags, activeActionTagFilter, activeMediaTagFilter, activePlayerTagFilter, activeTagFilter, activeTimerTagFilter, globalTags, mediaTags, playerTags, popupData, timerTags, variableTags } from "../../../stores"
     import { keysToID, sortByName } from "../../helpers/array"
     import T from "../../helpers/T.svelte"
     import InputRow from "../../input/InputRow.svelte"
@@ -17,18 +17,20 @@
         media: () => mediaTags,
         player: () => playerTags,
         action: () => actionTags,
-        variable: () => variableTags
+        variable: () => variableTags,
+        timer: () => timerTags
     }
 
     let type: keyof typeof store = $popupData.type || "show"
     let tags: (Tag & { id: string })[] = []
 
     let emptyTag = false
-    onMount(getTags)
-    function getTags() {
+    onMount(() => getTags(true))
+    function getTags(sort = false) {
         if (!store[type]) return
 
-        tags = sortByName(keysToID(get(store[type]())))
+        tags = keysToID(get(store[type]()))
+        if (sort) tags = sortByName(tags)
 
         emptyTag = !!tags.find((a) => !a.name)
     }
@@ -53,6 +55,7 @@
         else if (type === "media") activeMediaTagFilter.set([])
         else if (type === "player") activePlayerTagFilter.set([])
         else if (type === "action") activeActionTagFilter.set([])
+        else if (type === "timer") activeTimerTagFilter.set([])
 
         getTags()
     }

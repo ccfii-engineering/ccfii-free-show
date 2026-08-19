@@ -11,23 +11,23 @@ import { addItem } from "../components/edit/scripts/itemHelpers"
 import { keysToID, sortByName } from "../components/helpers/array"
 import { copy, cut, deleteAction, duplicate, paste, selectAll } from "../components/helpers/clipboard"
 import { history, redo, undo } from "../components/helpers/history"
-import { getExtension, getMediaLayerType, getMediaStyle, getMediaType } from "../components/helpers/media"
-import { getAllNormalOutputs, getFirstActiveOutput, refreshOut, setOutput, startFolderTimer, toggleOutputs } from "../components/helpers/output"
-import { nextSlideIndividual, previousSlideIndividual } from "../components/helpers/showActions"
+import { getExtension, getMedia, getMediaLayerType, getMediaStyle, getMediaType } from "../components/helpers/media"
+import { getFirstActiveOutput, refreshOut, setOutput, startFolderTimer, toggleOutputs } from "../components/helpers/output"
+import { OutputHelper } from "../components/helpers/OutputHelper"
+import { VideoPlayer } from "../components/media/video/videoPlayer"
 import { clearAll, clearBackground, clearSlide } from "../components/output/clear"
 import { getRecentlyUsedProjects, openProject } from "../components/show/project"
 import { importFromClipboard } from "../converters/importHelpers"
 import { addSection } from "../converters/project"
 import { requestMain, sendMain } from "../IPC/main"
 import { changeSlidesView } from "../show/slides"
-import { activeDrawerTab, activeEdit, activeFocus, activePage, activePopup, activeProject, activeStage, alertMessage, contextActive, drawer, focusedArea, focusMode, guideActive, media, os, outLocked, outputs, outputSlideCache, projects, quickSearchActive, refreshEditSlide, selected, showRecentlyUsedProjects, showsCache, special, spellcheck, styles, textEditActive, timelineRecordingAction, topContextActive, videosData, volume } from "../stores"
+import { activeDrawerTab, activeEdit, activeFocus, activePage, activePopup, activeProject, activeStage, alertMessage, audioChannelsData, contextActive, drawer, editMode, focusedArea, focusMode, guideActive, media, os, outLocked, outputs, playingVideoState, projects, quickSearchActive, refreshEditSlide, selected, showRecentlyUsedProjects, special, spellcheck, styles, timelineRecordingAction, topContextActive } from "../stores"
 import { audioExtensions, imageExtensions, videoExtensions } from "../values/extensions"
 import { drawerTabs } from "../values/tabs"
 import { activeShow } from "./../stores"
 import { hideDisplay, isOutputWindow, togglePanels, triggerFunction } from "./common"
 import { send } from "./request"
 import { save } from "./save"
-import { runActionId } from "../components/actions/actions"
 
 const menus: TopViews[] = ["show", "edit", "stage", "draw", "settings"]
 
@@ -43,13 +43,17 @@ const ctrlKeys = {
     i: (e: KeyboardEvent) => (e.altKey ? importFromClipboard() : activePopup.set("import")),
     n: () => createNew(),
     h: () => (get(activeDrawerTab) === "scripture" ? "" : activePopup.set("history")),
-    m: () => volume.set(get(volume) ? 0 : 1),
+    m: () =>
+        audioChannelsData.update((a) => {
+            const main = a.main || {}
+            a.main = { ...main, isMuted: !main.isMuted }
+            return a
+        }),
     o: () => toggleOutputs(),
     s: () => save(),
     t: () => togglePanels(),
     y: () => redo(),
     z: () => undo(),
-    Z: () => redo(),
     "?": () => activePopup.set("shortcuts")
 }
 
@@ -59,22 +63,24 @@ const shiftCtrlKeys = {
     t: () => {
         // toggle text edit
         if (get(activeShow)?.type !== "show") return
-        if (get(activePage) === "edit" && get(textEditActive)) {
+        if (get(activePage) === "edit" && get(editMode) === "text_edit") {
             activePage.set("show")
-            textEditActive.set(false)
+            editMode.set("default")
             return
         }
         if (!get(activeEdit)?.showId) activeEdit.set({ slide: 0, items: [], showId: get(activeShow)?.id })
-        textEditActive.set(true)
+        editMode.set("text_edit")
         activePage.set("edit")
     },
     f: () => menuClick("focus_mode"),
     n: () => activePopup.set("show"),
-    v: () => changeSlidesView()
+    v: () => changeSlidesView(),
+    z: () => redo()
 }
 
 const altKeys = {
-    Enter: () => (get(activePage) === "show" ? menuClick("cut_in_half", true, null, null, null, get(selected)) : null)
+    // when the caret is inside a list view textbox, EditboxLines splits at the caret instead
+    Enter: () => (get(activePage) === "show" && !document.activeElement?.closest(".quickEdit") ? menuClick("cut_in_half", true, null, null, null, get(selected)) : null)
 }
 
 export const disablePopupClose = ["initialize", "cloud_method"]
@@ -150,10 +156,20 @@ export function keydown(e: KeyboardEvent) {
         return
     }
 
+    if (isComposing(e)) return
     if (get(guideActive)) return
 
     // clicking e.g. "Show" tab button will focus that making number tab change not work
     if (document.activeElement?.nodeName === "BUTTON") (document.activeElement as any).blur()
+
+    const isEditingText = () => {
+        const activeElem = document.activeElement as HTMLElement | null
+        if (activeElem?.closest(".editItem") || activeElem?.classList?.contains("edit")) return true
+
+        const selection = window.getSelection()
+        const anchorElem = (selection?.anchorNode as Element)?.nodeType === Node.ELEMENT_NODE ? (selection?.anchorNode as Element) : selection?.anchorNode?.parentElement
+        return !!anchorElem?.closest(".edit")
+    }
 
     if (e.ctrlKey || e.metaKey) {
         const drawerMenus = Object.keys(drawerTabs) as DrawerTabIds[]
@@ -169,27 +185,45 @@ export function keydown(e: KeyboardEvent) {
         // Handle shift+Z for redo
         if (key === "z" && e.shiftKey) key = "Z"
 
+        // Let text formatting shortcuts be handled by edit tools when a text box is active.
+        if (isFormattingKey(e) && isEditingText()) return
+
         // use default input shortcuts on supported devices
-        const exeption = ["e", "i", "n", "o", "s", "a", "z", "Z", "y"]
+        const exeption = ["e", "i", "n", "o", "s", "a", "z", "Z", "y", "x"]
         const macShortcutDebug = false
         if ((key === "i" && document.activeElement?.closest(".editItem")) || (document.activeElement?.classList?.contains("edit") && !exeption.includes(key) && get(os).platform !== "darwin" && !macShortcutDebug)) {
             return
         }
 
-        if (e.shiftKey && shiftCtrlKeys[key.toLowerCase()]) {
+        key = key.toLowerCase()
+
+        if (e.shiftKey && shiftCtrlKeys[key]) {
             e.preventDefault()
-            shiftCtrlKeys[key.toLowerCase()](e)
+            shiftCtrlKeys[key](e)
             return
         }
 
-        const preventDefaults = ["z", "Z", "y"]
-        if (ctrlKeys[key]) {
-            ctrlKeys[key](e)
-            if (preventDefaults.includes(key) || macShortcutDebug) {
+        const preventDefaults = ["z", "y"]
+        const invokeCtrlShortcut = (k: string) => {
+            if (!k) return false
+
+            const handler = ctrlKeys[k]
+            if (!handler) return false
+            handler(e)
+
+            if (preventDefaults.includes(k) || macShortcutDebug) {
                 e.preventDefault()
                 if (get(activePage) === "edit") refreshEditSlide.set(true)
             }
+
+            return true
         }
+
+        if (invokeCtrlShortcut(key)) return
+
+        // fallback for macOS/Option-produced dead keys: try physical key code mapping
+        const phys = keyCodeMap[e.code]
+        if (phys) invokeCtrlShortcut(phys)
         return
     }
 
@@ -234,17 +268,56 @@ export function keydown(e: KeyboardEvent) {
  * This ensures shortcuts like Ctrl+Z, Ctrl+C, Ctrl+V work consistently across all keyboard layouts
  */
 const cyrillicRegex = /[\u0400-\u04FF]/
+const latinShortcutRegex = /^[a-z]$/i
+const keyCodeMap: { [code: string]: string } = { KeyA: "a", KeyB: "b", KeyC: "c", KeyD: "d", KeyE: "e", KeyF: "f", KeyG: "g", KeyH: "h", KeyI: "i", KeyJ: "j", KeyK: "k", KeyL: "l", KeyM: "m", KeyN: "n", KeyO: "o", KeyP: "p", KeyQ: "q", KeyR: "r", KeyS: "s", KeyT: "t", KeyU: "u", KeyV: "v", KeyW: "w", KeyX: "x", KeyY: "y", KeyZ: "z" }
+
+type KeyboardNavigator = Navigator & {
+    keyboard?: {
+        getLayoutMap?: () => Promise<{ get(code: string): string | undefined }>
+    }
+}
+
+let keyboardLayoutMap: { get(code: string): string | undefined } | null = null
+const keyboard = typeof navigator === "undefined" ? undefined : (navigator as KeyboardNavigator).keyboard
+keyboard
+    ?.getLayoutMap?.()
+    .then((layoutMap) => (keyboardLayoutMap = layoutMap))
+    .catch(() => null)
+
+function getLayoutMappedShortcutKey(e: KeyboardEvent): string | null {
+    const layoutKey = keyboardLayoutMap?.get(e.code)
+    if (!layoutKey || layoutKey.length !== 1) return null
+
+    if (!latinShortcutRegex.test(layoutKey)) return null
+    return e.shiftKey ? layoutKey.toUpperCase() : layoutKey.toLowerCase()
+}
+
 function shouldNormalizeShortcutKey(e: KeyboardEvent): boolean {
     return e.key.length === 1 && cyrillicRegex.test(e.key)
 }
 
-const keyCodeMap: { [code: string]: string } = { KeyA: "a", KeyB: "b", KeyC: "c", KeyD: "d", KeyE: "e", KeyF: "f", KeyG: "g", KeyH: "h", KeyI: "i", KeyJ: "j", KeyK: "k", KeyL: "l", KeyM: "m", KeyN: "n", KeyO: "o", KeyP: "p", KeyQ: "q", KeyR: "r", KeyS: "s", KeyT: "t", KeyU: "u", KeyV: "v", KeyW: "w", KeyX: "x", KeyY: "y", KeyZ: "z" }
 export function getNormalizedKey(e: KeyboardEvent): string {
+    const layoutMappedKey = getLayoutMappedShortcutKey(e)
+    if (layoutMappedKey) return layoutMappedKey
+
     if (!shouldNormalizeShortcutKey(e)) return e.key
 
     if (!keyCodeMap[e.code]) return e.key
     if (e.shiftKey) return keyCodeMap[e.code].toUpperCase()
     return keyCodeMap[e.code]
+}
+
+const formattingKeys = ["b", "i", "u"]
+export function isFormattingKey(e: KeyboardEvent): boolean {
+    if (!e.ctrlKey && !e.metaKey) return false
+    const key = getNormalizedKey(e).toLowerCase()
+    return formattingKeys.includes(key)
+}
+
+// IME candidate window check
+export function isComposing(e: KeyboardEvent): boolean {
+    // while keyCode is deprecated, "keyCode === 229" is an official exception
+    return e.isComposing || e.keyCode === 229
 }
 
 /// // PREVIEW /////
@@ -288,113 +361,48 @@ export const previewShortcuts = {
     },
     F4: () => {
         if (get(outLocked)) return
-        clearAudio("", { clearPlaylist: true, commonClear: true })
+        clearAudio("", { clearPlaylist: true, clearMicrophones: true, commonClear: true })
         timelineRecordingAction.set({ id: "clear_audio" })
     },
     F5: () => {
-        if (!presentationControllersKeysDisabled()) nextSlideIndividual(null)
+        if (!presentationControllersKeysDisabled()) OutputHelper.advanceOutputs()
         else setOutput("transition", null)
     },
-    PageDown: (e: KeyboardEvent) => {
-        // const currentShow = get(focusMode) ? get(activeFocus) : get(activeShow)
-        // if (!get(showsCache)[currentShow?.id || ""]) {
-        //     const outSlide = get(outputs)[getActiveOutputs(get(outputs), true, true, true)[0]]?.out?.slide
-        //     if (!nooutput && outSlide?.type !== "ppt" && outSlide?.type !== "pdf") return
-        // }
-        if (presentationControllersKeysDisabled()) return
 
-        e.preventDefault()
-        nextSlideIndividual(e)
-    },
-    PageUp: (e: KeyboardEvent) => {
-        // const currentShow = get(focusMode) ? get(activeFocus) : get(activeShow)
-        // if (!get(showsCache)[currentShow?.id || ""]) {
-        //     const outSlide = get(outputs)[getActiveOutputs(get(outputs), true, true, true)[0]]?.out?.slide
-        //     if (!nooutput && outSlide?.type !== "ppt" && outSlide?.type !== "pdf") return
-        // }
-        if (presentationControllersKeysDisabled()) return
-
-        e.preventDefault()
-        previousSlideIndividual(e)
-    },
-
-    ArrowRight: (e: any) => {
-        // if (get(activeShow)?.type !== "show" && get(activeShow)?.type !== undefined) return
-        if (get(outLocked) || e.ctrlKey || e.metaKey) return
-        if (!e.preview && (get(activeEdit).items.length || get(activeStage).items.length)) return
-
-        const currentShow = get(focusMode) ? get(activeFocus) : get(activeShow)
-        if (!get(showsCache)[currentShow?.id || ""]) {
-            const out = getFirstActiveOutput()?.out
-            if (!out?.slide) {
-                if (currentShow?.type === "overlay" && !out?.overlays?.includes(currentShow?.id)) {
-                    e.preventDefault()
-                    return setOutput("overlays", currentShow.id, false, "", true)
-                } else if ((currentShow?.type === "video" || currentShow?.type === "image" || currentShow?.type === "player") && (out?.background?.path || out?.background?.id) !== currentShow?.id) {
-                    return togglePlayingMedia(e)
-                    // } else if (currentShow?.type === "folder") {
-                    //     return playMedia(e)
-                }
-                // WIP audio
-            }
-        }
-
-        nextSlideIndividual(e)
-    },
-    ArrowLeft: (e: any) => {
-        // if (get(activeShow)?.type !== "show" && get(activeShow)?.type !== undefined) return
-        if (get(outLocked) || e.ctrlKey || e.metaKey) return
-        if (!e.preview && (get(activeEdit).items.length || get(activeStage).items.length)) return
-
-        // const currentShow = get(focusMode) ? get(activeFocus) : get(activeShow)
-        // if (!get(showsCache)[currentShow?.id || ""]) {
-        //     const out = getFirstActiveOutput()?.out
-        //     if (!out?.slide) {
-        //         if (currentShow?.type === "folder") {
-        //             return playMedia(e, true)
-        //         }
-        //     }
-        // }
-
-        previousSlideIndividual(e)
-    },
     " ": (e: KeyboardEvent) => {
         if (get(contextActive)) return
-
-        const currentShow = get(focusMode) ? get(activeFocus) : get(activeShow)
-        if (currentShow?.type === "ppt") return
-        if (currentShow?.type === "pdf") {
-            e.preventDefault()
-            return nextSlideIndividual(e, true)
-        }
-        if (!get(showsCache)[currentShow?.id || ""]) {
-            if (currentShow?.type === "overlay") {
-                e.preventDefault()
-                return setOutput("overlays", currentShow.id, false, "", true)
-            } else if (currentShow?.type === "section") {
-                // play section action if any
-                const itemSettings = get(projects)[get(activeProject) || ""]?.shows?.find((s) => s.id === currentShow.id)?.data?.settings
-                const actionId = itemSettings?.triggerAction || get(special).sectionTriggerAction
-                if (actionId) runActionId(actionId)
-                return
-            }
-            return togglePlayingMedia(e)
-        }
 
         // space bar should toggle timeline for show when active
         if (isTimelineActive()) return
 
-        const outputId = getFirstActiveOutput()?.id || ""
-        const currentOutput = outputId ? get(outputs)[outputId] || null : null
-        const outSlide = currentOutput?.out?.slide || get(outputSlideCache)[outputId] || {}
+        e.preventDefault()
+        OutputHelper.advanceOutputs(e)
+    },
+    ArrowRight: (e: any) => {
+        if (e.ctrlKey || e.metaKey) return
+        if (!e.preview && (get(activeEdit).items.length || get(activeStage).items.length)) return
+
+        // e.preventDefault()
+        OutputHelper.advanceOutputs(e)
+    },
+    ArrowLeft: (e: any) => {
+        if (e.ctrlKey || e.metaKey) return
+        if (!e.preview && (get(activeEdit).items.length || get(activeStage).items.length)) return
+
+        // e.preventDefault()
+        OutputHelper.advanceOutputs(e)
+    },
+    PageDown: (e: KeyboardEvent) => {
+        if (presentationControllersKeysDisabled()) return
 
         e.preventDefault()
-        if (outSlide.id !== currentShow?.id || (currentShow && outSlide.layout !== get(showsCache)[currentShow.id || ""]?.settings.activeLayout)) {
-            nextSlideIndividual(e, true)
-        } else {
-            if (e.shiftKey) previousSlideIndividual(e)
-            else nextSlideIndividual(e)
-        }
+        OutputHelper.advanceOutputs(e)
+    },
+    PageUp: (e: KeyboardEvent) => {
+        if (presentationControllersKeysDisabled()) return
+
+        e.preventDefault()
+        OutputHelper.advanceOutputs(e)
     },
     Home: (e: KeyboardEvent) => {
         if (isTimelineActive()) {
@@ -402,20 +410,16 @@ export const previewShortcuts = {
             return
         }
 
-        const currentShow = get(focusMode) ? get(activeFocus) : get(activeShow)
-        if (!get(showsCache)[currentShow?.id || ""]) return
         if (presentationControllersKeysDisabled()) return
 
         e.preventDefault()
-        nextSlideIndividual(e, true)
+        OutputHelper.advanceOutputs(e)
     },
     End: (e: KeyboardEvent) => {
-        const currentShow = get(focusMode) ? get(activeFocus) : get(activeShow)
-        if (!get(showsCache)[currentShow?.id || ""]) return
         if (presentationControllersKeysDisabled()) return
 
         e.preventDefault()
-        nextSlideIndividual(e, false, true)
+        OutputHelper.advanceOutputs(e)
     }
 }
 
@@ -452,7 +456,7 @@ function createNew() {
     } else if (selectId === "overlay") history({ id: "UPDATE", location: { page: "drawer", id: "overlay" } })
     else if (selectId === "template") history({ id: "UPDATE", location: { page: "drawer", id: "template" } })
     else if (selectId === "global_timer") activePopup.set("timer")
-    else if (["action", "variable", "trigger"].includes(selectId)) activePopup.set(selectId as any)
+    else if (["action", "variable"].includes(selectId)) activePopup.set(selectId as any)
     else if (get(activePage) === "edit") addItem("text")
     else if (get(activePage) === "stage") history({ id: "UPDATE", location: { page: "stage", id: "stage" } })
     else {
@@ -462,7 +466,7 @@ function createNew() {
 }
 
 // this only works if opened in preview - if not api
-export function togglePlayingMedia(e: Event | null = null, back = false, api = false) {
+export async function togglePlayingMedia(e: Event | null = null, back = false, api = false) {
     if (get(outLocked)) return
     // if ($focusMode || e.target?.closest(".edit") || e.target?.closest("input")) return
     let item = get(focusMode) ? get(activeFocus) : get(activeShow)
@@ -488,30 +492,32 @@ export function togglePlayingMedia(e: Event | null = null, back = false, api = f
     if (type === "video" || type === "image" || type === "player") {
         if (alreadyPlaying) {
             // play / pause video
-            // WIP duplicate of MediaControls.svelte
-            const dataValues: any = {}
-            const activeOutputIds = getAllNormalOutputs().map((a) => a.id)
-            const videoData = get(videosData)[currentOutput?.id || ""] || {}
-            activeOutputIds.forEach((id) => {
-                dataValues[id] = { ...videoData, muted: id !== currentOutput?.id ? true : videoData.muted, paused: !videoData.paused }
-            })
+            const outputId = currentOutput?.id || ""
+            const key = `${currentlyPlaying}_${outputId}`
+            const videoData = get(playingVideoState)[key] || {}
+            if (videoData.type && videoData.type !== "background") return
 
-            send(OUTPUT, ["DATA"], dataValues)
+            VideoPlayer.start(currentlyPlaying, { paused: !videoData.paused }, [outputId])
             return
         }
 
+        // const currentStyle = getCurrentStyle(get(styles), currentOutput?.style)
         const outputStyle = get(styles)[currentOutput?.style || ""]
         const mediaData = get(media)[item.id] || {}
         const mediaStyle = getMediaStyle(mediaData, outputStyle)
 
         const videoType = getMediaLayerType(item.id, mediaStyle)
-        const shouldLoop = videoType === "background" ? true : false
-        const shouldBeMuted = videoType === "background" ? true : false
+        const projectItem = item.index !== undefined ? get(projects)[get(activeProject) || ""]?.shows?.[item.index] : null
+        const shouldLoop = typeof projectItem?.loop === "boolean" ? projectItem.loop : videoType === "background" ? true : false
+        const shouldBeMuted = typeof projectItem?.muted === "boolean" ? projectItem.muted : videoType === "background" ? true : false
 
         // clear slide
         if (videoType === "foreground" || (videoType !== "background" && (type === "image" || !shouldLoop))) clearSlide()
 
-        setOutput("background", { type, path: item.id, muted: shouldBeMuted, loop: shouldLoop, ...mediaStyle })
+        const located = await getMedia(item.id)
+        if (!located) return
+
+        setOutput("background", { type, path: located.path, muted: shouldBeMuted, loop: shouldLoop, ...mediaStyle })
     } else if (type === "audio") {
         AudioPlayer.start(item.id, { name: (item as any).name || "" }, { pauseIfPlaying: true })
     } else if (type === "folder") {
@@ -525,7 +531,7 @@ export async function playFolder(path: string, back = false) {
     const currentlyPlaying = currentOutput?.out?.background?.path
 
     const mediaExtensions = [...videoExtensions, ...imageExtensions, ...audioExtensions]
-    const files = keysToID(await requestMain(Main.READ_FOLDER, { path }))
+    const files = keysToID((await requestMain(Main.READ_FOLDER, { path })) || {})
     const folderFiles = sortByName(files.filter((a) => mediaExtensions.includes(getExtension(a.name))).map((a) => ({ path: a.path, name: a.name, type: getMediaType(getExtension(a.name)) })))
     if (!folderFiles.length) return
 

@@ -1,5 +1,6 @@
 import { Main } from "../../../types/IPC/Main"
 import { sendMain } from "../../IPC/main"
+import { getDynamicValue } from "../edit/scripts/itemHelpers"
 
 // Examples: /show/<id>/start | /slide/next | /clear/all
 const oscActions = {
@@ -16,7 +17,7 @@ const oscActions = {
     },
     show: {
         _id: (id: string) => ({
-            // open: () => ({ action: "id_select_show", id }),
+            open: () => ({ action: "id_select_show", id }),
             start: () => ({ action: "start_show", id })
             // slide: () => ({
             //     next: () => ({ action: "next_slide", id }),
@@ -86,5 +87,6 @@ function parsePath(path) {
 
 export type OSC_SIGNAL = { url?: string; port?: string }
 export function emitOSC(signal: OSC_SIGNAL, data: string) {
+    data = data.includes("{") ? getDynamicValue(data) : data
     sendMain(Main.EMIT_OSC, { signal, data })
 }

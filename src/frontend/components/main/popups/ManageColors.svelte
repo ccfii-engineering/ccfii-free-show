@@ -5,6 +5,7 @@
     import T from "../../helpers/T.svelte"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
     import MaterialColorInput from "../../inputs/MaterialColorInput.svelte"
+    import Tip from "../Tip.svelte"
 
     function changeColor(e, key = "") {
         let color = e.detail || e.target?.value || ""
@@ -29,19 +30,24 @@
 
     let clipboardColors: string[] = []
     onMount(() => {
-        navigator.clipboard.readText().then((text) => {
-            text = text.trim().replaceAll('"', "").replaceAll("'", "").replace("[", "").replace("]", "")
+        navigator.clipboard
+            .readText()
+            .then((text) => {
+                text = text.trim().replaceAll('"', "").replaceAll("'", "").replace("[", "").replace("]", "")
 
-            const parts = text.includes("rgb") ? [text] : text.split(/[\s,]+/)
-            parts.forEach((c) => {
-                c = c.trim()
+                const parts = text.includes("rgb") ? [text] : text.split(/[\s,]+/)
+                parts.forEach((c) => {
+                    c = c.trim()
 
-                // let isHex = c.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
-                if (isValidColor(c) && !$special.customColors?.includes(c)) clipboardColors.push(c)
+                    // let isHex = c.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
+                    if (isValidColor(c) && !$special.customColors?.includes(c)) clipboardColors.push(c)
+                })
+
+                clipboardColors = [...new Set(clipboardColors)]
             })
-
-            clipboardColors = [...new Set(clipboardColors)]
-        })
+            .catch((e) => {
+                console.warn("Could not read clipboard:", e)
+            })
 
         function isValidColor(color) {
             const s = new Option().style
@@ -56,9 +62,7 @@
     }
 </script>
 
-<div class="info">
-    <p><T id="actions.click_disable" /></p>
-</div>
+<Tip value="actions.click_disable" bottom={20} />
 
 <MaterialColorInput label="" value="" on:change={changeColor} alwaysVisible editMode />
 
@@ -68,15 +72,3 @@
         <T id="actions.paste" />
     </MaterialButton>
 {/if}
-
-<style>
-    .info {
-        display: flex;
-        justify-content: center;
-
-        margin-bottom: 10px;
-        font-style: italic;
-        opacity: 0.7;
-        font-size: 0.9em;
-    }
-</style>

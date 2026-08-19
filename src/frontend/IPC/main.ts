@@ -8,7 +8,7 @@ import { isDev } from "../stores"
 import { get } from "svelte/store"
 
 // @ts-ignore // T extends keyof typeof Main
-export function requestMainMultiple<T extends Main>(object: { [K in T]: (data: MainReturnPayloads[K]) => void }) {
+export function requestMainMultiple<T extends Main>(object: { [K in T]: (data: MainReturnPayloads[K] | undefined) => void }) {
     Object.keys(object).forEach((id) => {
         requestMain(id as T, undefined, object[id])
     })
@@ -16,7 +16,7 @@ export function requestMainMultiple<T extends Main>(object: { [K in T]: (data: M
 
 const currentlyAwaiting: string[] = []
 // @ts-ignore
-export async function requestMain<ID extends Main, R = Awaited<MainReturnPayloads[ID]>>(id: ID, value?: MainSendValue<ID>, callback?: (data: R) => void, waitingTimeout: number = 15000) {
+export async function requestMain<ID extends Main, R = Awaited<MainReturnPayloads[ID]>>(id: ID, value?: MainSendValue<ID>, callback?: (data: R | undefined) => void, waitingTimeout: number = 15000) {
     const listenerId = id + uid(5)
     currentlyAwaiting.push(listenerId)
 
@@ -24,26 +24,38 @@ export async function requestMain<ID extends Main, R = Awaited<MainReturnPayload
 
     // LISTENER
     let timeout: NodeJS.Timeout | null = null
-    const returnData: R = await new Promise((resolve) => {
+    let settled = false
+    const cleanup = () => {
+        if (timeout) clearTimeout(timeout)
+        window.api.removeListener(MAIN, listenerId)
+
+        const waitIndex = currentlyAwaiting.indexOf(listenerId)
+        if (waitIndex > -1) currentlyAwaiting.splice(waitIndex, 1)
+    }
+
+    const returnData: R | undefined = await new Promise((resolve) => {
         timeout = setTimeout(() => {
-            if (get(isDev)) throw new Error(`IPC Message Timed Out: ${id}`)
+            if (settled) return
+            settled = true
+
+            if (get(isDev)) console.error(`IPC Message Timed Out: ${id}`)
+            cleanup()
+            resolve(undefined)
         }, waitingTimeout)
 
         window.api.receive(
             MAIN,
             (msg: MainReceiveValue, listenId: string) => {
+                if (settled) return
                 if (msg.channel !== id || listenId !== listenerId) return
 
-                if (timeout) clearTimeout(timeout)
+                settled = true
+                cleanup()
                 resolve(msg.data as R)
             },
             listenerId
         )
     })
-
-    const waitIndex = currentlyAwaiting.indexOf(listenerId)
-    if (waitIndex > -1) currentlyAwaiting.splice(waitIndex, 1)
-    window.api.removeListener(MAIN, listenerId)
 
     if (callback) callback(returnData)
     return returnData
@@ -60,7 +72,11 @@ export function sendMain<ID extends Main>(id: ID, value?: MainSendValue<ID>, lis
     window.api.send(MAIN, { channel: id, data: value }, listenerId)
 }
 
+let mainGlobalReceiverRegistered = false
 export function receiveMainGlobal() {
+    if (mainGlobalReceiverRegistered) return
+    mainGlobalReceiverRegistered = true
+
     window.api.receive(MAIN, async (msg: MainReceiveValue | ToMainReceiveValue, listenerId?: string) => {
         const id = msg.channel
         if (!Object.values({ ...Main, ...ToMain }).includes(id)) throw new Error(`Invalid channel: ${id}`)

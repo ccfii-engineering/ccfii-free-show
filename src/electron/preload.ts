@@ -12,7 +12,7 @@ import type { ValidChannels } from "../types/Channels"
 // wait to log messages until after intial load is done
 let appLoaded = false
 const LOG_MESSAGES: boolean = process.env.NODE_ENV !== "production"
-const filteredChannelsData: string[] = ["AUDIO_MAIN", "VISUALIZER_DATA", "STREAM", "BUFFER", "REQUEST_STREAM", "MAIN_TIME", "MAIN_SLIDE_VIDEO", "GET_THUMBNAIL", "ACTIVE_TIMERS", "RECEIVE_STREAM", "CHECK_RAM_USAGE", "TIMECODE_VALUE", "TIMECODE_AUDIO_DATA"]
+const filteredChannelsData: string[] = ["PLAYING_VIDEO_STATE", "VISUALIZER_DATA", "STREAM", "BUFFER", "GET_THUMBNAIL", "ACTIVE_TIMERS", "RECEIVE_STREAM", "CHECK_RAM_USAGE", "TIMECODE_VALUE", "TIMECODE_AUDIO_DATA", "SPOTIFY_GET_STATE"]
 const filteredChannels: ValidChannels[] = ["AUDIO"]
 
 const storedReceivers: { [key: string]: (e: IpcRendererEvent, args: any) => void } = {}
@@ -35,6 +35,10 @@ contextBridge.exposeInMainWorld("api", {
             func(args, listenedId)
         }
 
+        if (id && storedReceivers[id]) {
+            ipcRenderer.removeListener(channel, storedReceivers[id])
+        }
+
         ipcRenderer.on(channel, receiver)
         if (id) storedReceivers[id] = receiver
     },
@@ -50,5 +54,11 @@ contextBridge.exposeInMainWorld("api", {
     // https://www.electronjs.org/blog/electron-32-0#breaking-changes
     showFilePath(file: File) {
         return webUtils.getPathForFile(file)
+    }
+})
+
+ipcRenderer.on("AUDIO_PORT", (event, data) => {
+    if (event.ports && event.ports.length > 0) {
+        window.postMessage({ type: "AUDIO_PORT_RESPONSE", targetId: data?.targetId }, "*", [event.ports[0]])
     }
 })

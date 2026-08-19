@@ -43,6 +43,14 @@ export async function setShow(id: string, value: "delete" | Show): Promise<Show>
         }
     }
 
+    // remove from not found list
+    if (value !== "delete" && get(notFound).show.includes(id)) {
+        notFound.update((a) => {
+            a.show = a.show.filter((x) => x !== id)
+            return a
+        })
+    }
+
     showsCache.update((a) => {
         previousValue = a[id]
         if (value === "delete") delete a[id]
@@ -161,65 +169,82 @@ export async function convertOldShowValues(show: Show): Promise<Show> {
     return show
 }
 
-export async function loadShows(s: string[], deleting = false) {
-    const savedBeforeLoading: boolean = !deleting && get(saved)
+const currentlyLoading = new Map<string, Promise<void>>()
+const lastFailed = new Map<string, number>()
 
-    const notLoaded: string[] = []
-    s.forEach((id) => {
-        if (!get(shows)[id]) {
-            notFound.update((a) => {
-                a.show.push(id)
-                return a
-            })
-        } else if (!get(showsCache)[id]) {
-            notLoaded.push(id)
-        }
-    })
+async function loadSingleShow(id: string) {
+    let promise = currentlyLoading.get(id)
+    if (promise) return promise
 
-    if (!notLoaded.length) return
+    const isNotFound = get(notFound).show.includes(id)
+    if (isNotFound && Date.now() - (lastFailed.get(id) || 0) < 5000) return
 
-    await Promise.all(
-        notLoaded.map(async (showId) => {
-            const data = await requestMain(Main.SHOW, { name: get(shows)[showId].name, id: showId })
+    if (isNotFound) lastFailed.set(id, Date.now())
 
-            if (data.error || !data.content) {
+    promise = (async () => {
+        try {
+            const data = await requestMain(Main.SHOW, { name: get(shows)[id]?.name, id })
+            if (!data || data.error || !data.content) {
+                const targetId = data?.id || id
                 notFound.update((a) => {
-                    a.show.push(data.id)
+                    if (!a.show.includes(targetId)) a.show.push(targetId)
                     return a
                 })
+                lastFailed.set(targetId, Date.now())
                 return
             }
 
-            // has been loaded in the meantime
             if (get(showsCache)[data.id]) return
 
-            // remove from not found
-            if (get(notFound).show.includes(data.id)) {
-                notFound.update((a) => {
-                    a.show.splice(a.show.indexOf(data.id), 1)
-                    return a
-                })
+            let content = data.content[1]
+            if (typeof content === "string") {
+                content = JSON.parse(content)
+                if (!content?.[1]?.name) return
+                content = content[1]
             }
 
-            // might have been saved wrongly
-            if (typeof data.content[1] === "string") {
-                try {
-                    data.content[1] = JSON.parse(data.content[1])
-                    if (data.content[1]?.[1]?.name) data.content[1] = data.content[1][1]
-                } catch (err) {
-                    return
-                }
-            }
+            notFound.update((a) => {
+                const index = a.show.indexOf(data.id)
+                if (index > -1) a.show.splice(index, 1)
+                return a
+            })
+            lastFailed.delete(data.id)
 
-            const show = fixShowIssues(data.content[1])
+            const show = fixShowIssues(content)
             if (!show) return
 
             await setShow(data.id || data.content[0], show)
-        })
-    )
+        } catch (err) {
+            console.error("Error loading show:", id, err)
+            lastFailed.set(id, Date.now())
+        } finally {
+            currentlyLoading.delete(id)
+        }
+    })()
 
-    if (savedBeforeLoading) {
-        setTimeout(() => saved.set(true), 200)
+    currentlyLoading.set(id, promise)
+    return promise
+}
+
+export async function loadShows(s: string[], deleting = false) {
+    const savedBeforeLoading = !deleting && get(saved)
+
+    const promises: Promise<void>[] = []
+    s.forEach((id) => {
+        if (!get(shows)[id]) {
+            notFound.update((a) => {
+                if (!a.show.includes(id)) a.show.push(id)
+                return a
+            })
+        } else if (!get(showsCache)[id]) {
+            const promise = loadSingleShow(id)
+            if (promise) promises.push(promise)
+        }
+    })
+
+    if (promises.length) {
+        await Promise.all(promises)
+        if (savedBeforeLoading) setTimeout(() => saved.set(true), 200)
     }
 }
 

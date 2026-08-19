@@ -1,9 +1,14 @@
 import { get } from "svelte/store"
+import { uid } from "uid"
+import { OUTPUT } from "../../types/Channels"
 import { Main } from "../../types/IPC/Main"
 import type { Output } from "../../types/Output"
+import type { SaveListSettings, SaveListSyncedSettings } from "../../types/Save"
 import type { Metadata, Themes } from "../../types/Settings"
+import { initAudioRouting } from "../audio/routing/audioRoutingInit"
 import { clone, keysToID } from "../components/helpers/array"
-import { checkWindowCapture, setOutput, toggleOutputs } from "../components/helpers/output"
+import { checkFFmpeg, checkWindowCapture, setOutput, toggleOutputs } from "../components/helpers/output"
+import { migrateOutputsRtmp } from "../components/helpers/rtmpDestinations"
 import { defaultThemes } from "../components/settings/tabs/defaultThemes"
 import { sendMain } from "../IPC/main"
 import {
@@ -13,6 +18,7 @@ import {
     activeProject,
     alertUpdates,
     audioChannelsData,
+    audioEffects,
     audioFolders,
     audioPlaylists,
     audioStreams,
@@ -36,26 +42,28 @@ import {
     effectsLibrary,
     emitters,
     eqPresets,
-    equalizerConfig,
     formatNewShow,
     fullColors,
-    gain,
-    globalTags,
     globalRegexes,
+    globalTags,
     groupNumbers,
     groups,
+    interactions,
     labelsDisabled,
     language,
     loaded,
     loadedState,
     lockedOverlays,
+    maxConnections,
     mediaFolders,
     mediaOptions,
     mediaTags,
     metronome,
+    obsData,
     openedFolders,
     os,
     outLocked,
+    outputs,
     overlayCategories,
     overlays,
     playerTags,
@@ -65,12 +73,15 @@ import {
     projectView,
     remotePassword,
     resized,
+    scriptureSettings,
+    scriptures,
     serverData,
     showRecentlyUsedProjects,
     showsPath,
     slidesOptions,
     sorted,
     special,
+    splitLines,
     styles,
     templateCategories,
     theme,
@@ -78,25 +89,25 @@ import {
     timeFormat,
     timecode,
     timeline,
+    timerTags,
     timers,
-    triggers,
+    transitionData,
     variableTags,
     variables,
     version,
-    videoMarkers,
-    videosData,
-    videosTime
-} from "../stores"
-import { OUTPUT } from "./../../types/Channels"
-import type { SaveListSettings, SaveListSyncedSettings } from "./../../types/Save"
-import { maxConnections, outputs, scriptureSettings, scriptures, splitLines, transitionData, volume } from "./../stores"
+    videoMarkers
+} from "./../stores"
 import { checkForUpdates } from "./checkForUpdates"
 import { isMainWindow, startAutosave } from "./common"
 import { setLanguage } from "./language"
+import { startRemoteController } from "./remoteController"
 import { send } from "./request"
 
 export function updateSyncedSettings(data: any) {
     if (!data || !Object.keys(data).length) return
+
+    // pre v1.6.1 (triggers are now actions)
+    data = convertTriggersToActions(data)
 
     Object.entries(data).forEach(([key, value]: any) => {
         if (updateList[key as SaveListSyncedSettings]) updateList[key as SaveListSyncedSettings](value)
@@ -108,6 +119,12 @@ export function updateSyncedSettings(data: any) {
 
 export function updateSettings(data: any) {
     // pre v0.8.2 (data contains SaveListSyncedSettings, but it gets overwritten and removed on first save)
+
+    // pre v1.6.1 (equalizerConfig was not in audioEffects)
+    if (data.equalizerConfig && !data.audioEffects?.main) {
+        data.audioEffects = { main: { equalizer: clone(data.equalizerConfig) } }
+        delete data.equalizerConfig
+    }
 
     Object.entries(data).forEach(([key, value]: any) => {
         if (updateList[key as SaveListSettings]) updateList[key as SaveListSettings](value)
@@ -135,10 +152,7 @@ export function updateSettings(data: any) {
     if (disabled.remote === undefined) disabled.remote = false
     if (disabled.stage === undefined) disabled.stage = false
     const customPorts: { [key: string]: number } = data.ports || { remote: 5510, stage: 5511 }
-    // let potential NDI output start first
-    setTimeout(() => {
-        sendMain(Main.START, { ports: customPorts, max: data.maxConnections === undefined ? 10 : data.maxConnections, disabled, data: get(serverData) })
-    }, 4000)
+    sendMain(Main.START, { ports: customPorts, max: data.maxConnections === undefined ? 10 : data.maxConnections, disabled, data: get(serverData) })
 
     // WebGPU output renderer — default on for CCFII fork. User can toggle off in Settings → Advanced
     // if any specific output misbehaves, via a per-output flag or globally via special.useWebGPUOutput.
@@ -185,11 +199,44 @@ export function updateSettings(data: any) {
     window.api.send("LOADED")
 }
 
-let videoDataUpdating = false
-export function restartOutputs(specificId = "") {
-    const data = clone(get(videosData))
-    const time = clone(get(videosTime))
+// pre v1.6.1
+function convertTriggersToActions(data: any) {
+    const triggers: { [key: string]: { name: string; type: "http"; value: string } } = data.triggers || {}
+    if (!Object.keys(triggers).length) return data
 
+    let tagId = "triggertag"
+    if (typeof data.actionTags === "object") {
+        data.actionTags[tagId] = { name: "Triggers", color: "#abb4e6" }
+
+        // update store as this is non-synced settings
+        setTimeout(() => {
+            special.update((a) => {
+                a["actions_grid" + tagId] = true
+                return a
+            })
+        }, 1000)
+    }
+
+    const actions = data.midiIn || {}
+    Object.entries(triggers).forEach(([key, trigger]) => {
+        let emitterId = uid()
+        data.emitters[emitterId] = { name: "Trigger: " + trigger.name, type: "http", signal: { url: trigger.value, method: "GET", contentType: "", payload: "" } }
+        let triggerId = "emit_action:" + uid(5)
+
+        actions[key] = {
+            name: trigger.name,
+            triggers: [triggerId],
+            actionValues: { [triggerId]: { emitter: emitterId } },
+            tags: [tagId]
+        }
+    })
+
+    delete data.triggers
+    data.midiIn = actions
+    return data
+}
+
+export function restartOutputs(specificId = "") {
     const allOutputs = keysToID(get(outputs))
     const outputIds = specificId ? [specificId] : allOutputs.filter((a) => a.enabled).map(({ id }) => id)
 
@@ -197,20 +244,8 @@ export function restartOutputs(specificId = "") {
         const output: Output = get(outputs)[id]
         if (!output) return
 
-        // , rate: get(special).previewRate || "auto"
         send(OUTPUT, ["CREATE"], { ...output, id })
     })
-
-    if (videoDataUpdating) return
-    videoDataUpdating = true
-
-    // restore output video data when recreating window
-    // WIP values are empty when sent
-    setTimeout(() => {
-        send(OUTPUT, ["DATA"], data)
-        send(OUTPUT, ["TIME"], time)
-        videoDataUpdating = false
-    }, 2200)
 }
 
 export function updateThemeValues(themeValues: Themes) {
@@ -283,8 +318,14 @@ const updateList: { [key in SaveListSettings | SaveListSyncedSettings]: any } = 
     outputs: (v: any) => {
         Object.keys(v).forEach((id: string) => {
             delete v[id].out
+            if (v[id].webrtcData?.streaming) v[id].webrtcData.streaming = false
+            if (v[id].rtmpData?.streaming) v[id].rtmpData.streaming = false
         })
+        migrateOutputsRtmp(v)
         outputs.set(v)
+
+        // RTMP check
+        if (Object.values(v).some((out: any) => out.enabled && out.rtmp)) checkFFmpeg()
     },
     sorted: (v: any) => sorted.set(v),
     styles: (v: any) => {
@@ -328,13 +369,11 @@ const updateList: { [key in SaveListSettings | SaveListSyncedSettings]: any } = 
     templateCategories: (v: any) => templateCategories.set(v),
     timers: (v: any) => timers.set(v),
     variables: (v: any) => variables.set(v),
-    triggers: (v: any) => triggers.set(v),
+    interactions: (v: any) => interactions.set(v),
     audioStreams: (v: any) => audioStreams.set(v),
     audioPlaylists: (v: any) => audioPlaylists.set(v),
     theme: (v: any) => theme.set(v),
     transitionData: (v: any) => transitionData.set(v),
-    volume: (v: any) => volume.set(v),
-    gain: (v: any) => gain.set(v),
     audioChannelsData: (v: any) => audioChannelsData.set(v),
     emitters: (v: any) => emitters.set(v),
     midiIn: (v: any) => actions.set(v),
@@ -343,12 +382,13 @@ const updateList: { [key in SaveListSettings | SaveListSyncedSettings]: any } = 
     playerTags: (v: any) => playerTags.set(v),
     actionTags: (v: any) => actionTags.set(v),
     variableTags: (v: any) => variableTags.set(v),
+    timerTags: (v: any) => timerTags.set(v),
     customizedIcons: (v: any) => customizedIcons.set(v),
     cloudSyncData: (v: any) => cloudSyncData.set(v),
     driveData: (v: any) => driveData.set(v),
     calendarAddShow: (v: any) => calendarAddShow.set(v),
     metronome: (v: any) => metronome.set(v),
-    equalizerConfig: (v: any) => equalizerConfig.set(v),
+    audioEffects: (v: any) => audioEffects.set(v),
     eqPresets: (v: any) => eqPresets.set(v),
     effectsLibrary: (v: any) => effectsLibrary.set(v),
     globalTags: (v: any) => globalTags.set(v),
@@ -373,6 +413,9 @@ const updateList: { [key in SaveListSettings | SaveListSyncedSettings]: any } = 
             // let "activeProject" setting update first
             setTimeout(() => projectView.set(true))
             showRecentlyUsedProjects.set(false)
+        }
+        if (v.remoteController) {
+            startRemoteController(v.remoteControllerId)
         }
 
         // DEPRECATED (migrate)
@@ -409,6 +452,8 @@ const updateList: { [key in SaveListSettings | SaveListSyncedSettings]: any } = 
         if (v?.length > 1) contentProviderData.set({ ...get(contentProviderData), churchApps: { syncCategories: v } })
     },
     contentProviderData: (v: any) => contentProviderData.set(v),
+    obsData: (v: any) => obsData.set(v),
     effects: (a: any) => effects.set(a),
-    deletedDefaults: (a: any) => deletedDefaults.set({ ...get(deletedDefaults), ...a })
+    deletedDefaults: (a: any) => deletedDefaults.set({ ...get(deletedDefaults), ...a }),
+    audioRouting: (v: any) => initAudioRouting(v)
 }

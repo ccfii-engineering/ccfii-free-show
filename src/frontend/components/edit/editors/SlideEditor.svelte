@@ -1,10 +1,9 @@
 <script lang="ts">
     import { onMount } from "svelte"
     import type { MediaStyle } from "../../../../types/Main"
-    import type { ItemType } from "../../../../types/Show"
-    import { activeEdit, activePage, activePopup, activeShow, alertMessage, focusMode, groups, labelsDisabled, media, outputs, overlays, refreshEditSlide, resized, showsCache, slideNotesActive, special, styles, templates, textEditActive } from "../../../stores"
+    import { activeEdit, activePopup, activeShow, alertMessage, editMode, focusMode, media, outputs, overlays, playerVideos, refreshEditSlide, resized, showsCache, slideNotesActive, special, styles } from "../../../stores"
     import { transposeText } from "../../../utils/chordTranspose"
-    import { DEFAULT_WIDTH, triggerFunction } from "../../../utils/common"
+    import { DEFAULT_WIDTH } from "../../../utils/common"
     import { translateText } from "../../../utils/language"
     import { getAccess } from "../../../utils/profile"
     import { slideHasAction } from "../../actions/actions"
@@ -14,7 +13,7 @@
     import { history } from "../../helpers/history"
     import { getExtension, getMedia, getMediaFileFromClipboard, getMediaLayerType, getMediaStyle, getMediaType, getThumbnailPath, mediaSize } from "../../helpers/media"
     import { getFirstActiveOutput, getResolution, getSlideFilter } from "../../helpers/output"
-    import { getLayoutRef } from "../../helpers/show"
+    import { getLayoutRef, isSlideLocked } from "../../helpers/show"
     import { _show } from "../../helpers/shows"
     import { getStyles } from "../../helpers/style"
     import FloatingInputs from "../../input/FloatingInputs.svelte"
@@ -30,12 +29,13 @@
     import DropArea from "../../system/DropArea.svelte"
     import Resizeable from "../../system/Resizeable.svelte"
     import Snaplines from "../../system/Snaplines.svelte"
+    import Timeline from "../../timeline/Timeline.svelte"
     import EditHeader from "../EditHeader.svelte"
     import Editbox from "../editbox/Editbox.svelte"
     import { getUsedChords } from "../scripts/chords"
     import { addItem } from "../scripts/itemHelpers"
-    import { getSlideText, setCaretAtEnd } from "../scripts/textStyle"
-    import Timeline from "../../timeline/Timeline.svelte"
+    import { setCaretAtEnd } from "../scripts/textStyle"
+    import { centerZoom } from "../scripts/zoom"
 
     $: currentShowId = $activeShow?.id || $activeEdit.showId || ""
     $: currentShow = $showsCache[currentShowId]
@@ -47,6 +47,12 @@
     let mouse: any = null
     let newStyles: { [key: string]: string | number } = {}
     $: active = $activeEdit.items
+
+    let lastActiveIds = ""
+    $: if (active.join(",") !== lastActiveIds) {
+        newStyles = {}
+        lastActiveIds = active.join(",")
+    }
 
     let width = 0
     let height = 0
@@ -74,7 +80,7 @@
         })
     }
 
-    $: background = bgId && currentShowId ? currentShow?.media[bgId] : Slide?.settings?.backgroundImage ? { path: Slide.settings.backgroundImage, type: getMediaType(getExtension(Slide.settings.backgroundImage)), id: "" } : null
+    $: background = bgId && currentShowId ? currentShow?.media[bgId] : Slide?.settings?.backgroundImage ? { path: Slide.settings.backgroundImage, type: $playerVideos[Slide.settings.backgroundImage] ? "player" : getMediaType(getExtension(Slide.settings.backgroundImage)), id: "" } : null
     $: backgroundPath = background?.path || ""
     // $: slideOverlays = layoutSlide.overlays || []
 
@@ -88,6 +94,15 @@
     async function loadBackground() {
         mediaPath = bgPath
         thumbnailPath = getThumbnailPath(mediaPath, mediaSize.slideSize)
+
+        if (background?.type === "player" || $playerVideos[bgPath]) {
+            const playerVid = $playerVideos[bgPath] || (background as any)?.data || background
+            if (playerVid?.id) {
+                if (playerVid.type === "youtube") thumbnailPath = `https://i.ytimg.com/vi/${playerVid.id}/sddefault.jpg`
+                else if (playerVid.type === "vimeo") thumbnailPath = `https://vumbnail.com/${playerVid.id}_medium.jpg`
+                return
+            }
+        }
 
         const media = await getMedia(bgPath, mediaSize.slideSize)
         if (!media) return
@@ -108,20 +123,15 @@
         else newStyles = {}
     }
 
-    // const CHANGE_POS_TIME = 2000
-    // let changePosTimeout = null
     let updateTimeout: NodeJS.Timeout | null = null
     function updateStyles() {
-        // || changePosTimeout
         if (!Object.keys(newStyles).length) return
 
-        // WIP nice to timeout here to reduce lag (but textbox position need to update!!)
-        // changePosTimeout = setTimeout(() => {
-        //     changePosTimeout = null
-        //     updateStyles()
-        // }, CHANGE_POS_TIME)
+        const slideIndex = $activeEdit.slide ?? 0
+        const slideId = ref[slideIndex]?.id
+        if (!slideId) return
 
-        let items = currentShow?.slides?.[ref[$activeEdit.slide || 0]?.id]?.items || []
+        let items = currentShow?.slides?.[slideId]?.items || []
         let values: string[] = []
         active.forEach((id) => {
             let item = items[id]
@@ -129,21 +139,20 @@
                 let styles = getStyles(item.style)
                 let textStyles = ""
 
-                Object.entries(newStyles).forEach(([key, value]) => (styles[key] = value.toString()))
+                const itemNewStyles = (newStyles as any).__multiPositions ? (newStyles as any).__multiPositions[id] || {} : newStyles
+
+                Object.entries(itemNewStyles).forEach(([key, value]) => (styles[key] = (value as any).toString()))
                 Object.entries(styles).forEach((obj) => (textStyles += obj[0] + ":" + obj[1] + ";"))
 
                 values.push(textStyles)
             }
         })
 
-        let slideId = ref[$activeEdit.slide || 0]?.id
-        if (!slideId) return
-
         let activeItems = [...active]
 
         let historyShow = $activeShow
         // focus mode
-        if (!historyShow && currentShowId) historyShow = { type: "show", id: currentShowId, index: $activeEdit.slide || 0 }
+        if (!historyShow && currentShowId) historyShow = { type: "show", id: currentShowId, index: slideIndex }
         else if (!historyShow) return
 
         history({
@@ -206,25 +215,12 @@
     // ZOOM
     let scrollElem: HTMLDivElement | undefined
     let zoom = 1
+    let zoomOrigin: { x: number; y: number } | null = null
     function updateZoom(e: any) {
         zoom = e.detail
-        centerZoom()
-    }
-
-    function centerZoom() {
-        // always center scroll when zooming
-        if (zoom >= 1) return
-
-        // allow elem to update after zooming
-        setTimeout(() => {
-            const elem = scrollElem?.querySelector(".droparea")
-            if (!elem) return
-
-            const centerX = (elem.scrollWidth - elem.clientWidth) / 2
-            const centerY = (elem.scrollHeight - elem.clientHeight) / 2
-
-            elem.scrollTo({ left: centerX, top: centerY })
-        })
+        const origin = zoomOrigin
+        zoomOrigin = null
+        centerZoom(origin, scrollElem, ".droparea")
     }
 
     // CHORDS
@@ -246,11 +242,6 @@
         }
     }
 
-    let chordsMode = false
-    function toggleChords() {
-        chordsMode = !chordsMode
-    }
-
     // transpose chords - same as TextEditor
     function transposeUp() {
         const text = getPlainEditorText("", false)
@@ -267,7 +258,7 @@
         // timeout to prevent number 2 from getting typed if changing with shortcuts
         setTimeout(() => {
             // set focus to textbox if only one
-            if (Slide?.items.length === 1 && !$activeEdit.items.length) {
+            if (Slide?.items?.length === 1 && !$activeEdit.items.length) {
                 activeEdit.update((a) => ({ ...(a || {}), items: [0] }))
                 const elem = document.querySelector(".editItem")?.querySelector(".edit")
                 if (elem && !$special.slideTimelineActive) {
@@ -279,7 +270,7 @@
     )
 
     let profile = getAccess("shows")
-    $: isGroupLocked = !!Slide?.locked // WIP get group slide
+    $: isGroupLocked = isSlideLocked(currentShowId, ref[$activeEdit.slide ?? -1]?.id || "", $showsCache)
     $: isLocked = currentShow?.locked || isGroupLocked || profile.global === "read" || profile[currentShow?.category || ""] === "read"
 
     // remove overflow if scrollbars are flickering over 25 times per second
@@ -310,29 +301,34 @@
     let bottomHeight = 40
 
     $: notes = Slide?.notes?.replaceAll("\n", "&nbsp;")
-    $: notesVisible = !!notes // && !chordsMode
-
-    const shortcutItems: { id: ItemType; icon?: string }[] = [{ id: "text" }, { id: "media", icon: "image" }, { id: "timer" }]
+    $: notesVisible = !!notes // && $editMode !== "chords"
 
     $: widthOrHeight = getStyleResolution(resolution, width, height, "fit", { zoom })
 
-    $: hasTextContent = getSlideText(Slide)?.length
-
-    $: parentId = $activeEdit.slide !== null && ref?.[$activeEdit.slide!] ? ref[$activeEdit.slide!]?.parent?.id || ref[$activeEdit.slide!]?.id : ""
-    $: slideGroup = _show(currentShowId).slides([parentId]).get()?.[0]?.globalGroup || ""
-    $: template = Slide?.settings?.template || $groups[slideGroup]?.template || currentShow?.settings?.template || ""
-
     // BACKGROUND
 
-    $: currentBackgroundPath = currentShow?.media?.[ref[$activeEdit.slide || 0]?.data.background || ""]?.path || ""
+    $: currentBackgroundPath = currentShow?.media?.[ref[$activeEdit.slide ?? -1]?.data.background || ""]?.path || ""
     $: hasBackground = !!currentBackgroundPath
     function convertBackgroundToMedia() {
-        // WIP add to back
-        addItem("media", null, { src: currentBackgroundPath }, "", { left: "0px", top: "0px", width: "1920px", height: "1080px" })
+        // add behind all other items
+        addItem("media", null, { src: currentBackgroundPath }, "", { left: "0px", top: "0px", width: "1920px", height: "1080px" }, 0)
 
         showsCache.update((a) => {
-            if (!a[currentShowId]?.layouts?.[currentShow?.settings?.activeLayout || ""]?.slides?.[$activeEdit.slide || 0]?.background) return a
-            delete a[currentShowId].layouts[currentShow?.settings?.activeLayout || ""].slides[$activeEdit.slide || 0].background
+            const currentRef = ref[$activeEdit.slide ?? -1]
+            if (!currentRef) return a
+
+            const layoutId = currentShow?.settings?.activeLayout || ""
+            const layoutSlides = a[currentShowId]?.layouts?.[layoutId]?.slides
+            if (!layoutSlides) return a
+
+            if (currentRef.type === "child" && currentRef.parent) {
+                const parentSlide = layoutSlides[currentRef.parent.index]
+                if (parentSlide?.children?.[currentRef.id]?.background) {
+                    delete parentSlide.children[currentRef.id].background
+                }
+            } else if (layoutSlides[currentRef.index]?.background) {
+                delete layoutSlides[currentRef.index].background
+            }
             return a
         })
     }
@@ -344,9 +340,9 @@
 
     function edit(e: any) {
         const slideId = ref[$activeEdit.slide!]?.id
-        if (Slide.notes === e.detail || !slideId) return
+        if (!Slide || Slide.notes === e.detail || !slideId) return
 
-        _show($activeShow!.id).slides([slideId]).set({ key: "notes", value: e.detail })
+        _show(currentShowId).slides([slideId]).set({ key: "notes", value: e.detail })
     }
 </script>
 
@@ -356,31 +352,11 @@
     <EditHeader showId={currentShowId} />
 {/if}
 
-{#if template && !chordsMode && !widthOrHeight.includes("height") && !$focusMode && !isLocked}
-    <div class="default" data-title={translateText(`info.template: <b>${$templates[template]?.name || "—"}</b>`)}>
-        <MaterialButton
-            style="border-radius: 50%;"
-            on:click={() => {
-                activeEdit.set({ type: "template", id: template, items: [] })
-                activePage.set("edit")
-            }}
-        >
-            <Icon id="templates" white />
-        </MaterialButton>
-    </div>
-{/if}
-
 <div class="editArea">
     <div class="parent" class:noOverflow={zoom >= 1} bind:this={scrollElem} bind:offsetWidth={width} bind:offsetHeight={height}>
         {#if Slide}
             <DropArea id="edit" file>
-                <Zoomed background={(transparentOutput || $special.transparentSlides) && !background ? "transparent" : background ? "black" : Slide?.settings?.color || currentStyle.background || "black"} {checkered} border={checkered} {resolution} style={widthOrHeight} bind:ratio {hideOverflow} center={zoom >= 1}>
-                    <!-- <div class="chordsButton" style="zoom: {1 / ratio};">
-                        <Button on:click={toggleChords}>
-                            <Icon id="chords" white={!chordsMode} />
-                        </Button>
-                    </div> -->
-
+                <Zoomed background={(transparentOutput || $special.transparentSlides) && !background ? "transparent" : background ? "black" : Slide?.settings?.color || currentStyle.background || "black"} {checkered} border={checkered} {resolution} style={widthOrHeight} bind:ratio {hideOverflow} center>
                     <!-- background -->
                     {#if !altKeyPressed && background}
                         <div class="background" style="zoom: {1 / ratio};opacity: 0.5;{slideFilter};height: 100%;width: 100%;">
@@ -393,7 +369,7 @@
                         {#if !altKeyPressed && layoutSlide.overlays?.length}
                             {#each layoutSlide.overlays as id}
                                 {#if $overlays[id]}
-                                    {#each $overlays[id].items as item}
+                                    {#each $overlays[id]?.items || [] as item}
                                         <Textbox {item} ref={{ type: "overlay", id }} />
                                     {/each}
                                 {/if}
@@ -410,7 +386,7 @@
                         {#each Slide.items as item, index}
                             <!-- filter={layoutSlide.filterEnabled?.includes("foreground") ? layoutSlide.filter : ""} -->
                             <!-- backdropFilter={layoutSlide.filterEnabled?.includes("foreground") ? layoutSlide["backdrop-filter"] : ""} -->
-                            <Editbox backdropFilter={layoutSlide["backdrop-filter"] || ""} {item} {chordsMode} {chordsAction} ref={{ showId: currentShowId, id: Slide.id, origin: currentShow.origin }} {index} {ratio} bind:mouse />
+                            <Editbox backdropFilter={layoutSlide["backdrop-filter"] || ""} {item} chordsMode={$editMode === "chords"} {chordsAction} ref={{ showId: currentShowId, id: Slide.id, origin: currentShow.origin }} {index} {ratio} bind:mouse />
                         {/each}
                     {/key}
                 </Zoomed>
@@ -440,67 +416,16 @@
     {/if}
 
     {#if !$focusMode && !isLocked && !$slideNotesActive && !$special.slideTimelineActive}
-        <!-- && Slide?.items?.length -->
-        {#if !chordsMode && !widthOrHeight.includes("height")}
-            <FloatingInputs bottom={notesVisible ? bottomHeight : 10} side="center">
-                {#each shortcutItems as item}
-                    <MaterialButton title="settings.add: items.{item.id}" on:click={() => addItem(item.id)}>
-                        <Icon id={item.icon || item.id} size={1.3} white />
-                    </MaterialButton>
-                {/each}
-            </FloatingInputs>
-        {/if}
-
-        <FloatingInputs bottom={notesVisible ? bottomHeight : 10} arrow let:open>
-            <MaterialZoom hidden={!open} columns={zoom} min={0.2} max={4} defaultValue={1} addValue={0.1} on:change={updateZoom} />
-
-            {#if open}
-                <div class="divider"></div>
-
-                {#if hasTextContent}
-                    <MaterialButton title="edit.insert_virtual_break" on:click={() => triggerFunction("insert_virtual_break")}>
-                        <Icon id="add" white />
-                        {#if !$labelsDisabled}<T id="edit.insert_virtual_break" />{/if}
-                    </MaterialButton>
-
-                    <div class="divider"></div>
-                {/if}
-            {/if}
-
-            <!-- no need to add chords on scripture/events -->
-            {#if !currentShow?.reference?.type && Slide && !isLocked && hasTextContent}
-                <!-- {#if open || slideChords.length} -->
-                <MaterialButton isActive={chordsMode} on:click={toggleChords} title="edit.chords">
-                    <Icon id="chords" white={!slideChords.length} />
-                    <!-- {#if open && !$labelsDisabled}<T id="edit.chords" />{/if} -->
+        <FloatingInputs side="left" bottom={notesVisible ? bottomHeight : 10} onlyOne={hasBackground}>
+            {#if $editMode === "chords"}
+                <MaterialButton on:click={transposeUp} title="edit.transpose_up">
+                    <Icon id="arrow_up" size={1.3} white />
                 </MaterialButton>
-                <!-- {/if} -->
+                <MaterialButton on:click={transposeDown} title="edit.transpose_down">
+                    <Icon id="arrow_down" size={1.3} white />
+                </MaterialButton>
 
-                {#if open}
-                    <div class="divider"></div>
-                {/if}
-            {/if}
-
-            <MaterialButton title="show.text [Ctrl+Shift+T]" on:click={() => textEditActive.set(true)}>
-                <Icon id="text_edit" white />
-                <!-- {#if open && !$labelsDisabled}<p><T id="show.text" /></p>{/if} -->
-            </MaterialButton>
-        </FloatingInputs>
-
-        {#if chordsMode}
-            <FloatingInputs side="left" bottom={notesVisible ? bottomHeight : 10} arrow let:open>
-                <div slot="menu">
-                    <MaterialButton on:click={transposeUp} title="edit.transpose_up">
-                        <Icon id="arrow_up" size={1.3} white />
-                    </MaterialButton>
-                    <MaterialButton on:click={transposeDown} title="edit.transpose_down">
-                        <Icon id="arrow_down" size={1.3} white />
-                    </MaterialButton>
-                </div>
-
-                {#if open}
-                    <div class="divider"></div>
-                {/if}
+                <div class="divider"></div>
 
                 <MaterialButton isActive={!chordsAction} on:click={setDefaultChordsAction}>
                     <p><T id="popup.choose_chord" /></p>
@@ -511,18 +436,18 @@
                         {chord}
                     </MaterialButton>
                 {/each}
-            </FloatingInputs>
-        {:else if hasBackground}
-            <FloatingInputs side="left" bottom={notesVisible ? bottomHeight : 10} onlyOne>
+            {:else if hasBackground}
                 <MaterialButton icon="autofill" on:click={convertBackgroundToMedia}>
                     <T id="edit.convert_to_media_item" />
                 </MaterialButton>
-            </FloatingInputs>
-        {/if}
+            {/if}
+
+            <MaterialZoom hidden={$editMode === "chords" || hasBackground} columns={zoom} min={0.2} max={4} defaultValue={1} addValue={0.1} on:change={updateZoom} on:origin={(e) => (zoomOrigin = e.detail)} />
+        </FloatingInputs>
     {/if}
 
     {#if $special.slideTimelineActive}
-        <MaterialZoom hidden columns={zoom} min={0.2} max={4} defaultValue={1} addValue={0.1} on:change={updateZoom} />
+        <MaterialZoom hidden columns={zoom} min={0.2} max={4} defaultValue={1} addValue={0.1} on:change={updateZoom} on:origin={(e) => (zoomOrigin = e.detail)} />
 
         <Resizeable id="slide_timeline" side="bottom" maxWidth={DEFAULT_WIDTH} minWidth={40}>
             {#key currentShowId + "-" + $activeEdit.slide}
@@ -533,27 +458,6 @@
 </div>
 
 <style>
-    .default {
-        position: absolute;
-        top: 40px;
-        left: 10px;
-
-        width: 42px;
-        height: 42px;
-
-        display: flex;
-        align-items: center;
-        justify-content: center;
-
-        background-color: var(--primary-darkest);
-        border: 1px solid var(--primary-lighter);
-
-        padding: 10px;
-        border-radius: 50%;
-
-        z-index: 999;
-    }
-
     .editArea {
         width: 100%;
         height: calc(100% - 30px);

@@ -24,15 +24,13 @@ export const DEFAULT_DICTIONARY = {
         shows: "Shows",
         media: "Media",
         overlays: "Overlays",
-        audio: "Audio",
         scripture: "Scriptures",
         calendar: "Calendar",
         templates: "Templates",
         functions: "Functions",
         actions: "Actions",
         timers: "Timers",
-        variables: "Variables",
-        triggers: "Triggers"
+        variables: "Variables"
     },
     guide_title: {
         categories: "Categories"
@@ -117,9 +115,5 @@ export const DEFAULT_DICTIONARY = {
     },
     context: {
         addToProject: "Add to project"
-    },
-    audio: {
-        main: "Main",
-        mixer: "Mixer"
     }
 }

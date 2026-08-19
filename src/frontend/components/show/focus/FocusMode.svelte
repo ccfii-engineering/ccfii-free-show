@@ -25,7 +25,14 @@
             isScrolling = null
             projectUpdating = null
             // scrollToActive()
-            if ($activeFocus.id) activeFocus.set({ ...active, index: project.shows.findIndex((a) => a.id === active.id && (!a.layout || a.layout === outputShowLayout)) })
+            if ($activeFocus.id) {
+                const shows = project?.shows || []
+                if (active.index !== undefined && shows[active.index]?.id === active.id) {
+                    activeFocus.set(active)
+                } else {
+                    activeFocus.set({ ...active, index: getProjectItemIndex(active.id, active.type, outputShowLayout) })
+                }
+            }
         }, 100)
     }
 
@@ -36,6 +43,7 @@
     $: output = $outputs[outputId]
     $: outputShowId = output?.out?.slide?.id
     $: outputShowLayout = output?.out?.slide?.layout
+    $: outputShowProjectIndex = output?.out?.slide?.projectIndex
     $: outputIndex = output?.out?.slide?.index
 
     $: active = $activeFocus
@@ -52,21 +60,30 @@
 
         let currentId = active.id
         let slideIndex = active.id === outputShowId ? outputIndex || 0 : 0
+        let currentType = active.type
 
         let index = active.index
         if (index === undefined) {
-            if (outputShowId) currentId = outputShowId
-            index = project.shows.findIndex((a) => a.id === currentId && (!a.layout || a.layout === outputShowLayout))
+            if (outputShowProjectIndex !== undefined) {
+                index = outputShowProjectIndex
+            } else {
+                if (outputShowId) currentId = outputShowId
+                if (outputShowId) currentType = undefined
+                index = getProjectItemIndex(currentId, currentType, outputShowLayout)
+            }
         }
+
+        if (index < 0) return
 
         if (!outputShowId && previousId && previousId === currentId) return
         previousId = currentId
 
         let id = "id_" + getId(currentId) + "_" + index
         let elem = listElem.querySelector("#" + id) as HTMLElement
+        if (!elem) return
         let elemTop = elem?.offsetTop || 0
         const slide = elem?.querySelector(".grid")?.children[slideIndex] as HTMLElement
-        let slideTop = elemTop + (slide?.offsetTop ?? elem?.offsetTop ?? 0)
+        let slideTop = slide ? elemTop + slide.offsetTop : elemTop
 
         // don't scroll if already visible
         const currentScrollPos = listElem.closest(".center")?.scrollTop || 0
@@ -84,12 +101,32 @@
         listElem.closest(".center")?.scrollTo(0, slideTop - fromTop - MARGIN)
     }
 
+    function getProjectItemIndex(id: string, type?: string, layout?: string) {
+        const shows = project?.shows || []
+
+        // Match the exact item first when we know the type/layout.
+        let index = shows.findIndex((item) => item.id === id && (!type || item.type === type) && (!layout || item.layout === layout))
+        if (index !== -1) return index
+
+        // Fallbacks keep media and other non-show items scrollable.
+        index = shows.findIndex((item) => item.id === id && (!type || item.type === type))
+        if (index !== -1) return index
+
+        index = shows.findIndex((item) => item.id === id && (!layout || item.layout === layout))
+        if (index !== -1) return index
+
+        return shows.findIndex((item) => item.id === id)
+    }
+
     $: if (listElem) setScrollListener()
     function setScrollListener() {
         if (!listElem?.closest(".center")) return
 
         fromTop = (listElem.children[0] as HTMLElement)?.offsetTop || 0
         if (listElem.closest(".center")) (listElem.closest(".center") as HTMLElement).onscroll = (e) => scrolling(e)
+
+        // Trigger once when list is ready so initial active media/show gets centered.
+        scrollToActive()
     }
 
     $: sidebarClosed = $resized.leftPanel < 5

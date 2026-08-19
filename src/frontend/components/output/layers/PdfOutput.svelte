@@ -5,6 +5,7 @@
     import type { Transition } from "../../../../types/Show"
     import OutputTransition from "../transitions/OutputTransition.svelte"
     import { onDestroy } from "svelte"
+    import { encodeFilePath } from "../../helpers/media"
 
     export let slide
     export let currentStyle
@@ -31,7 +32,7 @@
 
         if (loadedPath !== path) {
             if (loadingTask) loadingTask.destroy()
-            loadingTask = getDocument(path)
+            loadingTask = getDocument(encodeFilePath(path))
             loadedDoc = await loadingTask.promise
         }
         if (!loadedDoc) return
@@ -41,7 +42,12 @@
         const context = canvasElem?.getContext("2d")
         if (!context) return
 
-        const viewport = page.getViewport({ scale: 4 })
+        const viewportAtScale1 = page.getViewport({ scale: 1 })
+        const scaleW = (window.innerWidth * window.devicePixelRatio) / viewportAtScale1.width
+        const scaleH = (window.innerHeight * window.devicePixelRatio) / viewportAtScale1.height
+        const scale = Math.min(scaleW, scaleH)
+
+        const viewport = page.getViewport({ scale })
         canvasElem.height = viewport.height
         canvasElem.width = viewport.width
 

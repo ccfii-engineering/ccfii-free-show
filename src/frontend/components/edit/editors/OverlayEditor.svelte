@@ -1,26 +1,24 @@
 <script lang="ts">
     import { onDestroy } from "svelte"
     import { OUTPUT } from "../../../../types/Channels"
-    import type { ItemType } from "../../../../types/Show"
     import { activeEdit, outputs, overlays, styles } from "../../../stores"
+    import { translateText } from "../../../utils/language"
     import { send } from "../../../utils/request"
+    import Icon from "../../helpers/Icon.svelte"
     import T from "../../helpers/T.svelte"
     import { clone } from "../../helpers/array"
     import { history } from "../../helpers/history"
     import { getResolution } from "../../helpers/output"
     import { getStyles } from "../../helpers/style"
     import FloatingInputs from "../../input/FloatingInputs.svelte"
-    import MaterialButton from "../../inputs/MaterialButton.svelte"
     import MaterialZoom from "../../inputs/MaterialZoom.svelte"
     import Zoomed from "../../slide/Zoomed.svelte"
     import { getStyleResolution } from "../../slide/getStyleResolution"
     import Center from "../../system/Center.svelte"
+    import DropArea from "../../system/DropArea.svelte"
     import Snaplines from "../../system/Snaplines.svelte"
     import Editbox from "../editbox/Editbox.svelte"
-    import Icon from "../../helpers/Icon.svelte"
-    import { addItem } from "../scripts/itemHelpers"
-    import { translateText } from "../../../utils/language"
-    import DropArea from "../../system/DropArea.svelte"
+    import { centerZoom } from "../scripts/zoom"
 
     const update = () => (Slide = clone($overlays[currentId]))
     $: currentId = $activeEdit.id!
@@ -33,6 +31,12 @@
     let mouse: any = null
     let newStyles: { [key: string]: string | number } = {}
     $: active = $activeEdit.items
+
+    let lastActiveIds = ""
+    $: if (active.join(",") !== lastActiveIds) {
+        newStyles = {}
+        lastActiveIds = active.join(",")
+    }
 
     let width = 0
     let height = 0
@@ -55,10 +59,11 @@
             let styles = getStyles(item.style)
             let textStyles = ""
 
-            Object.entries(newStyles).forEach(([key, value]) => (styles[key] = value.toString()))
+            const itemNewStyles = (newStyles as any).__multiPositions ? (newStyles as any).__multiPositions[id] || {} : newStyles
+
+            Object.entries(itemNewStyles).forEach(([key, value]) => (styles[key] = (value as any).toString()))
             Object.entries(styles).forEach((obj) => (textStyles += obj[0] + ":" + obj[1] + ";"))
 
-            // TODO: move multiple!
             values.push(textStyles)
         })
 
@@ -70,26 +75,13 @@
     // ZOOM
     let scrollElem: HTMLDivElement | undefined
     let zoom = 1
+    let zoomOrigin: { x: number; y: number } | null = null
     function updateZoom(e: any) {
         zoom = e.detail
-        centerZoom()
+        const origin = zoomOrigin
+        zoomOrigin = null
+        centerZoom(origin, scrollElem, ".droparea")
     }
-
-    function centerZoom() {
-        if (zoom >= 1) return
-        // allow elem to update after zooming
-
-        setTimeout(() => {
-            if (!scrollElem) return
-
-            const centerX = (scrollElem.scrollWidth - scrollElem.clientWidth) / 2
-            const centerY = (scrollElem.scrollHeight - scrollElem.clientHeight) / 2
-
-            scrollElem.scrollTo({ left: centerX, top: centerY })
-        })
-    }
-
-    const shortcutItems: { id: ItemType; icon?: string }[] = [{ id: "text" }, { id: "media", icon: "image" }, { id: "timer" }]
 
     $: widthOrHeight = getStyleResolution(resolution, width, height, "fit", { zoom })
 </script>
@@ -105,7 +97,7 @@
         <!--  && !Slide.isDefault -->
         {#if Slide}
             <DropArea id="edit" file>
-                <Zoomed background="transparent" checkered border {resolution} style={widthOrHeight} bind:ratio hideOverflow={false} center={zoom >= 1}>
+                <Zoomed background="transparent" checkered border {resolution} style={widthOrHeight} bind:ratio hideOverflow={false} center>
                     <Snaplines bind:lines bind:newStyles bind:mouse {ratio} {active} />
                     {#each Slide.items as item, index}
                         <Editbox ref={{ type: "overlay", id: currentId }} {item} {index} {ratio} bind:mouse />
@@ -119,18 +111,8 @@
         {/if}
     </div>
 
-    {#if !widthOrHeight.includes("height")}
-        <FloatingInputs side="center">
-            {#each shortcutItems as item}
-                <MaterialButton title="settings.add: items.{item.id}" on:click={() => addItem(item.id)}>
-                    <Icon id={item.icon || item.id} size={1.3} white />
-                </MaterialButton>
-            {/each}
-        </FloatingInputs>
-    {/if}
-
-    <FloatingInputs>
-        <MaterialZoom columns={zoom} min={0.2} max={4} defaultValue={1} addValue={0.1} on:change={updateZoom} />
+    <FloatingInputs side="left">
+        <MaterialZoom columns={zoom} min={0.2} max={4} defaultValue={1} addValue={0.1} on:change={updateZoom} on:origin={(e) => (zoomOrigin = e.detail)} />
     </FloatingInputs>
 </div>
 

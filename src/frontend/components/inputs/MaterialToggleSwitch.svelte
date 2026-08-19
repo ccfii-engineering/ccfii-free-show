@@ -11,6 +11,7 @@
     export let id = ""
     export let disabled = false
     export let center = false
+    export let small = false
 
     // might not be a boolean - maybe undefined
     $: checkedValue = !!checked
@@ -33,7 +34,7 @@
     }
 </script>
 
-<div style={$$props.style || null} class="togglefield {center ? 'centered' : ''} {disabled ? 'disabled' : ''}" data-title={translateText(title)} role="switch" aria-checked={checkedValue} tabindex={disabled ? undefined : 0} on:click={toggle} on:keydown={onKeyDown}>
+<div style={$$props.style || null} class="togglefield {center ? 'centered' : ''} {disabled ? 'disabled' : ''}" class:small data-title={translateText(title || label)} role="switch" aria-checked={checkedValue} tabindex={disabled ? undefined : 0} on:click={toggle} on:keydown={onKeyDown}>
     <div class="background" />
     <div class="hover" />
 
@@ -41,7 +42,7 @@
 
     {#if label}
         <label for={id} class="toggle-label">
-            <span style="display: flex;align-items: center;gap: 10px;">
+            <span class="label-text">
                 {translateText(label, $dictionary)}
 
                 {#if data}<span class="data">{data}</span>{/if}
@@ -82,6 +83,11 @@
         opacity: 0.35;
         cursor: not-allowed;
     }
+    .togglefield.small {
+        padding: 0;
+        border: none;
+        height: auto;
+    }
 
     .background {
         position: absolute;
@@ -89,6 +95,9 @@
         background-color: var(--primary-darkest);
         border-radius: 4px 4px 0 0;
         z-index: 0;
+    }
+    .togglefield.small .background {
+        background-color: transparent;
     }
 
     .hidden-input {
@@ -103,6 +112,17 @@
         z-index: 1;
         user-select: none;
         pointer-events: none;
+
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+    }
+
+    .toggle-label .label-text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        gap: 10px;
     }
 
     .switch {
@@ -117,6 +137,10 @@
         flex-shrink: 0;
         z-index: 1;
     }
+    .togglefield.small .switch {
+        width: 30px;
+        height: 16px;
+    }
     .thumb {
         position: absolute;
         top: 2px;
@@ -130,6 +154,10 @@
             transform 0.2s ease,
             background-color 0.2s ease;
     }
+    .togglefield.small .thumb {
+        width: 12px;
+        height: 12px;
+    }
     .togglefield:not(.disabled) .switch:hover .thumb {
         filter: invert(0.08);
     }
@@ -141,6 +169,9 @@
     .togglefield:has(.hidden-input:checked) .switch .thumb {
         transform: translateX(18px);
         background-color: var(--primary-darker);
+    }
+    .togglefield.small:has(.hidden-input:checked) .switch .thumb {
+        transform: translateX(14px);
     }
 
     .underline {
@@ -181,8 +212,7 @@
         align-items: center;
         justify-content: space-between;
         gap: 10px;
-
-        width: 100%;
+        width: auto;
     }
 
     .changed {

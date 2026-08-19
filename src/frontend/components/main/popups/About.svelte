@@ -1,23 +1,25 @@
 <script lang="ts">
-    import { version } from "../../../stores"
+    import { activePopup, version } from "../../../stores"
     import T from "../../helpers/T.svelte"
     import Link from "../../inputs/Link.svelte"
+    import MaterialButton from "../../inputs/MaterialButton.svelte"
 
-    const assets: { [key: string]: string } = {
-        "CMG Sans (Custom font)": "https://www.churchmotiongraphics.com/cmg-sans/",
-        "Google Fonts (Icons)": "https://fonts.google.com/icons/",
-        "Icons8 (Icons)": "https://icons8.com/",
-        "Pixabay (Web Images)": "https://pixabay.com/",
-        "Unsplash (Web Images)": "https://unsplash.com/",
-        "Electron (Cross-platform desktop apps)": "https://www.electronjs.org/",
-        "Svelte (DOM framework)": "https://svelte.dev/",
-        "Rollup (Module bundler)": "https://rollupjs.org/",
-        "Socket.io (LAN connections)": "https://socket.io/",
-        "Express (Web framework)": "https://expressjs.com/",
-        "NDI® SDK (IP-streaming)": "https://ndi.video/",
-        "CAPTION.Ninja (Live captions)": "https://caption.ninja/",
-        "Google Translate (Localization)": "https://translate.google.com/"
-    }
+    const assets: { name: string; url: string; title?: string }[] = [
+        { name: "CMG Sans (Custom font)", url: "https://www.churchmotiongraphics.com/cmg-sans/" },
+        { name: "Google Fonts (Icons)", url: "https://fonts.google.com/icons/" },
+        { name: "Icons8 (Icons)", url: "https://icons8.com/" },
+        { name: "Pixabay (Web Images)", url: "https://pixabay.com/" },
+        { name: "Unsplash (Web Images)", url: "https://unsplash.com/" },
+        { name: "Electron (Cross-platform desktop apps)", url: "https://www.electronjs.org/" },
+        { name: "Svelte (DOM framework)", url: "https://svelte.dev/" },
+        { name: "Rollup (Module bundler)", url: "https://rollupjs.org/" },
+        { name: "Socket.io (LAN connections)", url: "https://socket.io/" },
+        { name: "Express (Web framework)", url: "https://expressjs.com/" },
+        { name: "NDI® SDK (IP-streaming)", url: "https://ndi.video/", title: "NDI® is a registered trademark of Vizrt NDI AB." },
+        { name: "Blackmagic Design® (Local output)", url: "https://www.blackmagicdesign.com/", title: "Blackmagic Design is a registered trademark of Blackmagic Design Pty. Ltd." },
+        { name: "CAPTION.Ninja (Live captions)", url: "https://caption.ninja/" },
+        { name: "Google Translate (Localization)", url: "https://translate.google.com/" }
+    ]
 </script>
 
 <div style="text-align: center;">
@@ -30,10 +32,10 @@
     </div>
 
     <p style="font-size: 0.8em;margin-top: 2px;">
-        <span style="opacity: 0.8;">v{$version} -</span>
-        <Link url={"https://freeshow.app/?v" + $version}>
+        <span style="opacity: 0.8;">v{$version}</span>
+        <MaterialButton variant="outlined" style="margin-left: 5px;display: inline-flex;min-height: 0;padding: 0 5px;vertical-align: baseline;" on:click={() => activePopup.set("update_manager")} white>
             <T id="about.check_updates" />
-        </Link>
+        </MaterialButton>
     </p>
     <p style="font-size: 0.7em;opacity: 0.5;margin-top: 4px;">Christ Charismatic Fellowship Int'l, Inc.</p>
 
@@ -78,8 +80,8 @@
         <h5><T id="about.assets" /></h5>
 
         <div class="links">
-            {#each Object.entries(assets) as [asset, url]}
-                <span>• <Link {url}>{asset}</Link></span>
+            {#each assets as asset}
+                <span data-title={asset.title}>• <Link url={asset.url}>{asset.name}</Link></span>
             {/each}
         </div>
     </div>

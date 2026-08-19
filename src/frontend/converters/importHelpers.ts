@@ -1,13 +1,14 @@
 import { get } from "svelte/store"
 import { uid } from "uid"
 import type { Show, Slide } from "../../types/Show"
+import type { StageLayout } from "../../types/Stage"
 import type { Category } from "../../types/Tabs"
 import { history } from "../components/helpers/history"
+import { convertOldShowValues } from "../components/helpers/setShow"
 import { checkName } from "../components/helpers/show"
-import { activeDrawerTab, activePopup, activeProject, activeRename, activeShow, alertMessage, categories, drawerTabsData, shows } from "../stores"
+import { actionTags, activeDrawerTab, activePopup, activeProject, activeRename, activeShow, alertMessage, categories, drawerTabsData, shows } from "../stores"
 import { newToast } from "../utils/common"
 import { convertText } from "./txt"
-import { convertOldShowValues } from "../components/helpers/setShow"
 
 export function createCategory(name: string, icon = "song", { isDefault, isArchive }: { isDefault?: boolean; isArchive?: boolean } = {}) {
     // return selected category if it is empty
@@ -121,6 +122,82 @@ export function importTemplate(files: { content: string; name?: string; extensio
     }
 }
 
+export function importAction(files: { content: string; name?: string; extension?: string }[]) {
+    files.forEach(({ content }) => {
+        const parsed = JSON.parse(content)
+        const action = parsed.action ? parsed.action : parsed
+        if (!action.triggers) return
+
+        // create any tags that do not exist
+        action.tags?.forEach((tagId: string) => {
+            if (get(actionTags)[tagId]) return
+
+            actionTags.update((a) => {
+                a[tagId] = { name: "Tag", color: "#ffffff" }
+                return a
+            })
+        })
+
+        const actionId = action.id || uid()
+        delete action.id
+
+        history({ id: "UPDATE", newData: { data: action }, oldData: { id: actionId }, location: { page: "drawer", id: "action" } })
+    })
+
+    if (get(activePopup)) {
+        alertMessage.set("actions.imported")
+        activePopup.set("alert")
+    } else {
+        newToast("actions.imported")
+    }
+}
+
+export function importStage(files: { content: string; name?: string; extension?: string }[]) {
+    let imported = 0
+
+    files.forEach(({ content }) => {
+        let parsed: Partial<StageLayout & { id: string }>
+        try {
+            parsed = JSON.parse(content)
+        } catch (err) {
+            console.error("Failed to import stage layout:", err)
+            return
+        }
+
+        const stageId = parsed.id || uid()
+        delete parsed.id
+
+        if (!isStageLayout(parsed)) return
+
+        const data: StageLayout = {
+            ...parsed,
+            name: parsed.name || "",
+            settings: parsed.settings || {},
+            items: parsed.items || {},
+            modified: Date.now()
+        }
+
+        history({ id: "UPDATE", newData: { data }, oldData: { id: stageId }, location: { page: "stage", id: "stage" } })
+        imported++
+    })
+
+    if (!imported) {
+        newToast("error.import")
+        return
+    }
+
+    if (get(activePopup)) {
+        alertMessage.set("actions.imported")
+        activePopup.set("alert")
+    } else {
+        newToast("actions.imported")
+    }
+
+    function isStageLayout(value: any): value is StageLayout {
+        return !!value && typeof value === "object" && !!value.settings && !!value.items && typeof value.items === "object"
+    }
+}
+
 /// //
 
 export function importFromClipboard() {
@@ -176,6 +253,11 @@ export function fixShowIssues(show: Show) {
 
     Object.keys(show.slides).forEach((slideId: string) => {
         const slide = show.slides[slideId]
+        if (typeof slide !== "object") {
+            // something is wrong
+            delete show.slides[slideId]
+            return
+        }
 
         // remove if unused
         if (!allUsedSlides.includes(slideId) && slide.group === null) {

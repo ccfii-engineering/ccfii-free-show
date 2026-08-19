@@ -33,7 +33,11 @@
     let thumbnailInterval: any = null
     let frameReceived = true
     $: if (draw && !thumbnailInterval) thumbnailInterval = setInterval(requestThumbnail, 800)
-    else if (thumbnailInterval) clearInterval(thumbnailInterval)
+    else if (thumbnailInterval) {
+        clearInterval(thumbnailInterval)
+        thumbnailInterval = null
+    }
+
     function requestThumbnail() {
         if (!outputId || !frameReceived) return
         frameReceived = false
@@ -105,9 +109,11 @@
         else if (["ArrowLeft", "PageUp"].includes(e.key)) sendAction("previous")
         else if (e.key === "Escape") sendAction("clear")
     }
+
+    let windowHeight: number = 0
 </script>
 
-<svelte:window on:keydown={keydown} on:mouseup={mouseup} on:touchend={mouseup} on:mousemove={mousemove} on:touchmove={mousemove} />
+<svelte:window bind:innerHeight={windowHeight} on:keydown={keydown} on:mouseup={mouseup} on:touchend={mouseup} on:mousemove={mousemove} on:touchmove={mousemove} />
 
 {#if draw}
     <div class="draw">
@@ -149,14 +155,22 @@
     </div>
 {/if}
 
-<div class="toggles">
-    <button on:click={() => (draw = false)} class="noright" style={draw ? "background-color: var(--primary-darker);" : ""}>
-        <Icon id="pad" size={2.5} white={draw === true} />
-    </button>
-    <button on:click={() => (draw = true)} class="noleft" style={draw ? "" : "background-color: var(--primary-darker);"}>
-        <Icon id="draw" size={2.5} white={draw === false} />
-    </button>
-</div>
+{#if windowHeight < 300}
+    <div class="toggle-single">
+        <button on:click={() => (draw = !draw)} title="Toggle draw mode">
+            <Icon id={draw ? "pad" : "draw"} size={2} white />
+        </button>
+    </div>
+{:else}
+    <div class="toggles">
+        <button on:click={() => (draw = false)} class="noright" style={draw ? "background-color: var(--primary-darker);" : ""}>
+            <Icon id="pad" size={2.5} white={draw === true} />
+        </button>
+        <button on:click={() => (draw = true)} class="noleft" style={draw ? "" : "background-color: var(--primary-darker);"}>
+            <Icon id="draw" size={2.5} white={draw === false} />
+        </button>
+    </div>
+{/if}
 
 <style>
     :global(*) {
@@ -211,6 +225,23 @@
     }
 
     /* toggle */
+    .toggle-single {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        z-index: 10;
+    }
+    .toggle-single button {
+        width: 35px;
+        height: 35px;
+        padding: 5px;
+        border-radius: 5px;
+        background-color: var(--primary-darkest);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
     .toggles {
         position: absolute;
         bottom: 50px;
@@ -306,27 +337,72 @@
             /* width: 55vh; */
         }
     }
-    /* (orientation: landscape) */
-    @media (min-width: 600px) and (max-height: 700px) {
+    @media (max-height: 700px) {
         .controller {
             top: 45%;
-            height: 70vh;
-            width: 70vh;
+            height: 75vmin;
+            width: 75vmin;
+        }
+        .controller :global(svg) {
+            width: 2.5rem !important;
+            height: 2.5rem !important;
+            min-width: 2.5rem !important;
         }
         .draw {
             top: 45%;
         }
         .pad {
-            height: 45vh;
-            /* width: 65vh; */
+            height: 40vh;
         }
         .toggles {
             bottom: 20px;
-            height: 30px;
-            width: 60vw;
+            height: 35px;
+            width: 80vw;
+        }
+        .toggles button,
+        select {
+            padding: 5px;
+            font-size: 0.7em;
         }
         .toggles :global(svg) {
             height: 1.5rem;
+            width: 1.5rem !important;
+            min-width: 1.5rem !important;
+        }
+    }
+
+    /* (orientation: landscape) for wider devices */
+    @media (min-width: 600px) and (max-height: 700px) {
+        .controller {
+            height: 70vmin;
+            width: 70vmin;
+        }
+        .controller :global(svg) {
+            width: 3.5rem !important;
+            height: 3.5rem !important;
+            min-width: 3.5rem !important;
+        }
+        .pad {
+            height: 45vh;
+        }
+        .toggles {
+            width: 60vw;
+        }
+    }
+
+    @media (max-height: 299px) {
+        .controller {
+            top: 50%;
+            height: 85vmin;
+            width: 85vmin;
+        }
+        .controller :global(svg) {
+            width: 3rem !important;
+            height: 3rem !important;
+            min-width: 3rem !important;
+        }
+        .draw {
+            top: 50%;
         }
     }
 

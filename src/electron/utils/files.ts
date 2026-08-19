@@ -78,6 +78,15 @@ export function deleteFolder(filePath: string) {
     }
 }
 
+export function deleteFolderAsync(filePath: string) {
+    return new Promise<void>((resolve) => {
+        fs.rm(filePath, { recursive: true, force: true }, (err) => {
+            if (err) actionComplete(err, "Error when deleting folder")
+            resolve()
+        })
+    })
+}
+
 export function doesPathExistAsync(filePath: string): Promise<boolean> {
     return new Promise((resolve) => {
         fs.access(filePath, (err) => {
@@ -130,6 +139,14 @@ export function readFolderAsync(filePath: string): Promise<string[]> {
             resolve(err ? [] : files)
         })
     )
+}
+
+export function sanitizeFileName(name: string) {
+    if (!name || typeof name !== "string") return ""
+
+    name = name.replace(/[<>:"/\\|?*\x00-\x1F]/g, "")
+    name = name.replace(/\s+/g, " ").trim()
+    return name.replace(/[.\s]+$/g, "")
 }
 
 async function readFolderWithTypesAsync(folderPath: string): Promise<fs.Dirent[]> {
@@ -1013,7 +1030,7 @@ export async function locateMediaFile({ filePath, folders }: { filePath: string;
 }
 
 // poolLimit = number of concurrent promises
-async function asyncPool<T>(poolLimit: number, array: T[], iteratorFn: (item: T) => Promise<void>) {
+export async function asyncPool<T>(poolLimit: number, array: T[], iteratorFn: (item: T) => Promise<void>) {
     const ret: Promise<void>[] = []
     const executing: Promise<void>[] = []
 
@@ -1357,12 +1374,15 @@ export function parseJSON(jsonData: string) {
 }
 
 // load shows by id (used for show export)
-export function getShowsFromIds(showIds: string[]) {
+export function getShowsFromIds(showIds: string[], projectItems?: any[]) {
     const shows: Show[] = []
     const cachedShows = getStore("SHOWS")
     const showsPath = getDataFolderPath("shows")
 
     showIds.forEach((id) => {
+        const projectItem = projectItems?.find((item) => item.id === id)
+        if (projectItem?.type && projectItem.type !== "show") return
+
         const cachedShow = cachedShows[id]
         if (!cachedShow) return
 

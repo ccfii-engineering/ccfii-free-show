@@ -1,72 +1,69 @@
-import { type Block, Decoder, type StateAndTagData } from "ebml"
+import { MessageChannelMain } from "electron"
 import type { Message } from "../../types/Socket"
 import { processAudio } from "./processAudio"
 
-// let channelCount = 2
-// let sampleRate = 48000 // Hz
-// let audioDelay = 0
+let latestIcecastConfig: any = null
+const activeAudioPorts = new Set<any>()
 
 export function receiveAudio(_e: Electron.IpcMainEvent, msg: Message) {
-    switch (msg.channel) {
-        case "CAPTURE":
-            if (!msg.data?.buffer) {
-                console.error("Received invalid audio data")
-                return
-            }
-            if (!Number.isFinite(msg.data.buffer.byteLength)) {
-                console.error("Received audio buffer with invalid length")
-                return
-            }
+    const data = msg.data
 
-            // if (msg.data.channels) channelCount = msg.data.channels
-            // if (msg.data.sampleRate) sampleRate = msg.data.sampleRate
-            // if (msg.data.audioDelay) audioDelay = msg.data.audioDelay
+    if (msg.channel === "RESET_DECODER") return
 
-            const decoder = createDecoder(msg.data.id)
-            decoder.write(Buffer.from(msg.data.buffer))
-            break
-        default:
-            console.error("Unknown AUDIO channel:", msg.channel)
-            break
+    if (msg.channel === "INIT_PORT") {
+        const { port1, port2 } = new MessageChannelMain()
+        activeAudioPorts.add(port1)
+
+        port1.on("message", (msgEvent) => {
+            const { channel, payload } = msgEvent.data || {}
+            if (channel === "AUDIO" && payload) {
+                const input = toAudioBuffer(payload.buffer)
+                if (!input || input.length === 0) return
+
+                if (payload.icecast) latestIcecastConfig = payload.icecast
+                const sampleRate = Number(payload.sampleRate) || 48000
+                const targetId = payload.id ? String(payload.id) : undefined
+                processAudio(input, sampleRate, targetId, latestIcecastConfig)
+            }
+        })
+
+        port1.on("close", () => {
+            activeAudioPorts.delete(port1)
+        })
+
+        port1.start()
+
+        if (_e.sender && !_e.sender.isDestroyed()) {
+            _e.sender.postMessage("AUDIO_PORT", { targetId: data?.id }, [port2])
+        }
+        return
     }
+
+    if (msg.channel !== "PCM" && msg.channel !== "CAPTURE") {
+        console.error("Unknown AUDIO channel:", msg.channel)
+        return
+    }
+
+    const input = toAudioBuffer(data?.buffer)
+    if (!input || input.length === 0) return
+
+    if (data?.icecast) latestIcecastConfig = data.icecast
+    const sampleRate = Number(data?.sampleRate) || 48000
+    const targetId = data?.id ? String(data.id) : undefined
+    processAudio(input, sampleRate, targetId, latestIcecastConfig)
 }
 
-const ebmlDecoders = new Map<string, Decoder>()
-let previousDataId = ""
-let newIdTimeout: NodeJS.Timeout | null = null
-let timeoutId = ""
-function createDecoder(id: string) {
-    if (ebmlDecoders.has(id)) return ebmlDecoders.get(id)!
-    previousDataId = id
+function toAudioBuffer(value: unknown): Buffer | null {
+    if (!value) return null
+    if (Buffer.isBuffer(value)) return value
+    if (value instanceof Uint8Array) return Buffer.from(value.buffer, value.byteOffset, value.byteLength)
+    if (value instanceof ArrayBuffer) return Buffer.from(value)
+    if (ArrayBuffer.isView(value)) return Buffer.from(value.buffer, value.byteOffset, value.byteLength)
 
-    const decoder = new Decoder()
-    ebmlDecoders.set(id, decoder)
+    const serialized = value as { type?: unknown; data?: unknown }
+    if (serialized?.type === "Buffer" && Array.isArray(serialized.data)) {
+        return Buffer.from(serialized.data as number[])
+    }
 
-    decoder.on("data", ([blockType, data]: StateAndTagData) => {
-        if (timeoutId === id) return
-        if (blockType !== "tag" || data.name !== "SimpleBlock" || data.type !== "b") return
-
-        const block = data as Block
-        if (!block.payload || (timeoutId && new Set(block.payload).size < 4)) return
-
-        // audio from both video (output) and main does not combine well
-        // this will ensure only one "input" is allowed at once
-        if (newIdTimeout) {
-            timeoutId = ""
-            clearTimeout(newIdTimeout)
-        }
-        if (previousDataId !== id) {
-            timeoutId = id
-            newIdTimeout = setTimeout(() => {
-                timeoutId = ""
-                previousDataId = id
-            }, 100)
-            return
-        }
-
-        // { channelCount, sampleRate, audioDelay }
-        processAudio(block.payload)
-    })
-
-    return decoder
+    return null
 }

@@ -1,6 +1,6 @@
 <script lang="ts">
     import { createEventDispatcher } from "svelte"
-    import { actionRevealUsed, actions, activePopup, audioPlaylists, audioStreams, categories, effects, emitters, outputs, overlays, popupData, projects, shows, stageShows, styles, templates, timers, triggers, variables } from "../../stores"
+    import { actionRevealUsed, actions, activePopup, audioPlaylists, audioStreams, categories, effects, emitters, obsData, outputs, overlays, popupData, projects, shows, stageShows, styles, templates, timers, variables } from "../../stores"
     import { translateText } from "../../utils/language"
     import { formatSearch } from "../../utils/search"
     import Icon from "../helpers/Icon.svelte"
@@ -21,6 +21,7 @@
     import { actionData } from "./actionData"
     import { getActionTriggerId } from "./actions"
     import { API_ACTIONS } from "./api"
+    import { spotifyState } from "../output/preview/SpotifyManager"
 
     export let list = false
     export let full = false
@@ -50,11 +51,11 @@
         "start_audio_stream",
         "start_playlist",
         "start_metronome",
+        "id_start_timer",
         "start_slide_timers",
         "stop_timers",
         "change_output_style",
         "change_stage_output_layout",
-        "start_trigger",
         "send_midi",
         "run_action"
     ]
@@ -69,6 +70,9 @@
     if (mode !== "slide") removeActions.push("start_slide_timers")
 
     let usedSections: string[] = []
+
+    const obsEnabled = !!$obsData.enabled
+    const spotifyEnabled = !!$spotifyState
 
     let previousSection = ""
     $: ACTIONS = [
@@ -94,7 +98,11 @@
                 // don't display GET actions
                 if (id.includes("get_")) return false
 
-                // WIP MIDI multiple of the same (needs a new way of setting the id)
+                // remove any OBS ones if not enabled
+                if (id.startsWith("obs_") && !obsEnabled) return false
+                // remove any Spotify ones if not active
+                if (id.startsWith("spotify_") && !spotifyEnabled) return false
+
                 // show if it has an input (because you probably want to have multiple)
                 // if (actionData[actionId]?.input) return true
                 // remove already added or custom ones
@@ -195,10 +203,9 @@
         if (id === "start_playlist") return getName($audioPlaylists)
         if (id === "id_select_overlay" || id === "clear_overlay") return getName($overlays)
         if (id === "emit_action") return $emitters[actionValue.emitter]?.name || ""
-        if (id === "start_trigger") return getName($triggers)
         if (id === "run_action" || id === "toggle_action") return getName($actions)
         if (id === "id_start_effect") return getName($effects)
-        if (id === "start_show") return getName($shows)
+        if (id === "start_show" || id === "id_select_show") return getName($shows)
         if (id === "id_select_project") return getName($projects)
         if (id === "set_template") return getName($templates)
         if (id === "toggle_output") return getName($outputs)
@@ -207,6 +214,7 @@
         if (id === "wait") return Number(actionValue.number) + "s"
         if (id === "id_select_group") return getGlobalGroupName(actionValue.id)
         if (id === "start_camera") return actionValue.label || ""
+        if (id === "start_microphone" || id === "stop_microphone") return actionValue.name || ""
         if (id === "start_screen") return actionValue.name || ""
         if (id === "change_volume") return ((actionValue.volume || 1) * 100).toString()
         if (id.includes("index")) return actionValue.index || "0"

@@ -1,8 +1,11 @@
 <script lang="ts">
+    import { resetAudioRouting } from "../../audio/routing/audioRoutingInit"
     import { dictionary, settingsTab } from "../../stores"
     import { translateText } from "../../utils/language"
     import Icon from "../helpers/Icon.svelte"
     import MaterialButton from "../inputs/MaterialButton.svelte"
+    import Tip from "../main/Tip.svelte"
+    import AudioRouting from "./tabs/AudioRouting.svelte"
     import Connection from "./tabs/Connection.svelte"
     import Files from "./tabs/Files.svelte"
     import FilesButtons from "./tabs/FilesButtons.svelte"
@@ -13,8 +16,10 @@
     import OutputsGeneral from "./tabs/OutputsGeneral.svelte"
     import OutputsTabs from "./tabs/OutputsTabs.svelte"
     import Profiles from "./tabs/Profiles.svelte"
+    import ProfilesButtons from "./tabs/ProfilesButtons.svelte"
     import ProfilesTabs from "./tabs/ProfilesTabs.svelte"
     import Styles from "./tabs/Styles.svelte"
+    import StylesButtons from "./tabs/StylesButtons.svelte"
     import StylesTabs from "./tabs/StylesTabs.svelte"
     import Theme from "./tabs/Theme.svelte"
     import ThemeButtons from "./tabs/ThemeButtons.svelte"
@@ -43,10 +48,16 @@
 
         <div style="display: flex;align-items: center;gap: 8px;">
             {#if hints[tabId]}
-                <p class="hint">{translateText(hints[tabId])}</p>
+                <Tip type="info" value={translateText(hints[tabId])} style="opacity: 0.7;" hiddenText white />
             {/if}
 
-            {#if tabId === "theme"}
+            {#if tabId === "styles"}
+                <StylesButtons />
+            {:else if tabId === "audio"}
+                <MaterialButton title="actions.reset" icon="reset" on:click={resetAudioRouting} />
+            {:else if tabId === "profiles"}
+                <ProfilesButtons />
+            {:else if tabId === "theme"}
                 <ThemeButtons />
             {:else if tabId === "display_settings"}
                 <MaterialButton title="create_show.more_options" on:click={() => (showMore = !showMore)}>
@@ -56,7 +67,7 @@
         </div>
     </div>
 
-    <div class="scroll" on:scroll={scroll}>
+    <div class="scroll" style={tabId === "audio" ? "--padding: 20px;" : ""} on:scroll={scroll}>
         {#if tabId === "general"}
             <General />
         {:else if tabId === "display_settings"}
@@ -67,6 +78,8 @@
             {/if}
         {:else if tabId === "styles"}
             <Styles />
+        {:else if tabId === "audio"}
+            <AudioRouting />
         {:else if tabId === "connection"}
             <Connection />
         {:else if tabId === "files"}
@@ -127,18 +140,6 @@
 
         overflow: visible;
         margin-right: 20px;
-    }
-
-    .hint {
-        font-style: italic;
-        font-size: 0.8em;
-        opacity: 0.4;
-
-        white-space: initial;
-
-        text-align: right;
-        max-width: 300px;
-        /* align-self: flex-end; */
     }
 
     .scroll {

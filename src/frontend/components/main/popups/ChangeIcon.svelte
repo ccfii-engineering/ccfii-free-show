@@ -14,7 +14,9 @@
         slide_icon: (icon: string, path: string) => addItem("icon", icon, path ? { path } : { color: customIconsColors[icon] })
     }
 
-    $: colors = $selected.id === "slide_icon"
+    const boxed = $selected.id !== "slide_icon"
+    const active = $selected.id === "slide_icon" ? "" : $selected.data?.[0] || ""
+    const activeIcon = $selected.id === "category_shows" ? $categories[active]?.icon : $selected.id === "category_overlays" ? $overlayCategories[active]?.icon : $selected.id === "category_templates" ? $templateCategories[active]?.icon : ""
 
     const changeIcon = (a: any, icon: string) => {
         $selected.data.forEach((b) => {
@@ -38,14 +40,15 @@
     }
 </script>
 
-<MaterialButton class="popup-options" icon="edit" iconSize={1.1} title="create_show.more_options" on:click={manageIcons} white />
+<MaterialButton class="popup-options" icon="edit" iconSize={1.1} title="menu.edit" on:click={manageIcons} white />
 
-<div class="grid">
+<div class="grid" style={boxed ? "gap: 8px;" : ""}>
     {#each filteredIcons as icon}
-        {@const color = colors && customIconsColors[icon] ? "color: " + customIconsColors[icon] : ""}
-        <MaterialButton style="padding: 8px;" on:click={() => click(icon)}>
-            <Icon id={icon} size={2} custom white style={color} />
-        </MaterialButton>
+        {#if !boxed || icon !== "empty"}
+            <MaterialButton style="padding: {boxed ? 0 : 6}px;{boxed ? '' : 'border: 1px solid var(--focus);'}" showOutline={activeIcon === icon} title={icon[0].toUpperCase() + icon.slice(1).replaceAll("_", " ")} on:click={() => click(icon)}>
+                <Icon id={icon} size={2} custom white color={customIconsColors[icon]} {boxed} />
+            </MaterialButton>
+        {/if}
     {/each}
 </div>
 

@@ -6,6 +6,7 @@
     import { itemBoxes, setBoxInputValue } from "../../edit/values/boxes"
     import { clone } from "../../helpers/array"
     import { history } from "../../helpers/history"
+    import { getCustomMetadata } from "../../helpers/show"
     import { getStyles } from "../../helpers/style"
     import { updateStageShow } from "../stage"
     import { slideTextSections } from "../values/text"
@@ -32,6 +33,22 @@
     $: if (item?.type === "text" && stageSections) {
         delete stageSections.chords
         delete stageSections.scrolling
+
+        // item background flash
+        if (stageSections.special) {
+            const flashEnabled = !!item.flash?.enabled
+            stageSections.special = {
+                ...stageSections.special,
+                inputs: [
+                    ...stageSections.special.inputs,
+                    [{ id: "flash.enabled", type: "checkbox", value: flashEnabled, values: { label: "timer.flash" } }],
+                    [
+                        { id: "flash.color", type: "color", value: item.flash?.color || "#FF0000", hidden: !flashEnabled, values: { label: "edit.color" } },
+                        { id: "flash.count", type: "number", value: item.flash?.count ?? 3, hidden: !flashEnabled, values: { label: "edit.count", min: 1, max: 20 } }
+                    ]
+                ]
+            }
+        }
     }
     $: if (isSlideText) {
         stageSections = clone(item?.keepStyle ? { default: slideTextSections.default, chords: slideTextSections.chords, special: slideTextSections.special } : slideTextSections)
@@ -86,8 +103,24 @@
     $: if (item?.type === "slide_tracker" || activeItemId?.includes("tracker")) {
         setBoxInputValue(stageSections, "default", "tracker.accent", "value", item?.tracker?.accent || $themes[$theme]?.colors?.secondary || "#F0008C")
 
+        const metadataLabelMap: Record<string, string> = {
+            number: "meta.number",
+            title: "meta.title",
+            artist: "meta.artist",
+            author: "meta.author",
+            composer: "meta.composer",
+            publisher: "meta.publisher",
+            copyright: "meta.copyright",
+            CCLI: "meta.CCLI",
+            year: "meta.year",
+            key: "meta.key"
+        }
+        const metadataOptions = [{ value: "name", label: "show.name" }, ...Object.keys(getCustomMetadata()).map((key) => ({ value: key, label: metadataLabelMap[key] || key }))]
+        setBoxInputValue(stageSections, "default", "tracker.projectMetadata", "options", metadataOptions)
+
         setBoxInputValue(stageSections, "default", "tracker.childProgress", "hidden", item?.tracker?.type !== "group")
         setBoxInputValue(stageSections, "default", "tracker.oneLetter", "hidden", item?.tracker?.type !== "group")
+        setBoxInputValue(stageSections, "default", "tracker.projectMetadata", "hidden", item?.tracker?.type !== "project")
     }
 
     $: if (item?.type === "camera") {
@@ -102,11 +135,14 @@
     $: if (item?.type === "clock" && item) {
         const clockType = item.clock?.type || "digital"
         const dateFormat = item.clock?.dateFormat || "none"
+        const customFormat = item.clock?.customFormat || ""
+        const showOffsetDays = clockType === "custom" && /[MDY]/.test(customFormat) // has M or D or Y
 
         setBoxInputValue(stageSections, "default", "clock.dateFormat", "hidden", clockType !== "digital")
         setBoxInputValue(stageSections, "default", "clock.showTime", "hidden", clockType !== "digital" || dateFormat === "none")
         setBoxInputValue(stageSections, "default", "clock.seconds", "hidden", clockType === "custom" || (clockType === "digital" && item.clock?.showTime === false && dateFormat !== "none"))
         setBoxInputValue(stageSections, "default", "clock.customFormat", "hidden", clockType !== "custom")
+        setBoxInputValue(stageSections, "default", "clock.offsetDays", "hidden", !showOffsetDays)
 
         // show seconds by default on stage
         setBoxInputValue(stageSections, "default", "clock.seconds", "value", true)
@@ -120,7 +156,11 @@
         if (input.id.includes(".")) {
             let splitted = input.id.split(".")
             input.id = splitted[0]
-            let newValue = item?.[input.id] || {}
+
+            let newValue = item?.[input.id]
+            if (typeof newValue !== "object" || newValue === null) newValue = {}
+            else newValue = clone(newValue)
+
             newValue[splitted[1]] = value
             value = newValue
         }

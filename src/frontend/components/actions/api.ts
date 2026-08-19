@@ -3,23 +3,28 @@ import type { MidiValues, TransitionType } from "../../../types/Show"
 import { clearAudio } from "../../audio/audioFading"
 import { AudioPlayer } from "../../audio/audioPlayer"
 import { AudioPlaylist } from "../../audio/audioPlaylist"
+import { AudioMicrophone } from "../../audio/audioMicrophone"
 import { markItemsAsPlayed } from "../../converters/project"
 import { convertText } from "../../converters/txt"
 import { sendMain } from "../../IPC/main"
 import { slideTimelineSpeedMultiplier } from "../../stores"
 import { transposeText } from "../../utils/chordTranspose"
 import { triggerFunction } from "../../utils/common"
+import { obsSetScene, obsStartLivestream, obsStartRecording, obsStopLivestream, obsStopRecording } from "../../utils/obsTalk"
 import { togglePlayingMedia } from "../../utils/shortcuts"
 import { contentProviderSync } from "../../utils/startup"
 import { updateTransition } from "../../utils/transitions"
 import { startMetronome } from "../drawer/audio/metronome"
+import { getInteraction, startInteraction, stopInteraction } from "../drawer/pages/interactions"
 import { pauseAllTimers } from "../drawer/timers/timers"
 import { getSlideThumbnail, getThumbnail } from "../helpers/media"
-import { changeStageOutputLayout, startCamera, startScreen, toggleOutput, toggleOutputs } from "../helpers/output"
-import { activateTriggerSync, changeOutputStyle, nextSlideIndividual, playSlideTimers, previousSlideIndividual, randomSlide, replaceDynamicValues, selectProjectShow, sendMidi, startShowSync } from "../helpers/showActions"
+import { changeStageOutputLayout, startCamera, startRtmpStreaming, startScreen, startStreaming, stopRtmpStreaming, stopStreaming, toggleOutputs } from "../helpers/output"
+import { OutputHelper } from "../helpers/OutputHelper"
+import { changeOutputStyle, playSlideTimers, randomSlide, replaceDynamicValues, selectProjectShow, sendMidi, startShowSync } from "../helpers/showActions"
 import { startTimerById, startTimerByName, stopTimers } from "../helpers/timerTick"
 import { muteOutput, unmuteOutput } from "../helpers/video"
 import { clearAll, clearBackground, clearDrawing, clearOverlay, clearOverlays, clearSlide, clearTimers, restoreOutput } from "../output/clear"
+import { fadePause, skipNext, skipPrev, spotifyPause, spotifyPlay } from "../output/preview/SpotifyManager"
 import { formatText } from "../show/formatTextEditor"
 import { getPlainEditorText } from "../show/getTextEditor"
 import { pauseTimeline, setTimelineTime, startTimeline, stopTimeline } from "../timeline/TimelinePlayback"
@@ -58,6 +63,7 @@ import {
     selectProjectById,
     selectProjectByIndex,
     selectProjectByName,
+    selectShowById,
     selectShowByName,
     selectSlideByIndex,
     selectSlideByName,
@@ -65,10 +71,12 @@ import {
     setShowAPI,
     setTemplate,
     startPlaylistByName,
+    startProjectItemByName,
     startScripture,
     stopAudio,
     stopTimerById,
     stopTimerByName,
+    timerSeekAdd,
     timerSeekTo,
     toggleLock,
     toggleLogSongUsage,
@@ -128,6 +136,7 @@ export type API_output_style = { outputId?: string; styleId?: string }
 export type API_output_lock = { value?: boolean; outputId?: string }
 export type API_camera = { name?: string; id: string; groupId?: string }
 export type API_screen = { name?: string; id: string }
+export type API_microphone = { name?: string; id: string }
 export type API_dynamic_value = { value: string; ref?: any }
 export type API_draw_zoom = { size?: number; x?: number; y?: number }
 export type API_edit_timer = { id: string; key: string; value: any }
@@ -158,9 +167,6 @@ export type API_metronome = {
     metadataBPM?: boolean // only used by actions
     tempo?: number
     beats?: number
-    volume?: number
-    // notesPerBeat?: number
-    audioOutput?: string
 }
 export type API_rest_command = {
     url: string
@@ -200,9 +206,11 @@ export const API_ACTIONS = {
     next_project_item: () => selectProjectShow("next"), // BC
     previous_project_item: () => selectProjectShow("previous"), // BC
     index_select_project_item: (data: API_index) => selectProjectShow(data.index), // BC
+    name_start_project_item: (data: API_strval) => startProjectItemByName(data.value),
     mark_active_as_played: (data: API_toggle_specific) => markItemsAsPlayed("active", data.value),
 
     // SHOWS
+    id_select_show: (data: API_id) => selectShowById(data.id),
     name_select_show: (data: API_strval) => selectShowByName(data.value), // BC
     start_show: (data: API_id) => startShowSync(data.id),
     change_layout: (data: API_layout) => changeShowLayout(data),
@@ -217,8 +225,8 @@ export const API_ACTIONS = {
     transpose_show_down: (data: API_id) => formatText(transposeText(getPlainEditorText(data.id), -1), data.id),
 
     // PRESENTATION
-    next_slide: () => nextSlideIndividual({ key: "ArrowRight" }), // BC
-    previous_slide: () => previousSlideIndividual({ key: "ArrowLeft" }), // BC
+    next_slide: () => OutputHelper.advanceOutputs("next"), // BC
+    previous_slide: () => OutputHelper.advanceOutputs("previous"), // BC
     random_slide: () => randomSlide(),
     index_select_slide: (data: API_slide_index) => selectSlideByIndex(data), // BC
     name_select_slide: (data: API_strval) => selectSlideByName(data.value), // BC
@@ -258,9 +266,13 @@ export const API_ACTIONS = {
     scripture_previous: () => triggerFunction("scripture_previous"), // BC
 
     // OUTPUT
+    start_webrtc_stream: (data: API_id_optional) => startStreaming(data.id),
+    stop_webrtc_stream: (data: API_id_optional) => stopStreaming(data.id),
+    start_rtmp_stream: (data: API_id_optional) => startRtmpStreaming(data.id),
+    stop_rtmp_stream: (data: API_id_optional) => stopRtmpStreaming(data.id),
     lock_output: (data: API_output_lock) => toggleLock(data), // BC
-    toggle_output_windows: () => toggleOutputs(), // BC
-    toggle_output: (data: API_id) => toggleOutput(data.id),
+    toggle_output_windows: (data: API_toggle_specific = {}) => toggleOutputs(null, { state: data.value }), // BC
+    toggle_output: (data: API_toggle) => toggleOutputs([data.id], { state: data.value }),
     id_select_output_style: (data: API_id) => changeOutputStyle({ styleId: data.id }), // BC
     change_output_style: (data: API_output_style) => changeOutputStyle(data),
     change_stage_output_layout: (data: API_stage_output_layout) => changeStageOutputLayout(data),
@@ -283,6 +295,8 @@ export const API_ACTIONS = {
     playlist_next: () => AudioPlaylist.next(), // BC
     start_metronome: (data: API_metronome) => startMetronome(data),
     start_audio_effect: (data: API_media) => playAudio(data),
+    start_microphone: (data: API_microphone) => AudioMicrophone.start(data.id, { name: data.name || "" }),
+    stop_microphone: (data: API_microphone) => AudioMicrophone.stop(data.id),
 
     // TIMERS
     // control timer time
@@ -292,6 +306,7 @@ export const API_ACTIONS = {
     pause_timers: () => pauseAllTimers(), // BC
     stop_timers: () => stopTimers(), // BC
     timer_seekto: (data: API_seek) => timerSeekTo(data), // BC
+    timer_seek_add: (data: API_seek) => timerSeekAdd(data),
     edit_timer: (data: API_edit_timer) => editTimer(data),
     id_pause_timer: (data: API_id) => pauseTimerById(data.id),
     name_pause_timer: (data: API_strval) => pauseTimerByName(data.value),
@@ -306,7 +321,6 @@ export const API_ACTIONS = {
 
     // FUNCTIONS
     change_variable: (data: API_variable) => changeVariable(data), // BC
-    start_trigger: (data: API_id) => activateTriggerSync(data.id),
 
     // DRAW
     change_draw_zoom: (data: API_draw_zoom) => changeDrawZoom(data),
@@ -320,12 +334,32 @@ export const API_ACTIONS = {
     send_rest_command: (data: API_rest_command) => sendRestCommandSync(data), // DEPRECATED, use emit_action instead
     emit_action: (data: API_emitter) => emitData(data),
 
+    // Interactions
+    interaction_start: (data: API_id) => startInteraction(data.id),
+    interaction_stop: (data: API_id) => stopInteraction(data.id),
+    interaction_next: (data: API_id) => getInteraction(data.id)?.next(),
+    interaction_previous: (data: API_id) => getInteraction(data.id)?.previous(),
+
+    // OBS Studio
+    obs_set_scene: (data: API_id) => obsSetScene(data.id),
+    obs_start_livestream: () => obsStartLivestream(),
+    obs_stop_livestream: () => obsStopLivestream(),
+    obs_start_recording: () => obsStartRecording(),
+    obs_stop_recording: () => obsStopRecording(),
+
+    // Spotify
+    spotify_play: () => spotifyPlay(),
+    spotify_pause: () => spotifyPause(),
+    spotify_fade_out: () => fadePause(),
+    spotify_next: () => skipNext(),
+    spotify_previous: () => skipPrev(),
+
     // OTHER
     toggle_log_song_usage: (data: API_toggle_specific) => toggleLogSongUsage(data),
 
     // ACTION
-    name_run_action: (data: API_strval) => runActionByName(data.value), // BC
-    run_action: (data: API_id) => runActionId(data.id), // BC
+    name_run_action: (data: API_strval) => runActionByName(data.value, "api"), // BC
+    run_action: (data: API_id) => runActionId(data.id, "api"), // BC
     toggle_action: (data: API_toggle) => toggleAction(data),
 
     // ADD
@@ -400,7 +434,3 @@ export async function triggerAction(data: API) {
 
     sendMain(Main.API_TRIGGER, { ...data, returnId, data: returnData })
 }
-
-// export function sendDataAPI(data: any) {
-//     send("API_DATA", data)
-// }

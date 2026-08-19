@@ -1,6 +1,6 @@
 import { get } from "svelte/store"
 import { uid } from "uid"
-import { actionHistory, actions, audioPlaylists, audioStreams, runningActions, shows, stageShows, styles, triggers } from "../../stores"
+import { actionHistory, actions, audioPlaylists, audioStreams, runningActions, shows, stageShows, styles } from "../../stores"
 import { newToast, wait } from "../../utils/common"
 import { getShowBPM } from "../drawer/audio/metronome"
 import { getDynamicValue } from "../edit/scripts/itemHelpers"
@@ -15,19 +15,20 @@ import { API_ACTIONS } from "./api"
 import { sortByClosestMatch } from "./apiHelper"
 import { convertOldMidiToNewAction } from "./midi"
 
-export function runActionId(id: string) {
-    runAction(get(actions)[id])
+export function runActionId(id: string, source = "action") {
+    runAction(get(actions)[id], { source })
 }
 
-export function runActionByName(name: string) {
+export function runActionByName(name: string, source = "action") {
     if (name.includes("{")) name = getDynamicValue(name)
     const sortedActions = sortByClosestMatch(keysToID(get(actions)), name)
     if (!sortedActions.length) return
-    runAction(sortedActions[0])
+    runAction(sortedActions[0], { source })
 }
 
+const MAX_ACTION_HISTORY_ENTRIES = 200
 const loopPrevention = { actionId: "", count: 0, timeout: null as NodeJS.Timeout | null }
-export async function runAction(action, { midiIndex = -1, slideIndex = -1 } = {}, isCategoryAction = false) {
+export async function runAction(action, { midiIndex = -1, slideIndex = -1, source = "action" } = {}, isCategoryAction = false) {
     // console.log(action)
     if (!action) return
     action = convertOldMidiToNewAction(action)
@@ -104,7 +105,6 @@ export async function runAction(action, { midiIndex = -1, slideIndex = -1 } = {}
         API_ACTIONS[actionId](triggerData)
 
         // add to history
-        // WIP add source (Action/Event/Remote/API)
         actionHistory.update((a) => {
             const time = Date.now()
 
@@ -112,7 +112,7 @@ export async function runAction(action, { midiIndex = -1, slideIndex = -1 } = {}
             previous.count = 1
             previous.time = time
 
-            const data = { action: actionId, data: triggerData, time, count: 1 }
+            const data = { action: actionId, data: triggerData, time, count: 1, source }
             const matchingPrevious = JSON.stringify(previous) === JSON.stringify(data)
 
             if (matchingPrevious) {
@@ -120,6 +120,10 @@ export async function runAction(action, { midiIndex = -1, slideIndex = -1 } = {}
                 a[0].count++
             } else {
                 a.unshift(data)
+            }
+
+            if (a.length > MAX_ACTION_HISTORY_ENTRIES) {
+                a = a.slice(0, MAX_ACTION_HISTORY_ENTRIES)
             }
 
             return a
@@ -152,7 +156,7 @@ export function customActionActivation(id: string, specificActivation: any = nul
         if (action.customActivation !== id || action.enabled === false) return
         if (specificActivation && action.specificActivation?.includes(id) && (!action.specificActivation.split("__")[1] || action.specificActivation.split("__")[1] !== specificActivation)) return
 
-        runAction(action)
+        runAction(action, { source: "custom_activation" })
         actionTriggered = true
     })
 
@@ -210,7 +214,7 @@ export function getActionTriggerId(id: string) {
 const namedObjects = {
     run_action: () => get(actions),
     start_show: () => get(shows),
-    start_trigger: () => get(triggers),
+    id_select_show: () => get(shows),
     start_audio_stream: () => get(audioStreams),
     start_playlist: () => get(audioPlaylists),
     id_select_stage_layout: () => get(stageShows)

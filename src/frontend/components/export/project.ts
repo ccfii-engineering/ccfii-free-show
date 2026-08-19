@@ -12,6 +12,7 @@ import { clone } from "../helpers/array"
 import { loadShows } from "../helpers/setShow"
 import { formatToFileName } from "../helpers/show"
 import { _show } from "../helpers/shows"
+import { getMedia } from "../helpers/media"
 
 export async function exportProject(project: Project, projectId: string, savePath?: string) {
     if (!project) return
@@ -92,13 +93,14 @@ export async function exportProject(project: Project, projectId: string, savePat
         }
     }
 
-    const projectItems = project.shows
+    const projectItems = clone(project.shows || [])
+    projectItems.forEach((showRef) => delete showRef.played)
 
     // load shows
     const showIds = projectItems.filter((a) => (a.type || "show") === "show").map((a) => a.id)
     await loadShows(showIds)
 
-    projectItems.map(getItem)
+    projectItems.forEach(getItem)
 
     // remove duplicates
     files = [...new Set(files)]
@@ -110,19 +112,23 @@ export async function exportProject(project: Project, projectId: string, savePat
     if (Object.keys(actions).length) projectData.actions = actions
     const includeMediaFiles = get(special).projectIncludeMedia ?? true
     if (includeMediaFiles) {
-        projectData.files = files
-
+        const resolvedFiles: string[] = []
         const mediaData: any = {}
-        files.forEach((path) => {
-            if (!get(media)[path]) return
 
-            const data = clone(get(media)[path])
+        for (const path of files) {
+            const mediaObj = await getMedia(path)
+            const resolvedPath = mediaObj?.path || path
+            resolvedFiles.push(resolvedPath)
 
-            // delete data.info
-            delete data.creationTime // no need to transport this
+            const data = mediaObj?.data || clone(get(media)[path])
+            if (data) {
+                // delete data.info
+                delete data.creationTime // no need to transport this
+                mediaData[resolvedPath] = data
+            }
+        }
 
-            mediaData[path] = data
-        })
+        projectData.files = resolvedFiles
         if (Object.keys(mediaData).length) projectData.media = mediaData
     }
 
@@ -151,7 +157,7 @@ export async function exportProject(project: Project, projectId: string, savePat
         overlays[id] = clone(get(overlayStores)[id])
 
         // get media data from overlay "Media" items
-        get(overlayStores)[id].items.forEach((item) => {
+        get(overlayStores)[id].items?.forEach((item) => {
             if (item.type === "media" && item.src) {
                 getFile(item.src)
             }

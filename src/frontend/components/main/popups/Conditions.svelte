@@ -26,18 +26,19 @@
     let ref = getLayoutRef(showId)
     let slideId = ref[edit.slide || 0]?.id || ""
 
-    const isStage = !!obj.contextElem?.classList.contains("stage_item")
+    const stageElem = obj.contextElem?.classList.contains("stage_item") ? obj.contextElem : obj.contextElem?.closest(".stage_item")
+    const isStage = !!stageElem
     const isOverlay = edit.type === "overlay"
     const isTemplate = edit.type === "template"
 
-    let itemIndex = isStage ? $activeStage.items[0] : Number(edit.items[0] || 0)
+    let itemIndex = isStage ? stageElem.id || $activeStage.items[0] : Number(edit.items[0] || 0)
     let slide = isStage ? $stageShows[$activeStage.id || ""] : isOverlay ? $overlays[edit.id!] : isTemplate ? $templates[edit.id!] : $showsCache[showId]?.slides?.[slideId]
     let item = slide?.items[itemIndex]
     let itemText = getItemText(item)
 
     let conditions = item?.conditions || clone(DEFAULT_CONDITIONS)
 
-    const itemOptions = Object.entries(slide?.items)?.map(([a, i]) => ({ value: a, label: getItemText(i).slice(0, 30) || i.type, data: (isStage ? "" : Number(a) + 1).toString() }))
+    const itemOptions = Object.entries(slide?.items || {})?.map(([a, i]) => ({ value: a, label: getItemText(i).slice(0, 30) || i.type, data: (isStage ? "" : Number(a) + 1).toString() }))
     function updateItemIndex(e: any) {
         itemIndex = isStage ? e.detail : Number(e.detail)
         slide = isStage ? $stageShows[$activeStage.id || ""] : isOverlay ? $overlays[edit.id!] : isTemplate ? $templates[edit.id!] : $showsCache[showId]?.slides?.[slideId]
@@ -95,7 +96,7 @@
     }
 
     function updateItem() {
-        if (obj.contextElem?.classList.contains("stage_item")) {
+        if (isStage) {
             const stageId = $activeStage.id || ""
             stageShows.update((a) => {
                 if (!a[stageId]?.items[itemIndex]) return a
@@ -106,7 +107,7 @@
             return
         }
 
-        if (!obj.contextElem?.classList.contains("editItem")) return
+        if (!obj.contextElem?.classList.contains("editItem") && !obj.contextElem?.closest(".editItem")) return
         if (itemIndex === undefined) return
 
         if (isOverlay) {
@@ -181,13 +182,31 @@
         clipboard = clone(content)
     }
 
+    function pasteContent(a: number, b: number, c: number, d: number) {
+        if (!clipboard) return
+        if (!showItemValues[a]) showItemValues[a] = []
+        if (!showItemValues[a][b]) showItemValues[a][b] = []
+        if (!showItemValues[a][b][c]) showItemValues[a][b][c] = []
+
+        showItemValues[a][b][c][d] = clone(clipboard)
+
+        updateValue("showItem", showItemValues)
+    }
+
     $: OUTER_OR = showItemValues?.length ? showItemValues : [[]]
     // only show if multiple "outer and" (& it has content)
     // $: addMoreOuter = showItemValues?.length > 1 || showItemValues?.[0]?.length > 1 || (showItemValues?.[0]?.[0]?.[0]?.[0] && (showItemValues?.[0]?.[0]?.[0]?.[1] || showItemValues?.[0]?.[0]?.[1]?.[0]))
     $: addMoreOuter = showItemValues?.[0]?.length > 1 || showItemValues?.length > 1
 
     let conditionsUpdater = 0
-    const updaterInterval = setInterval(() => conditionsUpdater++, 2000)
+    let isMic = false
+    $: isMic = JSON.stringify(OUTER_OR || "").includes('"element":"volume"')
+
+    let updaterInterval: NodeJS.Timeout
+    $: {
+        clearInterval(updaterInterval)
+        updaterInterval = setInterval(() => conditionsUpdater++, isMic ? 100 : 2000)
+    }
     onDestroy(() => clearInterval(updaterInterval))
 
     $: currentItemText =
@@ -248,6 +267,10 @@
                                             </div>
                                             <div class="copy">
                                                 <MaterialButton variant="outlined" showOutline={JSON.stringify(CONTENT) === JSON.stringify(clipboard)} icon="copy" title="actions.copy" style="padding: 8px;border-radius: 50%;" on:click={() => copyContent(CONTENT)} />
+                                            </div>
+                                        {:else if clipboard}
+                                            <div class="delete paste">
+                                                <MaterialButton variant="outlined" icon="paste" title="actions.paste" style="padding: 8px;border-radius: 50%;" on:click={() => pasteContent(a, b, c, d)} />
                                             </div>
                                         {/if}
 

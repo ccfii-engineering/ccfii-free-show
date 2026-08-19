@@ -5,9 +5,11 @@
     import { triggerClickOnEnterSpace } from "../../utils/clickable"
     import { customIcons } from "../../values/customIcons"
     import icons from "../../values/icons"
-    import { hexToHSL, hslToHex } from "./color"
+    import { fadeColor, hexToHSL, hslToHex } from "./color"
 
     export let id: string
+    export let color: string = ""
+    export let title = ""
     export let size = 1
     export let white = false
     export let right = false
@@ -17,6 +19,7 @@
     export let selectData: Selected | null = null
     export let box = 24
     export let gradient = false
+    export let boxed = false
 
     const gradientId = `icon-gradient-${uid(5)}`
     export let gradientColor: string | null = null
@@ -29,12 +32,12 @@
 
     // smaller change
     $: hsl = hexToHSL(baseColor)
-    $: colorStart = gradient ? hslToHex(340, hsl.s, Math.min(hsl.l + 15, 100)) : hslToHex(hsl.h, hsl.s, Math.min(hsl.l + 6, 100)) // lighter
+    $: colorStart = gradient ? (gradientColor ? hslToHex(hsl.h, hsl.s, Math.min(hsl.l + 15, 100)) : hslToHex(340, hsl.s, Math.min(hsl.l + 15, 100))) : hslToHex(hsl.h, hsl.s, Math.min(hsl.l + 6, 100)) // lighter
     $: colorMid = baseColor
-    $: colorEnd = gradient ? hslToHex(270, hsl.s, Math.max(hsl.l - 30, 0)) : hslToHex(hsl.h, hsl.s, Math.max(hsl.l - 6, 0)) // darker
+    $: colorEnd = gradient ? (gradientColor ? hslToHex(hsl.h, hsl.s, Math.max(hsl.l - 30, 0)) : hslToHex(270, hsl.s, Math.max(hsl.l - 30, 0))) : hslToHex(hsl.h, hsl.s, Math.max(hsl.l - 6, 0)) // darker
 
-    $: width = size + "rem"
-    $: height = size + "rem"
+    $: width = size * (boxed ? 1.2 : 1) + "rem"
+    $: height = size * (boxed ? 1.2 : 1) + "rem"
 
     $: icon = custom || !icons[id] ? customIcons[id] : icons[id]
 
@@ -47,10 +50,12 @@
         if (selectData && !$selected.data.includes(selectData.data[0])) selected.set(selectData)
         activePopup.set("icon")
     }
+
+    $: if (boxed && !color) color = "#ffffff"
 </script>
 
 {#if select}
-    <svg class={$$props.class} class:flip class:white class:right class:fill class:select on:click={click} on:keydown={triggerClickOnEnterSpace} tabindex={0} role="button" style="{$$props.style || ''};min-width: {width}" {width} {height} viewBox="0 0 {box} {box}">
+    <svg class={$$props.class} class:flip class:white class:right class:fill class:select class:boxed on:click={click} on:keydown={triggerClickOnEnterSpace} tabindex={0} role="button" style="{$$props.style || ''};{color ? `color: ${color};` : ''}{boxed && color ? `background-color: ${fadeColor(color, 0.3)};` : ''}min-width: {width};{boxed ? `min-height: ${height};` : ''}" {width} {height} viewBox="0 0 {box} {box}" data-title={title}>
         {#if !white && colorMid && colorEnd && colorStart}
             <defs>
                 <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
@@ -70,7 +75,7 @@
         {/if}
     </svg>
 {:else}
-    <svg class={$$props.class} class:flip class:white class:right class:fill style="{$$props.style || ''};min-width: {width}" {width} {height} viewBox="0 0 {box} {box}">
+    <svg class={$$props.class} class:flip class:white class:right class:fill class:boxed style="{$$props.style || ''};{color ? `color: ${color};` : ''}{boxed && color ? `background-color: ${fadeColor(color, 0.3)};` : ''}min-width: {width};{boxed ? `min-height: ${height};` : ''}" {width} {height} viewBox="0 0 {box} {box}" data-title={title}>
         {#if !white && colorMid && colorEnd && colorStart}
             <defs>
                 <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
@@ -117,5 +122,10 @@
 
     svg.flip {
         transform: scaleX(-1);
+    }
+
+    svg.boxed {
+        padding: 0.2em;
+        border-radius: 0.3em;
     }
 </style>

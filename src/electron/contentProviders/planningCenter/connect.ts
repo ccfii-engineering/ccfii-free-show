@@ -37,7 +37,6 @@ export const DEFAULT_PCO_DATA: PCOAuthData = {
     scope: "services"
 }
 
-const app = express()
 const PCO_PORT = 5501
 const clientId = getKey("pco_id")
 const HTML_success = `
@@ -69,17 +68,18 @@ function pcoAuthenticate(scope: PCOScopes): Promise<PCOAuthData> {
     const codeVerifier = generateCodeVerifier()
     const codeChallenge = generateCodeChallenge(codeVerifier)
 
-    const server = app.listen(PCO_PORT, () => {
-        console.info(`Listening for Planning Center OAuth response at port ${PCO_PORT}`)
-    })
-
-    server.once("error", (err: Error) => {
-        if ((err as any).code === "EADDRINUSE") server.close()
-    })
-
+    const app = express()
     app.use(express.json())
 
     return new Promise((resolve) => {
+        const server = app.listen(PCO_PORT, () => {
+            console.info(`Listening for Planning Center OAuth response at port ${PCO_PORT}`)
+        })
+
+        server.once("error", (err: Error) => {
+            if ((err as any).code === "EADDRINUSE") server.close()
+        })
+
         app.get(path, (req, res) => {
             const code = req.query.code?.toString() || ""
             console.info(`OAuth code received: ${code}`)
@@ -134,9 +134,6 @@ function hasExpired(access: PCOAuthData): boolean {
 
     const expirationTime = (access.created_at + access.expires_in) * 1000
     const currentTime = Date.now()
-
-    // TODO: consider whether we want to allow a small buffer for expiration (to avoid issues with a token expiring right at the moment of use)
-    // e.g., 5 minutes before actual expiration
 
     return currentTime >= expirationTime
 }
@@ -209,9 +206,9 @@ export function pcoDisconnect(scope: PCOScopes = "services") {
     return { success: true }
 }
 
-export async function pcoStartupLoad(scope: PCOScopes = "services") {
+export async function pcoStartupLoad(scope: PCOScopes = "services", syncFolderIds?: string[]) {
     if (!getContentProviderAccess("planningcenter", scope)) return
-    await pcoLoadServices()
+    await pcoLoadServices(syncFolderIds)
 }
 
 function connectionInitialized(isFirstConnection = false): void {

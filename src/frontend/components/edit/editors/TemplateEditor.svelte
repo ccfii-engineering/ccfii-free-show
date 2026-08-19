@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onDestroy } from "svelte"
-    import type { ItemType } from "../../../../types/Show"
-    import { activeEdit, activePopup, outputs, popupData, styles, templates } from "../../../stores"
+    import { activeEdit, activePopup, popupData, templates } from "../../../stores"
+    import { translateText } from "../../../utils/language"
     import TemplateSlide from "../../drawer/pages/TemplateSlide.svelte"
     import Icon from "../../helpers/Icon.svelte"
     import T from "../../helpers/T.svelte"
@@ -12,11 +12,8 @@
     import MaterialButton from "../../inputs/MaterialButton.svelte"
     import MaterialZoom from "../../inputs/MaterialZoom.svelte"
     import Center from "../../system/Center.svelte"
-    import { addItem } from "../scripts/itemHelpers"
-    import { translateText } from "../../../utils/language"
-    import { getStyleResolution } from "../../slide/getStyleResolution"
-    import { getResolution } from "../../helpers/output"
     import DropArea from "../../system/DropArea.svelte"
+    import { centerZoom } from "../scripts/zoom"
 
     const update = () => (Slide = clone($templates[currentId]))
     $: currentId = $activeEdit.id!
@@ -27,6 +24,12 @@
 
     let newStyles: { [key: string]: string | number } = {}
     $: active = $activeEdit.items
+
+    let lastActiveIds = ""
+    $: if (active.join(",") !== lastActiveIds) {
+        newStyles = {}
+        lastActiveIds = active.join(",")
+    }
 
     let ratio = 1
 
@@ -62,31 +65,13 @@
     // ZOOM
     let scrollElem: HTMLDivElement | undefined
     let zoom = 1
+    let zoomOrigin: { x: number; y: number } | null = null
     function updateZoom(e: any) {
         zoom = e.detail
-        centerZoom()
+        const origin = zoomOrigin
+        zoomOrigin = null
+        centerZoom(origin, scrollElem, ".droparea")
     }
-
-    function centerZoom() {
-        if (zoom >= 1) return
-        // allow elem to update after zooming
-
-        setTimeout(() => {
-            if (!scrollElem) return
-
-            const centerX = (scrollElem.scrollWidth - scrollElem.clientWidth) / 2
-            const centerY = (scrollElem.scrollHeight - scrollElem.clientHeight) / 2
-
-            scrollElem.scrollTo({ left: centerX, top: centerY })
-        })
-    }
-
-    const shortcutItems: { id: ItemType; icon?: string }[] = [{ id: "text" }, { id: "media", icon: "image" }, { id: "timer" }]
-
-    $: resolution = getResolution(null, { $outputs, $styles })
-    $: widthOrHeight = getStyleResolution(resolution, width, height, "fit", { zoom })
-
-    $: mode = Slide?.settings?.mode || "default"
 
     $: styleOverrides = (Slide?.settings?.styleOverrides || []).filter((a) => (a.globalRegex || a.pattern) && a.templateId).length
 </script>
@@ -111,18 +96,12 @@
         {/if}
     </div>
 
-    {#if !widthOrHeight.includes("height") && mode !== "text"}
-        <FloatingInputs side="center">
-            {#each shortcutItems as item}
-                <MaterialButton title="settings.add: items.{item.id}" on:click={() => addItem(item.id, null, {}, translateText("example.text"))}>
-                    <Icon id={item.icon || item.id} size={1.3} white />
-                </MaterialButton>
-            {/each}
-        </FloatingInputs>
-    {/if}
+    <FloatingInputs side="left">
+        <MaterialZoom columns={zoom} min={0.2} max={4} defaultValue={1} addValue={0.1} on:change={updateZoom} on:origin={(e) => (zoomOrigin = e.detail)} />
 
-    <FloatingInputs>
         {#if styleOverrides > 0}
+            <div class="divider"></div>
+
             <MaterialButton
                 icon="text"
                 on:click={() => {
@@ -133,11 +112,7 @@
                 {translateText("popup.template_style_overrides")}
                 <span style="font-size: 0.8em;opacity: 0.5;">{styleOverrides}</span>
             </MaterialButton>
-
-            <div class="divider"></div>
         {/if}
-
-        <MaterialZoom columns={zoom} min={0.2} max={4} defaultValue={1} addValue={0.1} on:change={updateZoom} />
     </FloatingInputs>
 </div>
 

@@ -10,13 +10,14 @@
     import Clock from "../items/Clock.svelte"
     import { send } from "../util/socket"
     import { dictionary, updateTransposed, variables } from "../util/stores"
-    import ListView from "./ListView.svelte"
+    import { _getDynamicValue } from "../util/itemHelpers"
     import { getItemText } from "../helpers/textStyle"
 
     export let showId: string
     export let item: Item
     export let stageItem: any = {}
     export let style: boolean = true
+    export let originalStyle: boolean = false // keep the slide item's own box/position/text styles ("Keep Style")
     export let autoStage: boolean = true
     export let chords: boolean = false
     export let fontSize: number = 0
@@ -33,12 +34,13 @@
     let itemStyles: any = getStyles(item.style, true)
     // custom dynamic size
     let newSizes = `;
-    top: ${Math.min(itemStyles.top, (itemStyles.top / 1080) * resolution.height)}px;
-    left: ${Math.min(itemStyles.left, (itemStyles.left / 1920) * resolution.width)}px;
-    width: ${Math.min(itemStyles.width, (itemStyles.width / 1920) * resolution.width)}px;
-    height: ${Math.min(itemStyles.height, (itemStyles.height / 1080) * resolution.height)}px;
+    top: ${(itemStyles.top / 1080) * resolution.height}px;
+    left: ${(itemStyles.left / 1920) * resolution.width}px;
+    width: ${(itemStyles.width / 1920) * resolution.width}px;
+    height: ${(itemStyles.height / 1080) * resolution.height}px;
   `
-    if (autoStage) itemStyle = itemStyle + newSizes
+    // keep the item's original bounds when rendering inside a slide-resolution canvas ("Keep Style")
+    if (autoStage && !originalStyle) itemStyle = itemStyle + newSizes
 
     $: lineGap = item?.specialStyle?.lineGap
     $: lineRadius = item?.specialStyle?.lineRadius || 0
@@ -165,8 +167,8 @@
     function getCustomStyle(style: string) {
         if (!style) return
 
-        // reset item styles (as it's set in parent item)
-        style += "display: contents;"
+        // reset item styles (as it's set in parent item) - unless keeping the slide item's own layout
+        if (!originalStyle) style += "display: contents;"
 
         return style
     }
@@ -259,10 +261,12 @@
         if (!hasDynamicValues) return
         updateDynamic++
     }
+
     onDestroy(() => {
         stopInterval()
         if (eventTimeout) clearTimeout(eventTimeout)
         if (blockTimeout) clearTimeout(blockTimeout)
+        clearInterval(cssInterval)
     })
 
     $: chordFontSize = chordLines.length ? (stageItem?.chords?.size || stageItem?.chordsData?.size || 60) * 0.65 : 0
@@ -416,6 +420,28 @@
             release()
         }
     }
+
+    function getVariableNameId(name: string) {
+        if (typeof name !== "string") return ""
+        return name.toLowerCase().trim().replaceAll(" ", "_")
+    }
+
+    function createCSSVariables(variableUpdater: any, _updateTrigger: any = null) {
+        if (!variableUpdater) return ""
+        const numberVariables = Object.values(variableUpdater).filter((a: any) => a && (a.type === "number" || a.type === "random_number" || (a.type === "text" && a.text?.includes("{"))))
+        let css = numberVariables.reduce((css: string, v: any) => (css += `--variable-${getVariableNameId(v.name)}: ${v.type === "text" ? _getDynamicValue(v.text || "") : (v.number ?? (v.default || 0))};`), "")
+
+        css += `--slide-group-color: ${_getDynamicValue("slide_group_color")};`
+        css += `--slide-group-next-color: ${_getDynamicValue("slide_group_next_color")};`
+        css += `--slide-group-upcoming-color: ${_getDynamicValue("slide_group_upcoming_color")};`
+
+        return css
+    }
+
+    let updateTrigger = 0
+    const cssInterval = setInterval(() => updateTrigger++, 1000)
+
+    $: cssVariables = createCSSVariables($variables, updateTrigger)
 </script>
 
 <svelte:window on:click={closeActions} />
@@ -425,7 +451,7 @@
     bind:this={thisElem}
     class="item"
     class:clicked={item.button?.press || item.button?.release}
-    style={style ? getCustomStyle(itemStyle) : null}
+    style={style ? (getCustomStyle(itemStyle) || "") + cssVariables : null}
     class:chords={chordLines.length}
     class:clickable={item.button?.press || item.button?.release}
     class:reveal={item.clickReveal && !clickRevealed}
@@ -482,8 +508,6 @@
                 {/each}
             </div>
         </div>
-    {:else if item?.type === "list"}
-        <ListView list={item.list} />
         <!-- {:else if item?.type === "media"}
         {#if item.src}
             {#if getMediaType(getExtension(item.src)) === "video"}
@@ -503,8 +527,6 @@
         <DynamicEvents {...item.events} /> -->
         <!-- {:else if item?.type === "variable"}
         <Variable {item} style="font-size: {fontSize}px;" /> -->
-        <!-- {:else if item?.type === "mirror"}
-        <Mirror {item} {ref} {ratio} index={slideIndex} /> -->
     {:else if item?.type === "icon"}
         {#if item.customSvg}
             <div class="customIcon">
@@ -618,8 +640,8 @@
         /* line-break: after-white-space;
     -webkit-line-break: after-white-space; */
 
-        /* balanced breaking, looks much cleaner */
-        text-wrap: balance;
+        text-wrap: balance; /* balanced breaking, looks much cleaner */
+        white-space: pre-wrap; /* preserve special spaces from Text edit */
     }
 
     /* span {

@@ -13,6 +13,7 @@
     import FloatingInputs from "../input/FloatingInputs.svelte"
     import MaterialButton from "../inputs/MaterialButton.svelte"
     import { ShowTimeline } from "./ShowTimeline"
+    import TimelineEasing from "./TimelineEasing.svelte"
     import { formatTime, getActionsAtPosition, getProjectShowDurations, getTickInterval, getTimelineSections, parseTime, TIMELINE_SECTION_GAP, TIMELINE_SECTION_HEIGHT, TIMELINE_SECTION_TOP, timelineSections, timelineZoom } from "./timeline"
     import { TimelineActions, type TimelineType } from "./TimelineActions"
     import { getActiveTimelinePlayback, TimelinePlayback } from "./TimelinePlayback"
@@ -230,6 +231,7 @@
 
     function startContentInteraction(e: MouseEvent) {
         if (e.button !== 0) return
+        if (e.target?.closest(".easing")) return
 
         // remove any selection
         selected.set({ id: null, data: [] })
@@ -309,7 +311,7 @@
             const action = actions.find((a) => a.id === id)
             if (!action) return false
 
-            if (type === "slide") {
+            if (type === "slide" && action.type === "style") {
                 // only select "active" actions
                 const itemIndexes = action.data?.indexes ?? [0]
                 return itemIndexes.some((index) => selectedItemIndexes.includes(index))
@@ -644,7 +646,8 @@
                 time,
                 type: sequence.type,
                 data: sequence.data,
-                name: sequence.name
+                name: sequence.name,
+                color: sequence.color
             })
 
             // start if changed when paused
@@ -690,6 +693,8 @@
     $: lastSlideAction = slideActions[slideActions.length - 1]
 
     $: selectedItemIndexes = type === "slide" ? ($activeEdit?.items?.length ? $activeEdit?.items : [0]) : []
+
+    let easingActive: number | null = null
 </script>
 
 <svelte:window on:keydown={keydown} />
@@ -802,6 +807,11 @@
                             <div class="track-header" style="top: {TIMELINE_SECTION_TOP + i * (SECTION_HEIGHT + SECTION_GAP)}px;height: {SECTION_HEIGHT}px;width: 100%;">
                                 <Icon id={actions[0]?.data?.type === "text" ? "text" : "item"} white />
                                 <span class="track-name">{translateText(actions[0]?.name)}</span>
+
+                                <!-- easing -->
+                                <MaterialButton title="timeline.toggle_curve_editor" style="padding: 8px;margin-left: 30px;position: absolute;right: 5px;background-color: var(--primary-darker);" isActive={easingActive === i} on:click={() => (easingActive = easingActive === null || easingActive !== i ? i : null)}>
+                                    <Icon id="easing" white />
+                                </MaterialButton>
                             </div>
                         {/each}
                     {:else}
@@ -848,14 +858,21 @@
                         {#if duration}
                             <div class="action-clip context #timeline_node" class:selected={selectedActionIds.includes(action.id)} style="left: {(action.time / 1000) * zoomLevel}px; width: {duration * zoomLevel}px; top: {baseY}px;height: {SECTION_HEIGHT + 4}px;" data-title="{formatTime(action.time, type, $timelineStore)}-{formatTime(duration * 1000, type, $timelineStore)}: {action.name}" on:mousedown|stopPropagation={(e) => startActionDrag(e, action.id)}>
                                 <div class="action-clip-content">
-                                    {#if action.type === "audio"}
+                                    {#if action.type === "audio" || action.type === "video"}
                                         <div class="waveform-container" use:useWaveform={action.data.path || ""}></div>
                                     {/if}
                                     <div class="clip-label">{action.name}</div>
                                 </div>
                             </div>
                         {:else}
-                            <div class="action-marker {action.type} context #timeline_node" class:selected={selectedActionIds.includes(action.id)} class:faded={!(action.data?.indexes ?? [0])?.some((a) => selectedItemIndexes.includes(a))} style="left: {(action.time / 1000) * zoomLevel}px; top: {baseY + 10}px;" data-title="{formatTime(action.time, type, $timelineStore)}: {action.name}" on:mousedown|stopPropagation={(e) => startActionDrag(e, action.id)}>
+                            <div
+                                class="action-marker {action.type} context #timeline_node"
+                                class:selected={selectedActionIds.includes(action.id)}
+                                class:faded={type === "slide" && action.type === "style" && !(action.data?.indexes ?? [0])?.some((a) => selectedItemIndexes.includes(a))}
+                                style="left: {(action.time / 1000) * zoomLevel}px; top: {baseY + 10}px;"
+                                data-title="{formatTime(action.time, type, $timelineStore)}: {action.name}"
+                                on:mousedown|stopPropagation={(e) => startActionDrag(e, action.id)}
+                            >
                                 <div class="action-head">
                                     {#if action.type === "action"}
                                         <Icon id={action.data.triggers?.length === 1 ? actionData[action.data.triggers[0]]?.icon : "actions"} size={0.9} white />
@@ -863,7 +880,7 @@
                                         {action.data.index + 1}
                                     {/if}
                                 </div>
-                                <div class="action-label" style={type === "slide" ? "font-size: 0.7em;" : ""}>
+                                <div class="action-label" style="{action.color ? `border-bottom: 1px solid ${action.color};` : ''}{type === 'slide' ? 'font-size: 0.7em;' : ''}">
                                     {#if action.type === "style"}
                                         {#if typeof action.data.value === "number"}
                                             {parseFloat(action.data.value.toFixed(1))}
@@ -878,6 +895,9 @@
                         {/if}
                     {/each}
 
+                    <!-- Easing -->
+                    <TimelineEasing {groupedActions} {actions} {selectedActionIds} {selectedItemIndexes} activeGroupIndex={easingActive} {zoomLevel} sectionHeight={SECTION_HEIGHT} sectionGap={SECTION_GAP} sectionTop={TIMELINE_SECTION_TOP} onActionDrag={startActionDrag} {timeline} on:clearSelection={() => (selectedActionIds = [])} />
+
                     <!-- Selection Box -->
                     {#if selectionRect}
                         <div class="selection-box" style="left: {selectionRect.x}px; top: {selectionRect.y}px; width: {selectionRect.w}px; height: {selectionRect.h}px;" out:fade={{ duration: 80 }}></div>
@@ -891,39 +911,41 @@
             </div>
         </div>
 
-        <FloatingInputs side="left" style="margin-bottom: 8px;margin-left: 120px;">
-            {#if disablePlayback}
-                <MaterialButton style="min-width: 40px;padding: 10px;" title={isPlaying ? "media.stop" : "media.play"} on:click={() => (isPlaying ? player.pause() : player.play())}>
-                    <Icon id={isPlaying ? "stop" : "microphone"} white={!isPlaying} />
-                </MaterialButton>
-            {:else}
-                <MaterialButton title={isPlaying ? "media.pause" : "media.play"} on:click={() => (isPlaying ? player.pause() : player.play())}>
-                    <Icon size={1.3} id={isPlaying ? "pause" : "play"} white={!isPlaying} />
-                </MaterialButton>
+        {#if easingActive === null || type !== "slide"}
+            <FloatingInputs side="left" style="margin-bottom: 8px;margin-left: 120px;">
+                {#if disablePlayback}
+                    <MaterialButton style="min-width: 40px;padding: 10px;" title={isPlaying ? "media.stop" : "media.play"} on:click={() => (isPlaying ? player.pause() : player.play())}>
+                        <Icon id={isPlaying ? "stop" : "microphone"} white={!isPlaying} />
+                    </MaterialButton>
+                {:else}
+                    <MaterialButton title={isPlaying ? "media.pause" : "media.play"} on:click={() => (isPlaying ? player.pause() : player.play())}>
+                        <Icon size={1.3} id={isPlaying ? "pause" : "play"} white={!isPlaying} />
+                    </MaterialButton>
 
-                <MaterialButton disabled={currentTime === 0} title="media.stop" on:click={() => player.stop()}>
-                    <Icon size={1.3} id="stop" white={!isPlaying} />
-                </MaterialButton>
-            {/if}
+                    <MaterialButton disabled={currentTime === 0} title="media.stop" on:click={() => player.stop()}>
+                        <Icon size={1.3} id="stop" white={!isPlaying} />
+                    </MaterialButton>
+                {/if}
 
-            {#if type === "show"}
-                <div class="divider"></div>
+                {#if type === "show"}
+                    <div class="divider"></div>
 
-                <MaterialButton disabled={isPlaying && !isRecording} title="actions.{isRecording ? 'stop_recording' : 'start_recording'}" on:click={toggleRecording} red={isRecording}>
-                    <Icon size={1.3} id="record" white />
-                </MaterialButton>
-            {:else if type === "slide"}
-                <div class="divider"></div>
+                    <MaterialButton disabled={isPlaying && !isRecording} title="actions.{isRecording ? 'stop_recording' : 'start_recording'}" on:click={toggleRecording} red={isRecording}>
+                        <Icon size={1.3} id="record" white />
+                    </MaterialButton>
+                {:else if type === "slide"}
+                    <div class="divider"></div>
 
-                <MaterialButton title={translateText("media._loop" + (shouldLoop ? ": settings.enabled" : ""), $dictionary) || "Loop"} on:click={() => (shouldLoop = timeline.toggleLoop())} active={shouldLoop}>
-                    <Icon size={1.1} id="loop" white={!shouldLoop} />
-                </MaterialButton>
-            {/if}
+                    <MaterialButton title={translateText("media._loop" + (shouldLoop ? ": settings.enabled" : ""), $dictionary) || "Loop"} on:click={() => (shouldLoop = timeline.toggleLoop())} active={shouldLoop}>
+                        <Icon size={1.1} id="loop" white={!shouldLoop} />
+                    </MaterialButton>
+                {/if}
 
-            <!-- <div class="divider" />
+                <!-- <div class="divider" />
 
             <MaterialButton icon="focus" title="actions.resetZoom" on:click={resetView} /> -->
-        </FloatingInputs>
+            </FloatingInputs>
+        {/if}
 
         {#if type === "project"}
             <FloatingInputs style="margin-bottom: 8px;">

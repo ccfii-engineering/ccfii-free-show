@@ -16,7 +16,7 @@ export interface Show {
     category: null | ID
     quickAccess?: any
     reference?: {
-        type: "calendar" | "scripture" | "lessons"
+        type: "calendar" | "scripture" | "lessons" | "canva" | "interaction"
         data: any
     }
     settings: {
@@ -119,7 +119,7 @@ export interface Item {
     events?: DynamicEvent
     type?: ItemType
     decoration?: boolean // ppt imported shapes & scripture items (no selection directly)
-    mirror?: Mirror
+
     src?: string // media item path
     customSvg?: string
     device?: any // camera
@@ -127,6 +127,7 @@ export interface Item {
     filter?: string
     flipped?: boolean
     flippedY?: boolean // media item
+    blend?: string
     muted?: boolean // media item
     loop?: boolean // media item
     speed?: number // media item
@@ -148,6 +149,22 @@ export interface Item {
     // media: fit, startAt, endAt
     // tag?: string; // p, div????
     conditions?: { [key: string]: Condition }
+    chart?: {
+        type?: string
+        data?: string
+        holeSize?: number
+    }
+    table?: {
+        headers?: boolean
+        borderColor?: string
+        borderWidth?: number
+        rows: {
+            cells: {
+                text: string
+                style?: string
+            }[]
+        }[]
+    }
 }
 
 export interface LayoutRef {
@@ -181,7 +198,7 @@ export interface ShowGroup {
 export interface Timer {
     id?: string
     name: string
-    type: "counter" | "clock" | "event"
+    type: "counter" | "clock" | "event" | "pco_live"
     viewType?: "time" | "line" | "circle"
     circleMask?: boolean
     showHours?: boolean // use just minutes or minutes and hours
@@ -192,6 +209,13 @@ export interface Timer {
     event?: string
     time?: string
 
+    // PCO Live
+    pco?: {
+        serviceTypeId: string
+        planId: string
+        countdownType: "end_on_time" | "full_length" | "end_service"
+    }
+
     warn?: boolean
     warnOffset?: number
     warnColor?: string
@@ -201,15 +225,21 @@ export interface Timer {
     overflowColor?: string
     overflowFlash?: boolean
 
+    tags?: string[]
+
     // format?: string
     // paused?: boolean
 }
 
 export interface Clock {
     type: "digital" | "analog" | "custom"
-    dateFormat: "none"
+    dateFormat: string
     showTime?: boolean
     seconds?: boolean
+
+    // custom:
+    customFormat?: string
+    offsetDays?: number
 }
 
 export interface DynamicEvent {
@@ -219,11 +249,14 @@ export interface DynamicEvent {
     enableStartDate: boolean
     startDate?: string
     startTime?: string
+    fromTime?: string
+    toTime?: string
 }
 
 export interface Scrolling {
     type: "none" | "top_bottom" | "bottom_top" | "left_right" | "right_left"
     speed?: number
+    gap?: number
 }
 
 // pre 1.5.0
@@ -244,15 +277,6 @@ export interface Weather {
     altitude?: number
     useFahrenheit?: boolean
     longRange?: boolean
-}
-
-export interface Mirror {
-    show?: string
-    stage?: string
-    enableStage?: boolean
-    nextSlide?: boolean
-    useSlideIndex?: boolean
-    index?: number
 }
 
 export interface Line {
@@ -304,7 +328,10 @@ export interface TimelineAction {
     time: number // ms
     duration?: number // ms (media)
     name: string
+    color?: string
     type: string // "action" | "slide" | "show" | "audio" | "style"
+    easing?: { type?: "cubic-bezier"; x1: number; y1: number; x2: number; y2: number }
+
     data: {
         id?: string // slide/action/show
         path?: string // audio
@@ -357,7 +384,7 @@ export interface SlideData {
 
         receiveMidi?: string
         nextAfterMedia?: boolean
-        animate?: Animation
+        animate?: Animation // DEPRECATED!!
         slide_shortcut?: { key: string }
         startShow?: { id: string }
 
@@ -372,6 +399,7 @@ export interface SlideData {
     }
     // actions?: {} // to begininng / index, clear (all), start timer, start audio/music ++
     bindings?: string[] // bind slide to an output
+    breakDuration?: number // seconds spent on "break" slide (used for countdown display)
 }
 
 export interface SlideAction {
@@ -427,6 +455,7 @@ export interface Media {
 
 export interface Action {
     name: string
+    customIcon?: string // file path
     triggers: string[]
     actionValues?: any
     tags?: string[]
@@ -546,10 +575,12 @@ export interface OutBackground {
     startAt?: number
     muted?: boolean
     loop?: boolean
+    softLoop?: number
     // media
     filter?: string
     flipped?: boolean
     flippedY?: boolean
+    blend?: string
     title?: string // player
     cameraGroup?: string // camera
     folderPath?: string // project media folder
@@ -561,6 +592,7 @@ export interface OutSlide {
     id: ID
     layout?: ID
     index?: number
+    projectIndex?: number // only used to reference back to the project item index
     tempItems?: Item[]
     previousSlides?: Item[][]
     settings?: any // settings for temp (e.g. scripture background color)
@@ -607,7 +639,7 @@ export interface Tag {
 // types
 
 export type ID = string
-export type ItemType = "text" | "list" | "media" | "camera" | "timer" | "clock" | "button" | "events" | "weather" | "variable" | "web" | "mirror" | "icon" | "slide_tracker" | "visualizer" | "captions" | "metronome" | "current_output" // "shape" | "video"
-export type ShowType = "DIVIDER" | "show" | "image" | "video" | "audio" | "player" | "section" | "overlay" | "pdf" | "ppt" | "screen" | "ndi" | "camera" | "folder" // "private"
+export type ItemType = "text" | "media" | "camera" | "timer" | "clock" | "button" | "events" | "weather" | "variable" | "web" | "icon" | "slide_tracker" | "visualizer" | "captions" | "metronome" | "current_output" | "chart" | "table" // "shape" | "video"
+export type ShowType = "DIVIDER" | "show" | "image" | "video" | "audio" | "player" | "section" | "overlay" | "effect" | "pdf" | "ppt" | "screen" | "ndi" | "camera" | "folder" | "show_placeholder" // "private"
 export type TransitionType = "none" | "blur" | "fade" | "crossfade" | "fly" | "scale" | "slide" | "spin"
 export type MediaType = "media" | "video" | "image" | "effect" | "screen" | "ndi" | "camera" | "player" | "audio"

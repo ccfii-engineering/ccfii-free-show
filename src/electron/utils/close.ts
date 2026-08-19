@@ -6,6 +6,7 @@ import { sendMain, sendToMain } from "../IPC/main"
 import { NdiReceiver } from "../ndi/NdiReceiver"
 import { OutputHelper } from "../output/OutputHelper"
 import { closeServers } from "../servers"
+import { RtmpStreamer } from "../streaming/RtmpStreamer"
 import { stopApiListener } from "./api"
 import { stopMidi } from "./midi"
 
@@ -21,11 +22,16 @@ export function saveAndClose() {
     sendMain(Main.CLOSE, true)
 }
 
+let isExiting = false
 export async function exitApp() {
+    if (isExiting) return
+    isExiting = true
+
     console.info("Closing app!")
 
     dialogClose = false
 
+    RtmpStreamer.stopAll()
     await OutputHelper.Lifecycle.closeAllOutputs()
     NdiReceiver.stopReceiversNDI()
 
@@ -60,6 +66,7 @@ export async function exitApp() {
         }, 500)
     } catch (err) {
         console.error("Failed closing app:", err)
+        isExiting = false
     }
 }
 

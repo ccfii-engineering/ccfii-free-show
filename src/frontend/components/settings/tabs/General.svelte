@@ -1,6 +1,7 @@
 <script lang="ts">
     import { dictionary, fullColors, groups, labelsDisabled, language, special, timeFormat } from "../../../stores"
     import { getLanguageList, setLanguage, translateText } from "../../../utils/language"
+    import { isGroupHidden } from "../../../utils/profile"
     import { sortByName } from "../../helpers/array"
     import Title from "../../input/Title.svelte"
     import MaterialDropdown from "../../inputs/MaterialDropdown.svelte"
@@ -24,7 +25,8 @@
     $: groupsString = updateGroups($groups, $dictionary)
     function updateGroups(groups: any, _updater: any) {
         const groupsList: { label: string; color: string }[] = []
-        Object.values(groups).forEach((a: any) => {
+        Object.entries(groups).forEach(([id, a]: [string, any]) => {
+            if (isGroupHidden(id)) return
             groupsList.push({ label: a.default ? translateText(`groups.${a.name}`) || a.name : a.name, color: a.color })
         })
 
@@ -48,7 +50,6 @@
 <Title label="tools.slide" icon="slide" />
 
 <MaterialPopupButton label={translateText("popup.manage_groups", $dictionary)} name={groupsString} value={groupsString ? "." : ""} popupId="manage_groups" icon="groups" />
-<MaterialToggleSwitch label="settings.transparent_slides" checked={$special.transparentSlides} defaultValue={false} on:change={(e) => updateSpecial(e.detail, "transparentSlides")} />
 
 <!-- shortcuts: -->
 <MaterialToggleSwitch label="settings.next_item_on_last_slide" checked={$special.nextItemOnLastSlide !== false} defaultValue={true} on:change={(e) => updateSpecial(e.detail, "nextItemOnLastSlide", true)} />

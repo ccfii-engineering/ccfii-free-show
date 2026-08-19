@@ -15,23 +15,26 @@
 
     let currentAudioSections = clone(audioSections)
 
-    $: if (audioId) getAudioDuration()
-    async function getAudioDuration() {
+    $: if (audioId) getAudioDuration(currentMedia.fromTime, currentMedia.toTime)
+    async function getAudioDuration(fromTime?: number, toTime?: number) {
         const duration = await AudioPlayer.getDuration(audioId)
 
-        setBoxInputValue(currentAudioSections, "default", "toTime", "value", currentMedia?.toTime || duration)
-        setBoxInputValue(currentAudioSections, "default", "toTime", "default", duration)
-        setBoxInputValue(currentAudioSections, "default", "fromTime", "values", { max: duration })
-        setBoxInputValue(currentAudioSections, "default", "toTime", "values", { max: duration })
-        currentAudioSections = currentAudioSections
+        const from = fromTime ?? 0
+        const to = toTime ?? duration
 
-        // WIP set min/max based on each other
+        setBoxInputValue(currentAudioSections, "default", "toTime", "value", to)
+        setBoxInputValue(currentAudioSections, "default", "toTime", "default", duration)
+        setBoxInputValue(currentAudioSections, "default", "fromTime", "values", { min: 0, max: to })
+        setBoxInputValue(currentAudioSections, "default", "toTime", "values", { min: from, max: duration })
+        currentAudioSections = currentAudioSections
     }
 
     function reset() {
-        let deleteKeys: string[] = ["audioType", "volume", "fromTime", "toTime"]
+        let deleteKeys: string[] = ["audioType", "volume", "pitch", "tempo", "fromTime", "toTime"]
 
         if (currentMedia.volume) setTimeout(() => AudioPlayer.updateVolume(audioId))
+        if (currentMedia.pitch) setTimeout(() => AudioPlayer.setPitch(audioId, 0))
+        if (currentMedia.tempo) setTimeout(() => AudioPlayer.setTempo(audioId, 1))
 
         // reset
         deleteKeys.forEach((key) => removeStore("media", { keys: [audioId, key] }))
@@ -53,6 +56,12 @@
         if (input.id === "volume") {
             // value = Math.min(1, Math.max(0, value / 100))
             setTimeout(() => AudioPlayer.updateVolume(audioId))
+        }
+        if (input.id === "pitch") {
+            setTimeout(() => AudioPlayer.setPitch(audioId, value))
+        }
+        if (input.id === "tempo") {
+            setTimeout(() => AudioPlayer.setTempo(audioId, value))
         }
 
         updateStore("media", { keys: [audioId, input.id], value })

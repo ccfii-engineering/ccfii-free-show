@@ -6,11 +6,11 @@
     import Stagebox from "./Stagebox.svelte"
     import Zoomed from "./Zoomed.svelte"
 
-    import { onDestroy, onMount } from "svelte"
+    import { onDestroy, onMount, setContext } from "svelte"
 
     let width: number = 0
     let height: number = 0
-    let resolution: any = $stageLayout && $stageLayout.settings.resolution ? $stageLayout.settings.resolution : { width: 1920, height: 1080 } // $screen.resolution
+    $: resolution = width > 0 && height > 0 ? { width, height } : ($stageLayout?.settings?.resolution || { width: 1920, height: 1080 })
 
     // debounce remounting when resizing to avoid rapid remounts causing lag
     let resizeKey: string = `${width}-${height}-${Date.now()}`
@@ -37,6 +37,15 @@
             clearInterval(interval)
         }
     })
+
+    let layoutMounted = false
+    setContext("layoutMounted", () => layoutMounted)
+    $: if ($stageLayout || resizeKey) {
+        layoutMounted = false
+        setTimeout(() => {
+            layoutMounted = true
+        }, 100)
+    }
 </script>
 
 <div class="main" bind:offsetWidth={width} bind:offsetHeight={height}>

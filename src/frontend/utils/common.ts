@@ -128,8 +128,8 @@ export function startAutosave() {
     previousAutosave = Date.now()
     autosaveTimeout = setTimeout(() => {
         const skip = get(activePopup) === "initialize" || get(activePopup) === "cloud_method"
-        if (!skip) save(false, { autosave: true })
-        startAutosave()
+        if (skip) startAutosave()
+        else save(false, { autosave: true })
     }, saveInterval)
 }
 
@@ -174,7 +174,6 @@ export function toggleRemoteStream() {
     if (get(disabledServers).output_stream === false) value.value = true
 
     setTimeout(() => {
-        // , rate: get(special).previewRate || "auto"
         send(OUTPUT, ["SET_VALUE"], { id: captureOutputId, key: "capture", value })
     }, 1800)
 }

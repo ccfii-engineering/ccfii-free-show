@@ -7,12 +7,13 @@ import type { Show, Slide } from "../../types/Show"
 import { API_ACTIONS, triggerAction } from "../components/actions/api"
 import { receivedMidi } from "../components/actions/midi"
 import { menuClick } from "../components/context/menuClick"
+import { generateScriptureShowFromReference } from "../components/drawer/bible/scripture"
 import { getCurrentTimerValue } from "../components/drawer/timers/timers"
 import { _getVariableValue, getDynamicValue } from "../components/edit/scripts/itemHelpers"
 import { clone, keysToID } from "../components/helpers/array"
 import { addDrawerFolder } from "../components/helpers/dropActions"
 import { history } from "../components/helpers/history"
-import { captureCanvas, setMediaTracks } from "../components/helpers/media"
+import { captureCanvas, getExtension, getFileName, removeExtension, setMediaTracks } from "../components/helpers/media"
 import { getActiveOutputs } from "../components/helpers/output"
 import { loadShows, saveTextCache } from "../components/helpers/setShow"
 import { checkName, getGlobalGroup, getLabelId } from "../components/helpers/show"
@@ -26,7 +27,7 @@ import { convertCSV } from "../converters/csv"
 import { convertEasyslides } from "../converters/easyslides"
 import { convertEasyWorship } from "../converters/easyworship"
 import { createImageShow } from "../converters/imageShow"
-import { createCategory, importShow, importSpecific, importTemplate, setTempShows } from "../converters/importHelpers"
+import { createCategory, importAction, importShow, importSpecific, importStage, importTemplate, setTempShows } from "../converters/importHelpers"
 import { convertLessonsPresentation } from "../converters/lessonsChurch"
 import { convertMediaShout } from "../converters/mediashout"
 import { convertOpenLP } from "../converters/openlp"
@@ -58,6 +59,7 @@ import {
     lessonsLoaded,
     media,
     mediaDownloads,
+    rtmpStatus,
     outputs,
     overlays,
     pdfImports,
@@ -67,6 +69,7 @@ import {
     projectTemplates,
     projectView,
     providerConnections,
+    recentFiles,
     redoHistory,
     shows,
     showsCache,
@@ -229,6 +232,7 @@ export const mainResponses: MainResponses = {
     [ToMain.CAPTURE_CANVAS]: (data) => captureCanvas(data),
     [ToMain.LESSONS_DONE]: (data) => lessonsLoaded.set({ ...get(lessonsLoaded), [data.showId]: data.status }),
     [ToMain.IMAGES_TO_SHOW]: (data) => createImageShow(data),
+    [ToMain.RTMP_STATUS]: (data) => rtmpStatus.update((a) => ({ ...a, [data.outputId]: data.destinations })),
     [ToMain.MEDIA_DOWNLOAD_PROGRESS]: (data) => {
         mediaDownloads.update((downloads) => {
             const newDownloads = new Map(downloads)
@@ -244,7 +248,7 @@ export const mainResponses: MainResponses = {
                     })
                 }, 2000)
             }
-            newDownloads.set(data.url, { progress, total, status: data.status })
+            newDownloads.set(data.url, { progress, total, status: data.status, name: data.name })
             return newDownloads
         })
     },
@@ -324,7 +328,7 @@ export const mainResponses: MainResponses = {
     // CONNECTION
     // UNIFIED PROVIDER CALLBACKS
     [ToMain.PROVIDER_CONNECT]: (data) => {
-        if (!data.success) return
+        if (!data?.success) return
 
         providerConnections.update((c) => {
             c[data.providerId] = true
@@ -333,6 +337,7 @@ export const mainResponses: MainResponses = {
 
         if (data.isFirstConnection) newToast("main.finished")
 
+        if (data.providerId !== "churchApps") return
         setTimeout(() => {
             setupCloudSync(!data.isFirstConnection)
         }, 1000)
@@ -345,21 +350,56 @@ export const mainResponses: MainResponses = {
 
         const replaceIds: { [key: string]: string } = {}
         const allShows = keysToID(get(shows))
-        const providerLocalAlways = get(contentProviderData)[data.providerId]?.localAlways ?? false
+        const songOrigin = get(contentProviderData)[data.providerId]?.songOrigin
+        const linkKey = data.providerId === "planningcenter" ? "pcoLink" : data.providerId === "churchApps" ? "chumsLink" : data.providerId === "amazinglife" ? "alLink" : ""
+        const origin = data.providerId === "planningcenter" ? "pco" : data.providerId
+
+        function updateExistingShow(showId: string) {
+            shows.update((a) => {
+                if (!a[showId]) return a // should always exist
+
+                a[showId].origin = origin
+                return a
+            })
+
+            // update showsCache directly in case it's not yet saved to a local file
+            showsCache.update((a) => {
+                if (!a[showId]) return a
+
+                // we should not set link when requesting to use local show, that way it will ask next time as well
+                // if (!a[showId].quickAccess) a[showId].quickAccess = {}
+                // if (linkKey) a[showId].quickAccess[linkKey] = originId
+
+                a[showId].origin = origin
+                return a
+            })
+        }
 
         // CREATE SHOWS
         const tempShows: { id: string; show: Show }[] = []
         for (const show of data.shows) {
             const id = show.id
 
-            // TODO: check if name contains scripture reference (and is empty), and load from active scripture
+            // if empty content and name is a scripture reference, generate slides from the active scripture
+            const isEmptyContent = Object.keys(show.slides || {}).length === 0
+            if (isEmptyContent) {
+                const scriptureShow = await generateScriptureShowFromReference(show.name)
+                if (scriptureShow) {
+                    const originalId = show.id
+                    const originalQuickAccess = show.quickAccess
+                    Object.assign(show, scriptureShow)
+                    show.id = originalId
+                    if (originalQuickAccess) show.quickAccess = originalQuickAccess
+                }
+            }
 
             // first find any shows linked to the id
-            const linkKey = data.providerId === "planningcenter" ? "pcoLink" : data.providerId === "churchApps" ? "chumsLink" : data.providerId === "amazinglife" ? "alLink" : ""
             const linkedShow = linkKey && allShows.find(({ quickAccess }) => quickAccess?.[linkKey] === id)
             if (linkedShow) {
                 replaceIds[id] = linkedShow.id
-                if (providerLocalAlways) continue
+                if (songOrigin === "local") continue
+
+                // replace local show with provider song
                 Object.values<Slide>(show.slides).forEach((slide) => {
                     if (slide.globalGroup || !slide.group) return
 
@@ -367,32 +407,34 @@ export const mainResponses: MainResponses = {
                     if (globalGroup) slide.globalGroup = globalGroup
                 })
 
-                const origin = data.providerId === "planningcenter" ? "pco" : data.providerId
-                tempShows.push({ id: linkedShow.id, show: { ...show, origin, name: checkName(show.name, linkedShow.id), quickAccess: { ...(linkedShow.quickAccess || {}), [linkKey]: id } } })
+                // set modified to now, so it will update properly in history
+                if (show.timestamps) show.timestamps.modified = Date.now()
+
+                tempShows.push({ id: linkedShow.id, show: { ...show, origin, name: checkName(show.name, linkedShow.id) } })
                 continue
             }
 
             // find existing show with same name and ask to replace
             const providerName = data.providerId === "planningcenter" ? "Planning Center" : data.providerId === "churchApps" ? "ChurchApps" : "the cloud"
-            const existingShow = allShows.find(({ id: existingId, name }) => existingId !== id && name.toLowerCase() === show.name.toLowerCase())
+            const showName = show?.name?.toLowerCase() || ""
+            const existingShow = allShows.find(({ id: existingId, name }) => existingId !== id && name?.toLowerCase() === showName)
             // const existingShowHasContent = existingShow && (await loadShows([existingShow.id])) && getSlidesText(get(showsCache)[existingShow.id].slides)
-            if (existingShow) {
-                const useLocal = providerLocalAlways || (await confirmCustom(`There is an existing show with the same name: ${existingShow.name}.<br><br>Would you like to use the local version instead of the one from ${providerName}?`))
+            if (existingShow && songOrigin !== "online") {
+                const useLocal = songOrigin === "local" || (await confirmCustom(`There is an existing show with the same name: ${existingShow.name}.<br><br>Would you like to use the local version instead of the one from ${providerName}?`))
                 if (useLocal) {
                     replaceIds[id] = existingShow.id
-
-                    await loadShows([existingShow.id])
-                    showsCache.update((a) => {
-                        if (!a[existingShow.id].quickAccess) a[existingShow.id].quickAccess = {}
-                        if (linkKey) a[existingShow.id].quickAccess[linkKey] = id
-                        return a
-                    })
-
+                    updateExistingShow(existingShow.id)
                     continue
                 }
             }
 
-            if (providerLocalAlways && get(shows)[id]) continue
+            if ((existingShow && songOrigin !== "local") || songOrigin === "online") {
+                // set link so we will automatically update from the provider in the future
+                if (!show.quickAccess) show.quickAccess = {}
+                show.quickAccess[linkKey] = id
+            }
+
+            // download:
 
             // replace group names with existing global groups
             Object.values<Slide>(show.slides).forEach((slide) => {
@@ -403,8 +445,7 @@ export const mainResponses: MainResponses = {
             })
 
             delete show.id
-            const origin = data.providerId === "planningcenter" ? "pco" : data.providerId
-            tempShows.push({ id, show: { ...show, origin, name: checkName(show.name, id), quickAccess: { [linkKey]: id } } })
+            tempShows.push({ id, show: { ...show, origin, name: checkName(show.name, id) } })
         }
         setTempShows(tempShows)
 
@@ -412,11 +453,20 @@ export const mainResponses: MainResponses = {
             const templateId = get(contentProviderData)[providerId]?.projectTemplate || ""
             if (!templateId) return projectBase
 
-            const templateItems = get(projectTemplates)[templateId]?.shows || []
+            let templateItems = clone(get(projectTemplates)[templateId]?.shows || [])
+            let pcoItems = clone(projectBase.shows || [])
 
-            // project template first, then append the synced items
-            projectBase.shows = clone([...templateItems, ...(projectBase.shows || [])])
+            // project template first, then append the synced items (first to any placeholders, then to the end)
+            templateItems = templateItems.map((item) => {
+                if (item.type === "show_placeholder") {
+                    const show = pcoItems.shift()
+                    if (show) return show
+                }
 
+                return item
+            })
+
+            projectBase.shows = [...templateItems, ...pcoItems]
             return projectBase
         }
 
@@ -445,8 +495,21 @@ export const mainResponses: MainResponses = {
         })
 
         // open closest to today
-        activeProject.set(data.projects.sort((a, b) => a.scheduledTo - b.scheduledTo)[0]?.id)
-        projectView.set(false)
+        const nextProjectId = data.projects.sort((a, b) => a.scheduledTo - b.scheduledTo)[0]?.id
+        if (nextProjectId) {
+            activeProject.set(nextProjectId)
+            projectView.set(false)
+        }
+
+        // store available PCO plans for Live timer setup
+        if (data.providerId === "planningcenter" && data.pcoPlans?.length) {
+            contentProviderData.update((a) => {
+                if (!a.planningcenter) a.planningcenter = {}
+                const existing = a.planningcenter.availablePlans || []
+                a.planningcenter.availablePlans = [...existing.filter((e) => !data.pcoPlans!.some((i) => i.planId === e.planId)), ...data.pcoPlans!]
+                return a
+            })
+        }
     },
     [ToMain.OPEN_FOLDER2]: (a) => {
         const receiveFOLDER = {
@@ -463,9 +526,17 @@ export const mainResponses: MainResponses = {
         const receiveFilePathIMPORT = {
             // Media
             pdf: () => {
-                // convert to images directly - drag and drop to keep as PDF
-                ;(mainData as string[]).forEach((path) => sendMain(Main.PDF_TO_IMAGE, { filePath: path }))
-                // addToProject("pdf", mainData as string[])
+                const paths = mainData as string[]
+                paths.forEach((path) => sendMain(Main.PDF_TO_IMAGE, { filePath: path }))
+
+                // remove any PDFs with the same name from the Recommended project items list
+                const importedNames = paths.map((p) => removeExtension(getFileName(p)).toLowerCase())
+                recentFiles.update((a) => {
+                    const toClear = a.all.filter((p) => getExtension(p) === "pdf" && importedNames.includes(removeExtension(getFileName(p)).toLowerCase()))
+                    if (toClear.length) a.cleared = [...a.cleared, ...toClear]
+                    return a
+                })
+                updateRecentlyAddedFiles()
             },
             powerkey: () => addToProject("ppt", mainData as string[])
         }
@@ -483,6 +554,8 @@ export const mainResponses: MainResponses = {
             freeshow_project: () => importProject(data),
             freeshow_template: () => importTemplate(data),
             freeshow_theme: () => importSpecific(data, themes),
+            freeshow_action: () => importAction(data),
+            freeshow_stage: () => importStage(data),
             // Text
             txt: () => convertTexts(data),
             chordpro: () => convertChordPro(data),
@@ -490,7 +563,7 @@ export const mainResponses: MainResponses = {
             powerpoint: () => convertPowerpoint(data),
             word: () => convertTexts(data),
             // Other programs
-            propresenter: () => convertProPresenter(data),
+            propresenter: () => convertProPresenter(data as { content: any; name: string; extension: string }[]),
             easyworship: () => convertEasyWorship(data),
             videopsalm: () => convertVideopsalm(data),
             openlp: () => convertOpenLP(data),

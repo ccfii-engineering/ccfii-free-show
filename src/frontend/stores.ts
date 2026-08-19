@@ -6,24 +6,33 @@ import type { ICommonTagsResult } from "music-metadata"
 import { type Writable, writable } from "svelte/store"
 import type { ContentProviderId } from "../electron/contentProviders/base/types"
 import type { TimecodeMode } from "../electron/timecode/timecode"
+import type { AudioRoutingConfig } from "../types/AudioRouting"
 import type { Event } from "../types/Calendar"
 import type { Draw, DrawLine, DrawSettings, DrawTools } from "../types/Draw"
 import type { Effects } from "../types/Effects"
 import type { History, HistoryNew } from "../types/History"
-import type { ActiveEdit, Clipboard, Media, MediaOptions, NumberObject, OS, Popups, Profiles, Selected, SlidesOptions, Trigger, Variable } from "../types/Main"
+import type { ActiveEdit, Clipboard, Interaction, Media, MediaOptions, NumberObject, OS, Popups, Profiles, Selected, SlidesOptions, Trigger, Variable } from "../types/Main"
 import type { Folders, Projects, ShowRef } from "../types/Projects"
 import type { Dictionary, Styles, Themes } from "../types/Settings"
 import type { Action, Emitter, ID, Overlays, ShowGroups, ShowList, Shows, ShowType, SlideTimer, Tag, Templates, Timer, Transition, TrimmedShows } from "../types/Show"
 import type { ServerData } from "../types/Socket"
 import type { ActiveStage, StageLayouts } from "../types/Stage"
-import type { BibleCategories, Categories, DrawerTabs, SettingsTabs, TopViews } from "../types/Tabs"
+import type { BibleCategories, Categories, DrawerTabs, EditMode, SettingsTabs, TopViews } from "../types/Tabs"
 import type { AudioChannel, AudioChannelData, AudioStream, Playlist } from "./../types/Audio"
 import type { OutputStateHealth } from "../types/OutputState"
-import type { Outputs } from "./../types/Output"
+import type { Outputs, RtmpStatus } from "./../types/Output"
 import type { DrawerTabIds } from "./../types/Tabs"
 import type { EQBand, EqualizerConfig } from "./audio/audioEqualizer"
 import type { AudioData } from "./audio/audioPlayer"
+import type { CompressorConfig } from "./audio/effects/audioCompressor"
+import type { DelayConfig } from "./audio/effects/audioDelay"
+import type { FilterConfig } from "./audio/effects/audioFilter"
+import type { LimiterConfig } from "./audio/effects/audioLimiter"
+import type { NoiseGateConfig } from "./audio/effects/audioNoiseGate"
+import type { ReverbConfig } from "./audio/effects/audioReverb"
+import type { StereoShaperConfig } from "./audio/effects/audioStereoShaper"
 import type { API_metronome } from "./components/actions/api"
+import type { PlayingVideoState } from "./components/media/video/videoPlayer"
 
 // ----- TEMPORARY VARIABLES -----
 
@@ -36,6 +45,19 @@ export const localeDirection: Writable<"rtl" | "ltr"> = writable("ltr")
 export const dictionary: Writable<Dictionary> = writable({})
 export const saved: Writable<boolean> = writable(true)
 export const loaded: Writable<boolean> = writable(false)
+export const activeAudioEffects: Writable<string> = writable("")
+export const activeCanvaPresentation: Writable<{ designId: string; presentationName: string; slideCount?: number; thumbnail?: string; providerId?: ContentProviderId } | null> = writable(null)
+export const rtmpStatus: Writable<{ [outputId: string]: RtmpStatus }> = writable({})
+export const openedInteractionId: Writable<string> = writable("")
+export const activeInteractions: Writable<string[]> = writable([])
+export const activeTimerTagFilter: Writable<string[]> = writable([])
+export const playingVideoState: Writable<{ [key: string]: PlayingVideoState }> = writable({})
+export const actionMoreOptionsUsed: Writable<boolean> = writable(false)
+export const editMode: Writable<EditMode> = writable("default")
+export const cachedDynamicValues: Writable<{ [key: string]: string }> = writable({})
+export const interactions: Writable<{ [key: string]: Interaction }> = writable({})
+export const timerTags: Writable<{ [key: string]: Tag }> = writable({})
+export const obsData: Writable<{ enabled?: boolean; connected?: boolean; ip?: string; port?: number; password?: string }> = writable({})
 export const loadedState: Writable<string[]> = writable([])
 export const isDev: Writable<boolean> = writable(false)
 export const windowState: Writable<any> = writable({})
@@ -258,7 +280,19 @@ export const volume: Writable<number> = writable(1) // 1
 export const gain: Writable<number> = writable(1) // DEPRECATED - only use volume
 export const audioChannelsData: Writable<{ [key: string]: AudioChannelData }> = writable({}) // {}
 export const metronome: Writable<API_metronome> = writable({}) // {}
+export const audioRouting: Writable<AudioRoutingConfig | null> = writable(null) // {init}
 export const effectsLibrary: Writable<{ path: string; name: string }[]> = writable([]) // []
+export interface AudioEffectsConfig {
+    equalizer: EqualizerConfig
+    filter: FilterConfig
+    noiseGate: NoiseGateConfig
+    compressor: CompressorConfig
+    limiter: LimiterConfig
+    reverb: ReverbConfig
+    delay: DelayConfig
+    stereoShaper: StereoShaperConfig
+}
+export const audioEffects = writable<Record<string, AudioEffectsConfig>>({}) // {}
 export const equalizerConfig = writable<EqualizerConfig>({ enabled: false, bands: [] })
 export const eqPresets: Writable<{ [key: string]: { name: string; bands: EQBand[] } }> = writable({}) // {}
 

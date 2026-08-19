@@ -1,8 +1,9 @@
 <script lang="ts">
     import { Main } from "../../../types/IPC/Main"
     import type { Show } from "../../../types/Show"
+    import { syncCanvaShow } from "../../converters/canvaPresentation"
     import { sendMain } from "../../IPC/main"
-    import { activeDrawerTab, activeShow, drawer, labelsDisabled, openScripture, scriptures, shows } from "../../stores"
+    import { activeDrawerTab, activeShow, drawer, labelsDisabled, openedInteractionId, openScripture, scriptures, shows } from "../../stores"
     import { createSlides, getDateString, getSelectedEvents, sortDays } from "../drawer/calendar/calendar"
     import { history } from "../helpers/history"
     import { setDrawerTabData } from "../helpers/historyHelpers"
@@ -10,6 +11,7 @@
     import T from "../helpers/T.svelte"
     import MaterialButton from "../inputs/MaterialButton.svelte"
 
+    export let showId: string
     export let show: Show
 
     $: data = show?.reference?.data || {}
@@ -47,12 +49,32 @@
         if ($drawer.height <= 40) drawer.set({ height: $drawer.stored || 300, stored: null })
     }
 
+    function openInteraction() {
+        openedInteractionId.set(data.id)
+
+        setDrawerTabData("functions", "interactions")
+        activeDrawerTab.set("functions")
+
+        // open drawer if closed
+        if ($drawer.height <= 40) drawer.set({ height: $drawer.stored || 300, stored: null })
+    }
+
     function openURL(url: string) {
         sendMain(Main.URL, url)
     }
 
     function removeMarkdownURL(text: string) {
         return text.replace(/\[([^\]]+)\][^\)]+\)/g, "$1")
+    }
+
+    // Canva
+    let syncingCanva = false
+    async function refreshCanva() {
+        if (syncingCanva) return
+
+        syncingCanva = true
+        await syncCanvaShow(showId)
+        syncingCanva = false
     }
 </script>
 
@@ -65,12 +87,16 @@
             {/if}
         </p>
 
+        <div class="divider" />
+
         <MaterialButton on:click={updateCalendar} style="white-space: nowrap;min-width: 100px;">
             <Icon id="calendar" />
             {#if !$labelsDisabled}<T id="show.update" />{/if}
         </MaterialButton>
     {:else if show?.reference?.type === "scripture"}
         <p data-title={data.version || ""}><T id="tabs.scripture" />: {data.version || ""}</p>
+
+        <div class="divider" />
 
         <MaterialButton on:click={openTab} style="white-space: nowrap;min-width: 100px;">
             <Icon id="scripture" />
@@ -86,9 +112,32 @@
             {/if}
         </p>
 
+        <div class="divider" />
+
         <MaterialButton title="Open Lessons.church Website" on:click={() => openURL("https://lessons.church")} style="white-space: nowrap;min-width: 150px;">
             <Icon id="book" />
             Lessons.church
+        </MaterialButton>
+    {:else if show?.reference?.type === "canva"}
+        <p>
+            Canva: {data.presentationName || show.name || ""}
+        </p>
+
+        <div class="divider" />
+
+        <MaterialButton title="show.update" icon="refresh" disabled={syncingCanva} on:click={refreshCanva}>
+            <T id="show.update" />
+        </MaterialButton>
+    {:else if show?.reference?.type === "interaction"}
+        <p>
+            <T id="tabs.interactions" />: {data.name || ""}
+        </p>
+
+        <div class="divider" />
+
+        <MaterialButton title="main.open" on:click={openInteraction}>
+            <Icon id="game" />
+            {#if !$labelsDisabled}<T id="main.open" />{/if}
         </MaterialButton>
     {/if}
 </div>
