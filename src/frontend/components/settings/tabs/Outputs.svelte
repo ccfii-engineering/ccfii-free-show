@@ -3,17 +3,18 @@
     import { uid } from "uid"
     import { BLACKMAGIC, NDI, OUTPUT } from "../../../../types/Channels"
     import { Main } from "../../../../types/IPC/Main"
-    import { Option } from "../../../../types/Main"
+    import type { Option } from "../../../../types/Main"
     import type { Output, RtmpDestination } from "../../../../types/Output"
     import { AudioAnalyser } from "../../../audio/audioAnalyser"
     import { requestMain, sendMain } from "../../../IPC/main"
-    import { activePage, activePopup, activeStage, activeStyle, alertMessage, currentOutputSettings, ndiData, outputDisplay, outputs, rtmpStatus, saved, settingsTab, special, stageShows, styles, toggleOutputEnabled } from "../../../stores"
+    import { activePage, activePopup, activeStage, activeStyle, alertMessage, currentOutputSettings, ndiData, outputDisplay, outputs, outputStateHealth, rtmpStatus, saved, settingsTab, special, stageShows, styles, toggleOutputEnabled } from "../../../stores"
     import { newToast } from "../../../utils/common"
     import { translateText } from "../../../utils/language"
     import { destroy, receive, send } from "../../../utils/request"
     import { clone, keysToID, sortByName, sortObject } from "../../helpers/array"
     import { addRtmpDestination, checkFFmpeg, refreshOut, removeRtmpDestination, startRtmpStreaming, startStreaming, stopRtmpStreaming, stopStreaming, toggleOutput, updateOutputRtmpData, updateOutputWebrtcData, updateRtmpDestination } from "../../helpers/output"
     import { hasStreamableDestination } from "../../helpers/rtmpDestinations"
+    import { describeRendererHealth } from "../../output/gpu/rendererHealth"
     import InputRow from "../../input/InputRow.svelte"
     import Title from "../../input/Title.svelte"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
@@ -328,6 +329,11 @@
     <MaterialToggleSwitch label="settings.enabled" checked={currentOutput?.enabled} defaultValue={true} disabled={(!currentOutput?.stageOutput && currentOutput?.enabled && activeOutputs.length < 2) || (currentOutput?.enabled && isStreaming)} on:change={(e) => _toggleOutput(e.detail)} />
 {/if}
 
+{#if currentOutput && !currentOutput.stageOutput}
+    <MaterialToggleSwitch label="Use GPU Output Renderer for this output" checked={currentOutput.useWebGPU !== false} defaultValue={true} on:change={(e) => updateOutput("useWebGPU", e.detail)} />
+    <p class="renderer-status" data-renderer-status={currentOutput.id}>{describeRendererHealth($outputStateHealth[currentOutput.id || ""], $special.useWebGPUOutput === false || currentOutput.useWebGPU === false)}</p>
+{/if}
+
 {#if stageId}
     <InputRow>
         <MaterialPopupButton label="stage.stage_layout" value={stageId} name={$stageShows[stageId]?.name} icon="stage" popupId="select_stage_layout" on:change={(e) => updateOutput("stageOutput", e.detail)} />
@@ -503,6 +509,12 @@
 {/if}
 
 <style>
+    .renderer-status {
+        margin: 4px 10px 10px;
+        font-size: 0.8em;
+        opacity: 0.7;
+    }
+
     .hint {
         padding: 0 10px 10px;
         font-size: 0.8em;
