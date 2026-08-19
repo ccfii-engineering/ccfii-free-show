@@ -1,3 +1,16 @@
+<-- Build v1.12.0 -->
+
+What's new in this build:
+
+GPU Presentation Output
+- Presentation outputs now prioritize a qualified WebGPU renderer and safely use GPU-accelerated WebGL compatibility when WebGPU is unavailable.
+- Rapid or interrupted slide changes no longer leave duplicated background generations visible.
+- Images and videos remain on the GPU renderer with improved fitting, filters, transforms, transitions, and bounded resource cleanup.
+
+Renderer Recovery and Controls
+- Renderer startup now verifies a presented frame, cleans up failed GPU sessions, and uses bounded recovery with an atomic emergency legacy fallback.
+- Output settings now show the active graphics backend and provide per-output GPU renderer controls alongside the global emergency control.
+
 <-- Build v1.11.1 -->
 
 What's new in this build:
