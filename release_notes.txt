@@ -1,3 +1,17 @@
+<-- Build v1.11.1 -->
+
+What's new in this build:
+
+Windows Startup
+- Windows installations now include the shared output-state runtime files required by the Electron main process, preventing the startup "Cannot find module '../../common/outputState/snapshot'" error.
+
+Media Library Performance
+- Opening large audio folders no longer fully loads every audio file just to read its duration.
+- Audio lists now render efficiently through virtualization, and thumbnail capture concurrency is limited to keep the interface responsive during indexing.
+
+Upstream FreeShow Updates
+- Integrated the latest official FreeShow improvements, including expanded audio routing and effects, RTMP and WebRTC streaming support, provider integrations, and current platform fixes while preserving CCFII branding and reliable output-state delivery.
+
 <-- Build v1.11.0 -->
 
 What's new in this build:
