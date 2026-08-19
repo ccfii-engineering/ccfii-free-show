@@ -202,7 +202,9 @@ async function generate(input: string, output: string, size: string, config: Con
 let mediaBeingCaptured = 0
 const captureTimeouts = new Map<string, NodeJS.Timeout>()
 const CAPTURE_TIMEOUT = 15000
-const maxAmount = 20
+// Each capture loads a real <video>/<img> + canvas draw on the renderer's UI thread,
+// so high concurrency freezes the app while indexing a folder. Keep it low.
+const maxAmount = 4
 const refillMargin = maxAmount * 0.6
 async function captureWithCanvas(data: { input: string; output: string; size: ResizeOptions; extension: string; config: Config; id: string }) {
     if (!(await doesPathExistAsync(data.input))) {

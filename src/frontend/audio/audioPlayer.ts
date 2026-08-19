@@ -479,9 +479,11 @@ export class AudioPlayer {
     static async getDuration(id: string) {
         if (this.storedDurations.has(id)) return this.storedDurations.get(id)!
 
-        const activeAudio = this.getAudio(id)
-        let audio = activeAudio || (await loadAudioFile(id))
-        let duration = audio?.duration || 0
+        // reuse an already-loaded playback element if present (no extra decode),
+        // otherwise probe metadata only — fully loading every file just to read a
+        // duration freezes the UI thread when opening a large audio folder
+        const existing = this.getAudio(id)
+        let duration = existing ? existing.duration || 0 : await probeAudioDuration(id)
         // audio streams does not end and have Infinite duration
         if (duration === Infinity) duration = 0
 
@@ -614,4 +616,52 @@ export async function loadAudioFile(path: string): Promise<HTMLAudioElement | nu
             resolve(null)
         }
     })
+}
+
+// Reads only the duration via metadata (preload="metadata"/"loadedmetadata") instead of
+// fully buffering the file like loadAudioFile()'s "canplaythrough", and caps concurrency
+// so indexing a large audio folder doesn't decode every file on the UI thread at once.
+const DURATION_PROBE_CONCURRENCY = 3
+let activeDurationProbes = 0
+const durationProbeQueue: (() => void)[] = []
+const inFlightDurationProbes = new Map<string, Promise<number>>()
+
+function probeAudioDuration(path: string): Promise<number> {
+    const existing = inFlightDurationProbes.get(path)
+    if (existing) return existing
+
+    const promise = new Promise<number>((resolve) => {
+        const run = () => {
+            activeDurationProbes++
+            const audio = new Audio()
+            audio.preload = "metadata"
+
+            let settled = false
+            const done = (duration: number) => {
+                if (settled) return
+                settled = true
+                audio.removeEventListener("loadedmetadata", onMeta)
+                audio.removeEventListener("error", onError)
+                audio.src = ""
+                activeDurationProbes--
+                resolve(duration)
+                const next = durationProbeQueue.shift()
+                if (next) next()
+            }
+            const onMeta = () => done(audio.duration || 0)
+            const onError = () => done(0)
+
+            audio.addEventListener("loadedmetadata", onMeta, { once: true })
+            audio.addEventListener("error", onError, { once: true })
+            audio.src = encodeFilePath(path)
+        }
+
+        if (activeDurationProbes < DURATION_PROBE_CONCURRENCY) run()
+        else durationProbeQueue.push(run)
+    }).finally(() => {
+        inFlightDurationProbes.delete(path)
+    })
+
+    inFlightDurationProbes.set(path, promise)
+    return promise
 }

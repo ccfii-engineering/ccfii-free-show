@@ -22,6 +22,7 @@
     import AudioStreams from "../live/AudioStreams.svelte"
     import Microphones from "../live/Microphones.svelte"
     import Folder from "../media/Folder.svelte"
+    import VirtualList from "../VirtualList.svelte"
     import AudioEffect from "./AudioEffect.svelte"
     import AudioFile from "./AudioFile.svelte"
     import Metronome from "./Metronome.svelte"
@@ -287,6 +288,9 @@
 
     $: pathString = path.replace(rootPath, "").replace(name, "").replaceAll("\\", "/").split("/").filter(Boolean).join("/")
 
+    // the virtualized file list owns its own scroll viewport, so it needs the grid to fill the height
+    $: showVirtualFiles = !["inputs", "metronome", "effects_library"].includes(active || "") && !playlist && searchedFiles.length > 0
+
     let updater = 1
     $: if (active) {
         setTimeout(update, 500)
@@ -329,8 +333,8 @@
     </div>
 {/if}
 
-<div class="scroll" style="flex: 1;overflow-y: auto;" class:full={active === "inputs" || active === "effects_library"} bind:this={scrollElem}>
-    <div class="grid" style={active !== "inputs" && active !== "effects_library" && (playlist ? playlist.songs.length : searchedFiles.length) ? "" : "height: 100%;"}>
+<div class="scroll" style="flex: 1;overflow-y: auto;" class:full={active === "inputs" || active === "effects_library" || showVirtualFiles} bind:this={scrollElem}>
+    <div class="grid" style={showVirtualFiles ? "height: 100%;" : active !== "inputs" && active !== "effects_library" && (playlist ? playlist.songs.length : searchedFiles.length) ? "" : "height: 100%;"}>
         {#if active === "inputs"}
             {#if inputsTab === "microphones"}
                 <Microphones />
@@ -366,13 +370,13 @@
             {:else}
                 {#key rootPath}
                     {#key path}
-                        {#each searchedFiles as file}
+                        <VirtualList items={searchedFiles} let:item={file}>
                             {#if file.isFolder}
                                 <Folder name={file.name} path={file.path} mode="list" on:open={(e) => (path = e.detail)} />
                             {:else}
                                 <AudioFile path={file.path} name={file.name} {active} />
                             {/if}
-                        {/each}
+                        </VirtualList>
                     {/key}
                 {/key}
             {/if}
