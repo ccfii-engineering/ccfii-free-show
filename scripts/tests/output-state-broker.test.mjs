@@ -103,6 +103,62 @@ test("a render failure is observed without recreating a responsive renderer", ()
     assert.deepEqual(harness.recreated, [])
 })
 
+test("first renderer initialization failure recreates the output once", () => {
+    const harness = createBrokerHarness()
+    harness.ready("session-a")
+
+    const accepted = harness.broker.rendererStatus({ outputId: "one", sessionId: "session-a", state: "failed", reason: "gpu_initialization_failed" }, "one")
+
+    assert.equal(accepted, true)
+    assert.deepEqual(harness.recreated, ["one"])
+    assert.equal(harness.latestHealth().status, "recovering")
+})
+
+test("repeated renderer initialization failure activates atomic session fallback", () => {
+    const harness = createBrokerHarness()
+    harness.ready("session-a")
+    harness.broker.rendererStatus({ outputId: "one", sessionId: "session-a", state: "failed", reason: "gpu_initialization_failed" }, "one")
+    harness.ready("session-b")
+
+    harness.broker.rendererStatus({ outputId: "one", sessionId: "session-b", state: "failed", reason: "gpu_initialization_failed" }, "one")
+
+    assert.deepEqual(harness.recreated, ["one"])
+    assert.equal(harness.latestHealth().status, "legacy-fallback")
+    assert.deepEqual(harness.sentTo("one").at(-1), { channel: "OUTPUT_RENDERER_FALLBACK", data: { reason: "gpu_initialization_failed" } })
+})
+
+test("active GPU renderer reports its backend and clears recovery history", () => {
+    const harness = createBrokerHarness()
+    harness.ready("session-a")
+    harness.broker.rendererStatus({ outputId: "one", sessionId: "session-a", state: "gpu-active", backend: "webgpu" }, "one")
+
+    assert.equal(harness.latestHealth().status, "gpu-active")
+    assert.equal(harness.latestHealth().backend, "webgpu")
+})
+
+test("GPU renderer identity survives later synchronization health updates", () => {
+    const harness = createBrokerHarness()
+    harness.broker.publish(outputOneRevision1)
+    harness.ready("session-a")
+    harness.broker.rendererStatus({ outputId: "one", sessionId: "session-a", state: "gpu-active", backend: "webgl" }, "one")
+
+    harness.broker.applied(observation(outputOneRevision1, "session-a"), "one")
+
+    assert.equal(harness.latestHealth().status, "healthy")
+    assert.equal(harness.latestHealth().rendererState, "gpu-active")
+    assert.equal(harness.latestHealth().backend, "webgl")
+})
+
+test("stale renderer status cannot alter a recreated session", () => {
+    const harness = createBrokerHarness()
+    harness.ready("session-current")
+
+    const accepted = harness.broker.rendererStatus({ outputId: "one", sessionId: "session-stale", state: "failed", reason: "late_failure" }, "one")
+
+    assert.equal(accepted, false)
+    assert.deepEqual(harness.recreated, [])
+})
+
 function observation(snapshot, sessionId) {
     return { outputId: "one", sessionId, topic: snapshot.topic, scope: snapshot.scope, revision: snapshot.revision, contentHash: snapshot.contentHash }
 }

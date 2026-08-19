@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { applyFit } from "../../src/frontend/components/output/webgpu/layers/MediaLayer.ts"
+import { applyFit } from "../../src/frontend/components/output/webgpu/layers/mediaFit.ts"
 
 function createSprite() {
     return {

@@ -1,6 +1,7 @@
 import type { OutBackground, Transition } from "../../../../types/Show"
 import type { VideoControlData } from "./videoControlState"
 import type { VideoTimeCallback } from "./layers/BackgroundLayer"
+import type { OutputRenderAuthority } from "../../../outputState/clientRuntime"
 
 // All layer modules loaded dynamically to avoid static pixi.js imports
 let bgMod: any = null
@@ -36,16 +37,29 @@ export interface LayerManagerState {
     height: number
 }
 
-export async function createLayerManager(app: any, containers: any, width: number, height: number, slideVideoTimeHandler: VideoTimeCallback | null = null): Promise<LayerManagerState> {
+export async function createLayerManager(app: any, containers: any, width: number, height: number, slideVideoTimeHandler: VideoTimeCallback | null = null, getAuthority: () => OutputRenderAuthority = () => ({ sessionId: "", revision: 0 })): Promise<LayerManagerState> {
     const bg = await getBgMod()
     const ov = await getOverlayMod()
     const sl = await getSlideMod()
 
-    const styleBackground = bg.createBackgroundLayer(containers.background, width, height)
-    // only the slide background reports time — style background is a decorative loop and not the user-controlled video
-    const slideBackground = bg.createBackgroundLayer(containers.background, width, height, slideVideoTimeHandler)
-    const slideLayer = await sl.createSlideLayer(containers.slide, width, height)
-    const overlayLayer = ov.createOverlayLayer(containers.overlays, width, height)
+    let styleBackground: any = null
+    let slideBackground: any = null
+    let slideLayer: any = null
+    let overlayLayer: any = null
+
+    try {
+        styleBackground = bg.createBackgroundLayer(containers.background, width, height, null, getAuthority)
+        // only the slide background reports time — style background is a decorative loop and not the user-controlled video
+        slideBackground = bg.createBackgroundLayer(containers.background, width, height, slideVideoTimeHandler, getAuthority)
+        slideLayer = await sl.createSlideLayer(containers.slide, width, height)
+        overlayLayer = ov.createOverlayLayer(containers.overlays, width, height)
+    } catch (error) {
+        if (styleBackground) bg.destroyBackgroundLayer(styleBackground, "style-bg")
+        if (slideBackground) bg.destroyBackgroundLayer(slideBackground, "slide-bg")
+        if (slideLayer) sl.destroySlideLayer(slideLayer)
+        if (overlayLayer) ov.destroyOverlayLayer(overlayLayer)
+        throw error
+    }
 
     return {
         app,

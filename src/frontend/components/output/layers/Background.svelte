@@ -5,6 +5,7 @@
     import type { Styles } from "../../../../types/Settings"
     import type { OutBackground, Transition } from "../../../../types/Show"
     import { clone } from "../../helpers/array"
+    import { resolveGPUBackgroundStyle } from "../gpu/GPUBackgroundStyle"
     import { getPixiBackgroundBridge, isPixiSupported } from "../webgpu/pixiBackgroundBridge"
     import BackgroundMedia from "./BackgroundMedia.svelte"
 
@@ -22,12 +23,13 @@
 
     // --- Pixi delegation ---------------------------------------------------------------------
     // When a parent has provided a pixiBackgroundBridge (i.e. we're rendered inside WebGPUOutput)
-    // AND the media type is Pixi-compatible, we hand data off to the bridge and render nothing.
-    // For unsupported types (screen, ndi, blackmagic, camera, player) or when no bridge is
-    // present, we fall through to the normal DOM render below.
+    // AND the file-backed media type is GPU-compatible, we hand data off to the bridge and render
+    // nothing. Live/native surfaces (screen, NDI, Blackmagic, camera, player) remain explicit DOM
+    // surfaces owned by the same output coordinator.
     const pixiBridge = getPixiBackgroundBridge()
     const pixiSlot: "style" | "slide" = styleBackground ? "style" : "slide"
-    $: pixiDelegated = !!(pixiBridge && isPixiSupported(data?.type) && pixiBridge.update(pixiSlot, data, transition))
+    $: pixiData = data ? resolveGPUBackgroundStyle(data, currentStyle) : data
+    $: pixiDelegated = !!(pixiBridge && isPixiSupported(data?.type) && pixiBridge.update(pixiSlot, pixiData, transition))
     $: if (pixiBridge && pixiDelegated && animationStyle !== undefined) pixiBridge.setAnimation(pixiSlot, animationStyle)
     onDestroy(() => {
         if (pixiBridge) pixiBridge.clear(pixiSlot)

@@ -5,10 +5,13 @@
     import { OUTPUT } from "../../../../types/Channels"
     import type { OutBackground, Transition } from "../../../../types/Show"
     import { allOutputs, outputs } from "../../../stores"
+    import { getOutputRenderAuthority } from "../../../outputState/clientRuntime"
     import { outputEntry } from "../../../utils/perEntryStores"
     import { destroy, receive, send } from "../../../utils/request"
     import { getOutputResolution } from "../../helpers/output"
     import Output from "../Output.svelte"
+    import type { GPUBackend } from "../gpu/GPUBackend"
+    import { destroyPixiApp, initializePixiOutputSession } from "../gpu/PixiOutputSession"
     import { isVideoTimeReset } from "./videoControlState"
     import { isPixiSupported, providePixiBackgroundBridge, type PixiBackgroundBridge } from "./pixiBackgroundBridge"
 
@@ -21,6 +24,8 @@
     let layerMgrMod: any = null
     let rendererMod: any = null
     let pixiReady = false
+    let gpuBackend: GPUBackend | null = null
+    let sessionActive = true
     let timeSendingTimeout: NodeJS.Timeout | null = null
     let lastVideoDataSent = ""
     let lastVideoTimeSent = Number.NaN
@@ -137,6 +142,7 @@
         if (!canvas) return
         listenerId = `WEBGPU_VIDEO_RECEIVE_${outputId}`
         receive(OUTPUT, videoReceiver, listenerId)
+        reportRendererStatus("initializing")
 
         try {
             const PIXI = await import("pixi.js")
@@ -144,20 +150,26 @@
             const initW = initRes?.width || 1920
             const initH = initRes?.height || 1080
 
-            const app = new PIXI.Application()
-            await app.init({
+            const initialized = await initializePixiOutputSession({
+                PIXI,
                 canvas,
                 width: initW,
                 height: initH,
-                backgroundColor: 0x000000,
-                backgroundAlpha: currentOutput?.transparent ? 0 : 1,
-                preference: "webgl",
-                resolution: 1
+                transparent: !!currentOutput?.transparent
             })
+            const app = initialized.app
+            canvas = initialized.canvas
+            if (!sessionActive) {
+                destroyPixiApp(app)
+                return
+            }
             pixiApp = app
+            gpuBackend = initialized.backend
+            canvas.dataset.gpuBackend = gpuBackend
 
             rendererMod = await import("./PixiRenderer")
             layerMgrMod = await import("./LayerManager")
+            if (!sessionActive) return
 
             const containers = rendererMod.createStageContainers(app)
             // Publish the slide background's video currentTime/duration/paused so MediaControls,
@@ -183,8 +195,15 @@
                     timeSendingTimeout = null
                 }, 220)
             }
-            layerMgr = await layerMgrMod.createLayerManager(app, containers, initW, initH, videoTimeHandler)
+            const createdLayerManager = await layerMgrMod.createLayerManager(app, containers, initW, initH, videoTimeHandler, getOutputRenderAuthority)
+            if (!sessionActive) {
+                layerMgr = createdLayerManager
+                await cleanupRendererResources()
+                return
+            }
+            layerMgr = createdLayerManager
             pixiReady = true
+            reportRendererStatus("gpu-active", gpuBackend)
 
             // Flush anything buffered before Pixi was ready
             for (const u of pendingUpdates) bridge.update(u.slot, u.data, u.transition)
@@ -192,9 +211,33 @@
             for (const a of pendingAnimations) bridge.setAnimation(a.slot, a.animationStyle)
             pendingAnimations.length = 0
         } catch (e) {
+            await cleanupRendererResources()
             console.error("WebGPUOutput: init failed:", e)
+            if (sessionActive) reportRendererStatus("failed", null, e instanceof Error ? e.message : String(e))
         }
     })
+
+    async function cleanupRendererResources() {
+        pixiReady = false
+        const managerToDestroy = layerMgr
+        const managerModule = layerMgrMod
+        const appToDestroy = pixiApp
+        layerMgr = null
+        pixiApp = null
+        gpuBackend = null
+
+        try {
+            if (managerToDestroy && managerModule) await managerModule.destroyLayerManager(managerToDestroy)
+        } catch (error) {
+            console.warn("WebGPUOutput: layer cleanup failed:", error)
+        } finally {
+            if (appToDestroy) destroyPixiApp(appToDestroy)
+        }
+    }
+
+    function reportRendererStatus(state: "initializing" | "gpu-active" | "failed", backend: GPUBackend | null = null, reason = "") {
+        send(OUTPUT, ["OUTPUT_RENDERER_STATUS"], { outputId, sessionId: getOutputRenderAuthority().sessionId, state, ...(backend ? { backend } : {}), ...(reason ? { reason } : {}) })
+    }
 
     const videoReceiver = {
         DATA: (data: any) => {
@@ -218,20 +261,45 @@
     }
 
     onDestroy(() => {
+        sessionActive = false
+        pixiReady = false
         if (listenerId) destroy(OUTPUT, listenerId)
         if (slideBgClearTimer) clearTimeout(slideBgClearTimer)
         if (styleBgClearTimer) clearTimeout(styleBgClearTimer)
         if (timeSendingTimeout) clearTimeout(timeSendingTimeout)
-        if (layerMgr && layerMgrMod) layerMgrMod.destroyLayerManager(layerMgr)
-        if (pixiApp) pixiApp.destroy(true, { children: true, texture: true })
+        // Destroy the app even if an async layer import never settles. Any late manager result is
+        // independently cleaned by the inactive-session branch above.
+        void cleanupRendererResources()
     })
 </script>
 
-<Output {outputId} {style}>
-    <canvas slot="background" bind:this={canvas} class="pixi-canvas" />
-</Output>
+<div class="gpu-session" data-gpu-session-state={pixiReady ? "gpu-active" : "initializing"}>
+    <div class="composed-frame" class:presented={pixiReady}>
+        <Output {outputId} {style}>
+            <canvas slot="background" bind:this={canvas} class="pixi-canvas" />
+        </Output>
+    </div>
+</div>
 
 <style>
+    .gpu-session,
+    .composed-frame {
+        width: 100%;
+        height: 100%;
+    }
+
+    .gpu-session {
+        background: #000;
+    }
+
+    .composed-frame {
+        opacity: 0;
+    }
+
+    .composed-frame.presented {
+        opacity: 1;
+    }
+
     .pixi-canvas {
         position: absolute;
         inset: 0;

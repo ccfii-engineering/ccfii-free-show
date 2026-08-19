@@ -179,6 +179,8 @@ const receiveOUTPUTasMAIN: any = {
             const previous = current[health.outputId]
             if (previous?.status !== health.status) {
                 if (health.status === "recovering") newToast(`Output ${health.outputId} stopped acknowledging state; recreating it once.`)
+                else if (health.status === "legacy-fallback") newToast(`Output ${health.outputId} could not start a GPU backend. Legacy fallback is active for this session.`)
+                else if (health.status === "failed") newToast(`Output ${health.outputId} GPU renderer failed: ${health.reason || "unknown error"}.`)
                 else if (health.status === "unhealthy") newToast(`Output ${health.outputId} is not synchronizing. Restart or disable this output.`)
                 else if (health.status === "render_failed") newToast(`Output ${health.outputId} could not render revision ${health.revision ?? "unknown"}.`)
                 else if (health.status === "healthy" && previous && previous.status !== "syncing") newToast(`Output ${health.outputId} synchronization recovered.`)

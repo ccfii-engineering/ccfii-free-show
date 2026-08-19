@@ -7,12 +7,18 @@ test("delegates explicit images to Pixi", () => {
     assert.equal(isPixiSupported("image"), true)
 })
 
-test("keeps videos on the DOM renderer", () => {
-    assert.equal(isPixiSupported("video"), false)
+test("delegates videos to GPU composition", () => {
+    assert.equal(isPixiSupported("video"), true)
 })
 
-test("keeps ambiguous media on the DOM renderer", () => {
-    assert.equal(isPixiSupported("media"), false)
+test("delegates generic file media while keeping unknown types on managed surfaces", () => {
+    assert.equal(isPixiSupported("media"), true)
     assert.equal(isPixiSupported(undefined), false)
     assert.equal(isPixiSupported(null), false)
+})
+
+test("keeps live and native presentation surfaces in the composed Electron window", () => {
+    for (const type of ["camera", "screen", "website", "player", "ndi", "blackmagic", "pdf", "powerpoint"]) {
+        assert.equal(isPixiSupported(type), false, `${type} should remain a managed presentation surface`)
+    }
 })

@@ -1,14 +1,17 @@
-import { Container } from "pixi.js"
-import type { Sprite, Texture } from "pixi.js"
-import type { OutBackground, Transition } from "../../../../../types/Show"
+import { Container, Texture } from "pixi.js"
+import type { Sprite } from "pixi.js"
+import type { Transition } from "../../../../../types/Show"
+import type { GPUBackgroundData } from "../../gpu/GPUBackgroundStyle"
 import type { DualSpriteState } from "../../../../../types/WebGPU"
 import { createLatestRequest } from "../../../../utils/latestRequest"
-import { loadImageTexture, createVideoTexture, createMediaSprite, applyFit, removeSprite } from "./MediaLayer"
+import type { OutputRenderAuthority } from "../../../../outputState/clientRuntime"
+import { loadImageTexture, releaseImageTexture, createVideoTexture, createMediaSprite, applyFit, applyMediaStyle, removeSprite } from "./MediaLayer"
 import { startTransition, cancelTransition } from "../transitionManager"
 import { applyVideoControlData, getVideoControlSnapshot, type VideoControlData } from "../videoControlState"
+import { isVideoSource } from "./mediaSource"
 
 export type VideoTimeCallback = (info: ReturnType<typeof getVideoControlSnapshot>) => void
-type WebGPUOutBackground = OutBackground & { fit?: string }
+const videoListenerCleanup = new WeakMap<HTMLVideoElement, () => void>()
 
 export interface BackgroundLayerState {
     container: Container
@@ -28,9 +31,10 @@ export interface BackgroundLayerState {
     videoTimeHandler: VideoTimeCallback | null
     currentAnimation: string
     latestUpdate: ReturnType<typeof createLatestRequest>
+    getAuthority: () => OutputRenderAuthority
 }
 
-export function createBackgroundLayer(parentContainer: Container, width: number, height: number, videoTimeHandler: VideoTimeCallback | null = null): BackgroundLayerState {
+export function createBackgroundLayer(parentContainer: Container, width: number, height: number, videoTimeHandler: VideoTimeCallback | null = null, getAuthority: () => OutputRenderAuthority = () => ({ sessionId: "", revision: 0 })): BackgroundLayerState {
     const container = new Container()
     container.label = "bg-layer"
     parentContainer.addChild(container)
@@ -52,7 +56,8 @@ export function createBackgroundLayer(parentContainer: Container, width: number,
         height,
         videoTimeHandler,
         currentAnimation: "",
-        latestUpdate: createLatestRequest()
+        latestUpdate: createLatestRequest(),
+        getAuthority
     }
 }
 
@@ -69,8 +74,9 @@ export function setAnimationTransform(state: BackgroundLayerState, animationStyl
     })
 }
 
-export async function updateBackground(state: BackgroundLayerState, data: WebGPUOutBackground | null, transition: Transition, transitionId: string): Promise<void> {
+export async function updateBackground(state: BackgroundLayerState, data: GPUBackgroundData | null, transition: Transition, transitionId: string): Promise<void> {
     const updateRequest = state.latestUpdate.start()
+    const authority = state.getAuthority()
 
     if (!data || (!data.path && !data.id)) {
         clearBackground(state, transitionId)
@@ -81,18 +87,18 @@ export async function updateBackground(state: BackgroundLayerState, data: WebGPU
     const fit = data.fit || "contain"
 
     // Determine which slot is currently "active" (the visible one)
-    const currentIsA = state.dualState.activeSlot === "a"
+    let currentIsA = state.dualState.activeSlot === "a"
     const currentPath = currentIsA ? state.dualState.slotAPath : state.dualState.slotBPath
-    const currentFit = currentIsA ? state.fitA : state.fitB
-    const currentSprite = currentIsA ? state.spriteA : state.spriteB
+    let currentSprite = currentIsA ? state.spriteA : state.spriteB
 
     // Same-path short-circuit: hoisted ABOVE resource allocation + cancelTransition.
     // Reactive callers (WebGPUOutput.svelte) re-invoke updateBackground whenever ANY transition
     // field changes (including text/overlay). Without this early check, each text-transition edit
     // leaks a hidden video element and cancels in-progress media transitions.
     if (newPath === currentPath && currentPath !== "") {
-        if (currentSprite && currentFit !== fit) {
+        if (currentSprite) {
             applyFit(currentSprite, state.width, state.height, fit, currentIsA ? state.sourceWidthA : state.sourceWidthB, currentIsA ? state.sourceHeightA : state.sourceHeightB)
+            applyMediaStyle(currentSprite, data)
             if (currentIsA) state.fitA = fit
             else state.fitB = fit
         }
@@ -105,39 +111,48 @@ export async function updateBackground(state: BackgroundLayerState, data: WebGPU
     // filter/flip/crop/etc), so type-based detection wrongly routes mp4/webm to the image loader.
     // The extension check works for both slide backgrounds (which have data.type set) and style
     // backgrounds (which don't).
-    const isVideo = isVideoPath(newPath) || data.type === "video" || data.type === "media"
+    const isVideo = isVideoSource(newPath, data.type)
 
     let newTexture: Texture
     let videoElement: HTMLVideoElement | null = null
     let srcW = 0
     let srcH = 0
 
-    if (isVideo && isVideoPath(newPath)) {
+    if (isVideo) {
         videoElement = createHiddenVideoElement(newPath, data.loop ?? false, data.muted ?? true)
         attachVideoTimeListeners(videoElement, state.videoTimeHandler)
         await waitForVideoReady(videoElement)
+        if (data.startAt && Number.isFinite(data.startAt)) videoElement.currentTime = data.startAt
         newTexture = createVideoTexture(videoElement)
         srcW = videoElement.videoWidth
         srcH = videoElement.videoHeight
     } else {
-        const loaded = await loadImageTexture(toFileUrl(newPath))
+        const loaded = await loadImageTexture(newPath)
         newTexture = loaded.texture
         srcW = loaded.width
         srcH = loaded.height
     }
 
     // A clear or newer background may arrive while the media is loading.
-    if (!updateRequest.isCurrent()) {
+    const currentAuthority = state.getAuthority()
+    if (!updateRequest.isCurrent() || currentAuthority.sessionId !== authority.sessionId || currentAuthority.revision !== authority.revision) {
+        if (videoElement && newTexture !== Texture.EMPTY && !newTexture.destroyed) newTexture.destroy(true)
         cleanupVideoElement(videoElement)
+        if (!videoElement) releaseImageTexture(newPath)
         return
     }
 
     // After async gap: cancel any in-progress transition and clean up stale state
     cancelTransition(transitionId)
+    // Cancellation completes the interrupted transition and can therefore change activeSlot.
+    // Re-read ownership after the async load and cancellation before choosing which slot to reuse.
+    currentIsA = state.dualState.activeSlot === "a"
+    currentSprite = currentIsA ? state.spriteA : state.spriteB
 
     // Clean up the non-active slot (may have an orphaned sprite from a cancelled transition)
     if (currentIsA) {
-        removeSprite(state.spriteB, state.container)
+        releaseImageTexture(state.dualState.slotBPath)
+        removeSprite(state.spriteB, state.container, !!state.videoElementB)
         cleanupVideoElement(state.videoElementB)
         state.spriteB = null
         state.videoElementB = null
@@ -146,7 +161,8 @@ export async function updateBackground(state: BackgroundLayerState, data: WebGPU
         state.sourceHeightB = 0
         state.dualState.slotBPath = ""
     } else {
-        removeSprite(state.spriteA, state.container)
+        releaseImageTexture(state.dualState.slotAPath)
+        removeSprite(state.spriteA, state.container, !!state.videoElementA)
         cleanupVideoElement(state.videoElementA)
         state.spriteA = null
         state.videoElementA = null
@@ -161,12 +177,12 @@ export async function updateBackground(state: BackgroundLayerState, data: WebGPU
         currentSprite.alpha = 1
         currentSprite.visible = true
         currentSprite.rotation = 0
-        currentSprite.filters = []
     }
 
     // Create new sprite in the non-active slot
     if (currentIsA) {
         state.spriteB = createMediaSprite(newTexture, state.container, state.width, state.height, fit, srcW, srcH)
+        applyMediaStyle(state.spriteB, data)
         state.videoElementB = videoElement
         state.fitB = fit
         state.sourceWidthB = srcW
@@ -182,7 +198,8 @@ export async function updateBackground(state: BackgroundLayerState, data: WebGPU
             state.spriteB,
             transition.custom?.direction,
             () => {
-                removeSprite(state.spriteA, state.container)
+                releaseImageTexture(state.dualState.slotAPath)
+                removeSprite(state.spriteA, state.container, !!state.videoElementA)
                 cleanupVideoElement(state.videoElementA)
                 state.spriteA = null
                 state.videoElementA = null
@@ -197,6 +214,7 @@ export async function updateBackground(state: BackgroundLayerState, data: WebGPU
         )
     } else {
         state.spriteA = createMediaSprite(newTexture, state.container, state.width, state.height, fit, srcW, srcH)
+        applyMediaStyle(state.spriteA, data)
         state.videoElementA = videoElement
         state.fitA = fit
         state.sourceWidthA = srcW
@@ -212,7 +230,8 @@ export async function updateBackground(state: BackgroundLayerState, data: WebGPU
             state.spriteA,
             transition.custom?.direction,
             () => {
-                removeSprite(state.spriteB, state.container)
+                releaseImageTexture(state.dualState.slotBPath)
+                removeSprite(state.spriteB, state.container, !!state.videoElementB)
                 cleanupVideoElement(state.videoElementB)
                 state.spriteB = null
                 state.videoElementB = null
@@ -238,8 +257,10 @@ export function resizeBackground(state: BackgroundLayerState, width: number, hei
 function clearBackground(state: BackgroundLayerState, transitionId: string): void {
     state.latestUpdate.invalidate()
     cancelTransition(transitionId)
-    removeSprite(state.spriteA, state.container)
-    removeSprite(state.spriteB, state.container)
+    releaseImageTexture(state.dualState.slotAPath)
+    releaseImageTexture(state.dualState.slotBPath)
+    removeSprite(state.spriteA, state.container, !!state.videoElementA)
+    removeSprite(state.spriteB, state.container, !!state.videoElementB)
     cleanupVideoElement(state.videoElementA)
     cleanupVideoElement(state.videoElementB)
     state.spriteA = null
@@ -280,11 +301,6 @@ function toFileUrl(path: string): string {
     return path
 }
 
-function isVideoPath(path: string): boolean {
-    const ext = path.split(".").pop()?.toLowerCase() || ""
-    return ["mp4", "webm", "ogg", "mov", "avi", "mkv"].includes(ext)
-}
-
 function createHiddenVideoElement(path: string, loop: boolean, muted: boolean): HTMLVideoElement {
     const video = document.createElement("video")
     video.src = toFileUrl(path)
@@ -307,53 +323,58 @@ function createHiddenVideoElement(path: string, loop: boolean, muted: boolean): 
 function waitForVideoReady(video: HTMLVideoElement): Promise<void> {
     return new Promise((resolve) => {
         const checkDimensions = () => video.videoWidth > 0 && video.videoHeight > 0
+        let settled = false
+        let poll: ReturnType<typeof setInterval> | null = null
+        let timeout: ReturnType<typeof setTimeout> | null = null
 
-        if (video.readyState >= 2 && checkDimensions()) {
-            resolve()
-            return
-        }
-
-        const onReady = () => {
-            // canplay fired but dimensions may not be available yet — poll briefly
-            if (checkDimensions()) {
-                cleanup()
-                resolve()
-                return
-            }
-            // Poll for dimensions (some browsers need a frame or two)
-            let polls = 0
-            const poll = setInterval(() => {
-                polls++
-                if (checkDimensions() || polls > 20) {
-                    clearInterval(poll)
-                    cleanup()
-                    resolve()
-                }
-            }, 50)
-        }
-        const onError = () => {
-            cleanup()
-            console.warn("BackgroundLayer: video load error:", video.src)
-            resolve() // resolve anyway so we don't hang
-        }
-        const cleanup = () => {
+        const finish = () => {
+            if (settled) return
+            settled = true
+            if (poll) clearInterval(poll)
+            if (timeout) clearTimeout(timeout)
             video.removeEventListener("canplay", onReady)
             video.removeEventListener("loadeddata", onReady)
             video.removeEventListener("error", onError)
+            resolve()
+        }
+
+        if (video.readyState >= 2 && checkDimensions()) {
+            finish()
+            return
+        }
+
+        function onReady() {
+            // canplay fired but dimensions may not be available yet — poll briefly
+            if (checkDimensions()) {
+                finish()
+                return
+            }
+            // Poll for dimensions (some browsers need a frame or two)
+            if (poll) return
+            let polls = 0
+            poll = setInterval(() => {
+                polls++
+                if (checkDimensions() || polls > 20) {
+                    finish()
+                }
+            }, 50)
+        }
+        function onError() {
+            console.warn("BackgroundLayer: video load error:", video.src)
+            finish() // resolve anyway so we don't hang
         }
         video.addEventListener("canplay", onReady)
         video.addEventListener("loadeddata", onReady)
         video.addEventListener("error", onError)
         // Timeout fallback
-        setTimeout(() => {
-            cleanup()
-            resolve()
-        }, 5000)
+        timeout = setTimeout(finish, 5000)
     })
 }
 
 function cleanupVideoElement(video: HTMLVideoElement | null): void {
     if (!video) return
+    videoListenerCleanup.get(video)?.()
+    videoListenerCleanup.delete(video)
     video.pause()
     video.src = ""
     video.load()
@@ -367,6 +388,13 @@ function attachVideoTimeListeners(video: HTMLVideoElement, handler: VideoTimeCal
     video.addEventListener("play", report)
     video.addEventListener("pause", report)
     video.addEventListener("seeked", report)
+    videoListenerCleanup.set(video, () => {
+        video.removeEventListener("timeupdate", report)
+        video.removeEventListener("loadedmetadata", report)
+        video.removeEventListener("play", report)
+        video.removeEventListener("pause", report)
+        video.removeEventListener("seeked", report)
+    })
 }
 
 export function destroyBackgroundLayer(state: BackgroundLayerState, transitionId: string): void {

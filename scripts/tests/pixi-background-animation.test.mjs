@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { parseAnimationStyle } from "../../src/frontend/components/output/webgpu/backgroundAnimation.ts"
+import { applyAnimation, cancelAnimation, parseAnimationStyle } from "../../src/frontend/components/output/webgpu/backgroundAnimation.ts"
 
 test("empty string → identity", () => {
     const r = parseAnimationStyle("")
@@ -69,4 +69,22 @@ test("parses ken-burns style from animation.ts (translate + scale + transition)"
 test("easing defaults to linear when not specified", () => {
     const r = parseAnimationStyle("transform: scale(1.1);")
     assert.equal(r.easing, "linear")
+})
+
+test("generation cleanup cancels an owned animation frame", () => {
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame
+    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame
+    const cancelled = []
+    globalThis.requestAnimationFrame = () => 41
+    globalThis.cancelAnimationFrame = (id) => cancelled.push(id)
+    const sprite = { width: 100, height: 100, x: 0, y: 0, rotation: 0, scale: { x: 1, set() {} } }
+
+    try {
+        applyAnimation(sprite, 1920, 1080, "transform: scale(1.2);transition: transform 5s linear;")
+        cancelAnimation(sprite)
+        assert.deepEqual(cancelled, [41])
+    } finally {
+        globalThis.requestAnimationFrame = originalRequestAnimationFrame
+        globalThis.cancelAnimationFrame = originalCancelAnimationFrame
+    }
 })

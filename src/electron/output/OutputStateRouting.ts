@@ -1,4 +1,4 @@
-import type { OutputStateObservation, OutputStateReady, OutputStateRejection, OutputStateRendered, OutputTopicSnapshot } from "../../types/OutputState"
+import type { OutputRendererStatus, OutputStateObservation, OutputStateReady, OutputStateRejection, OutputStateRendered, OutputTopicSnapshot } from "../../types/OutputState"
 import type { Message } from "../../types/Socket"
 
 interface RoutableOutputStateBroker {
@@ -7,6 +7,7 @@ interface RoutableOutputStateBroker {
     applied: (observation: OutputStateObservation, authenticatedOutputId: string) => unknown
     rendered: (observation: OutputStateRendered, authenticatedOutputId: string) => unknown
     rejected: (rejection: OutputStateRejection, authenticatedOutputId: string) => unknown
+    rendererStatus: (status: OutputRendererStatus, authenticatedOutputId: string) => unknown
 }
 
 interface OutputStateRoutingOptions {
@@ -59,9 +60,12 @@ export class OutputStateRouting {
             case "OUTPUT_STATE_REJECTED":
                 this.options.broker.rejected(message.data, authenticatedOutputId)
                 break
+            case "OUTPUT_RENDERER_STATUS":
+                this.options.broker.rendererStatus(message.data, authenticatedOutputId)
+                break
         }
         return true
     }
 }
 
-const rendererChannels = new Set(["OUTPUT_STATE_READY", "OUTPUT_STATE_APPLIED", "OUTPUT_STATE_RENDERED", "OUTPUT_STATE_REJECTED"])
+const rendererChannels = new Set(["OUTPUT_STATE_READY", "OUTPUT_STATE_APPLIED", "OUTPUT_STATE_RENDERED", "OUTPUT_STATE_REJECTED", "OUTPUT_RENDERER_STATUS"])

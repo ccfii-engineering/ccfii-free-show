@@ -1,21 +1,22 @@
 <script lang="ts">
-    import { onMount } from "svelte"
+    import { onDestroy, onMount } from "svelte"
     import { fade } from "svelte/transition"
     import { OUTPUT } from "../types/Channels"
     import type { Resolution } from "../types/Settings"
     import { getResolution } from "./components/helpers/output"
     import Output from "./components/output/Output.svelte"
     import WebGPUOutput from "./components/output/webgpu/WebGPUOutput.svelte"
-    import { shouldUseWebGPU } from "./components/output/webgpu/useWebGPUDecision"
+    import { shouldUseGPUOutput } from "./components/output/webgpu/useWebGPUDecision"
     import { getStyleResolution } from "./components/slide/getStyleResolution"
     import StageLayout from "./components/stage/StageLayout.svelte"
     import { currentWindow, livePrepare, outputs, special, styles } from "./stores"
     import { hideDisplay } from "./utils/common"
-    import { send } from "./utils/request"
+    import { destroy, receive, send } from "./utils/request"
 
     $: outputId = Object.keys($outputs)[0]
     $: currentOutput = $outputs[outputId] || {}
-    $: useWebGPU = shouldUseWebGPU({ special: $special, output: currentOutput })
+    let sessionFallback = false
+    $: useGPUOutput = shouldUseGPUOutput({ special: $special, output: currentOutput, sessionFallback })
 
     // get output resolution
     let width = 0
@@ -36,15 +37,31 @@
 
     // make sure it's loaded to prevent output not changing to stage output because of Svelte transition bug
     let loaded = false
+    let loadedTimer: ReturnType<typeof setTimeout> | null = null
     onMount(() => {
-        setTimeout(() => {
+        receive(
+            OUTPUT,
+            {
+                OUTPUT_RENDERER_FALLBACK: () => {
+                    sessionFallback = true
+                }
+            },
+            "output-renderer-fallback"
+        )
+        loadedTimer = setTimeout(() => {
             loaded = true
         }, 2000)
+    })
+    onDestroy(() => {
+        if (loadedTimer) clearTimeout(loadedTimer)
+        destroy(OUTPUT, "output-renderer-fallback")
     })
 </script>
 
 <div
     class="fill context #output_window"
+    data-output-coordinator={outputId}
+    data-renderer-mode={useGPUOutput ? "gpu" : "legacy-fallback"}
     style="flex-direction: {getStyleResolution(resolution, width, height, 'fit').includes('width') && !Object.values($outputs)[0]?.stageOutput ? 'row' : 'column'};"
     class:hideCursor={$special.hideCursor}
     on:mousemove={mousemoveOutput}
@@ -64,11 +81,13 @@
     {#if $outputs[outputId]?.stageOutput}
         <StageLayout {outputId} stageId={$outputs[outputId].stageOutput} edit={false} />
     {:else if loaded}
-        {#if useWebGPU}
-            <WebGPUOutput {outputId} style={getStyleResolution(resolution, width, height, "fit")} />
-        {:else}
-            <Output {outputId} style={getStyleResolution(resolution, width, height, "fit")} />
-        {/if}
+        {#key useGPUOutput ? "gpu" : "legacy-fallback"}
+            {#if useGPUOutput}
+                <WebGPUOutput {outputId} style={getStyleResolution(resolution, width, height, "fit")} />
+            {:else}
+                <Output {outputId} style={getStyleResolution(resolution, width, height, "fit")} />
+            {/if}
+        {/key}
     {/if}
 
     <!-- black overlay for live preparation/changes -->

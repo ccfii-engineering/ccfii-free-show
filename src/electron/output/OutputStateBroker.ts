@@ -1,4 +1,4 @@
-import type { OutputStateApply, OutputStateHealth, OutputStateManifest, OutputStateObservation, OutputStateReady, OutputStateRejection, OutputStateRendered, OutputStateScope, OutputStateToMainMessage, OutputStateToRendererMessage, OutputStateTopic, OutputTopicSnapshot } from "../../types/OutputState"
+import type { OutputRendererStatus, OutputStateApply, OutputStateHealth, OutputStateManifest, OutputStateObservation, OutputStateReady, OutputStateRejection, OutputStateRendered, OutputStateScope, OutputStateToMainMessage, OutputStateToRendererMessage, OutputStateTopic, OutputTopicSnapshot } from "../../types/OutputState"
 
 type TimerHandle = unknown
 
@@ -54,6 +54,8 @@ export class OutputStateBroker {
     private readonly snapshots = new Map<string, OutputTopicSnapshot>()
     private readonly sessions = new Map<string, OutputSession>()
     private readonly lastRecreate = new Map<string, number>()
+    private readonly rendererFailures = new Map<string, number>()
+    private readonly rendererHealth = new Map<string, Pick<OutputStateHealth, "rendererState" | "backend" | "reason">>()
 
     constructor(options: OutputStateBrokerOptions) {
         this.requiredSharedTopics = options.requiredSharedTopics
@@ -136,6 +138,41 @@ export class OutputStateBroker {
         return true
     }
 
+    rendererStatus(status: OutputRendererStatus, authenticatedOutputId: string): boolean {
+        const session = this.sessions.get(authenticatedOutputId)
+        if (!session || status.outputId !== authenticatedOutputId || status.sessionId !== session.sessionId) return false
+
+        if (status.state === "gpu-active") {
+            this.rendererFailures.delete(authenticatedOutputId)
+            this.rendererHealth.set(authenticatedOutputId, { rendererState: status.state, backend: status.backend })
+            this.reportHealth(session, { status: "gpu-active", backend: status.backend })
+            return true
+        }
+
+        if (status.state !== "failed") {
+            this.rendererHealth.set(authenticatedOutputId, { rendererState: status.state, backend: status.backend, reason: status.reason })
+            this.reportHealth(session, { status: status.state, backend: status.backend, reason: status.reason })
+            return true
+        }
+
+        const previousFailure = this.rendererFailures.get(authenticatedOutputId)
+        const canRecreate = previousFailure === undefined || this.scheduler.now() - previousFailure >= RECREATE_CIRCUIT_WINDOW
+        if (canRecreate) {
+            this.rendererFailures.set(authenticatedOutputId, this.scheduler.now())
+            this.rendererHealth.set(authenticatedOutputId, { rendererState: "recovering", reason: status.reason || "gpu_initialization_failed" })
+            this.reportHealth(session, { status: "recovering", reason: status.reason || "gpu_initialization_failed" })
+            this.removeSession(authenticatedOutputId)
+            this.transport.recreateOutput(authenticatedOutputId)
+            return true
+        }
+
+        const reason = status.reason || "gpu_initialization_failed"
+        this.rendererHealth.set(authenticatedOutputId, { rendererState: "legacy-fallback", reason })
+        this.reportHealth(session, { status: "legacy-fallback", reason })
+        this.transport.sendToOutput(authenticatedOutputId, { channel: "OUTPUT_RENDERER_FALLBACK", data: { reason } })
+        return true
+    }
+
     removeSession(outputId: string): void {
         const session = this.sessions.get(outputId)
         if (!session) return
@@ -145,6 +182,8 @@ export class OutputStateBroker {
 
     dispose(): void {
         ;[...this.sessions.keys()].forEach((outputId) => this.removeSession(outputId))
+        this.rendererHealth.clear()
+        this.rendererFailures.clear()
     }
 
     private deliver(session: OutputSession, snapshot: OutputTopicSnapshot): void {
@@ -201,7 +240,8 @@ export class OutputStateBroker {
     }
 
     private reportHealth(session: OutputSession, health: Pick<OutputStateHealth, "status"> & Partial<OutputStateHealth>): void {
-        this.transport.sendToMain({ channel: "OUTPUT_STATE_HEALTH", data: { outputId: session.outputId, sessionId: session.sessionId, ...health } })
+        const rendererHealth = this.rendererHealth.get(session.outputId)
+        this.transport.sendToMain({ channel: "OUTPUT_STATE_HEALTH", data: { outputId: session.outputId, sessionId: session.sessionId, ...rendererHealth, ...health } })
     }
 
     private clearDelivery(delivery: PendingDelivery): void {

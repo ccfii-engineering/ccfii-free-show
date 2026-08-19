@@ -99,7 +99,17 @@ export interface OutputStateRejection extends OutputStateObservation {
     reason: OutputStateRejectionReason
 }
 
-export type OutputStateHealthStatus = "syncing" | "healthy" | "retrying" | "recovering" | "unhealthy" | "render_failed"
+export type OutputRendererSessionState = "initializing" | "gpu-active" | "recovering" | "legacy-fallback" | "failed"
+export type OutputRendererBackend = "webgpu" | "webgl"
+export type OutputStateHealthStatus = "syncing" | "healthy" | "retrying" | "recovering" | "unhealthy" | "render_failed" | OutputRendererSessionState
+
+export interface OutputRendererStatus {
+    outputId: string
+    sessionId: string
+    state: OutputRendererSessionState
+    backend?: OutputRendererBackend
+    reason?: string
+}
 
 export interface OutputStateHealth {
     outputId: string
@@ -109,6 +119,8 @@ export interface OutputStateHealth {
     revision?: number
     retryCount?: number
     reason?: string
+    backend?: OutputRendererBackend
+    rendererState?: OutputRendererSessionState
 }
 
 export interface OutputStateNeeded {
@@ -120,5 +132,5 @@ export interface OutputStateRendered extends OutputStateObservation {
     failures?: { layer: string; reason: string }[]
 }
 
-export type OutputStateToRendererMessage = { channel: "OUTPUT_STATE_MANIFEST"; data: OutputStateManifest } | { channel: "OUTPUT_STATE_APPLY"; data: OutputStateApply }
+export type OutputStateToRendererMessage = { channel: "OUTPUT_STATE_MANIFEST"; data: OutputStateManifest } | { channel: "OUTPUT_STATE_APPLY"; data: OutputStateApply } | { channel: "OUTPUT_RENDERER_FALLBACK"; data: { reason: string } }
 export type OutputStateToMainMessage = { channel: "OUTPUT_STATE_NEEDED"; data: OutputStateNeeded } | { channel: "OUTPUT_STATE_HEALTH"; data: OutputStateHealth }

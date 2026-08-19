@@ -1,13 +1,5 @@
 import type { TransitionType } from "./Show"
 
-export interface PixiOutputConfig {
-    width: number
-    height: number
-    backgroundColor: string
-    transparent: boolean
-    preference: "webgpu" | "webgl"
-}
-
 export interface RenderLayer {
     id: string
     type: "background" | "underlay" | "slide" | "effect" | "overlay" | "draw"
@@ -30,18 +22,4 @@ export interface DualSpriteState {
     slotAPath: string
     slotBPath: string
     transition: TransitionState | null
-}
-
-export interface CaptureFrameRequest {
-    id: string
-    width: number
-    height: number
-    format: "rgba" | "bgra"
-}
-
-export interface CaptureFrameResponse {
-    id: string
-    time: number
-    buffer: Buffer | Uint8Array
-    size: { width: number; height: number }
 }

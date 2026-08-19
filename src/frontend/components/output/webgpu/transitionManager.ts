@@ -24,11 +24,12 @@ interface Baseline {
     y: number
     width: number
     height: number
+    filters: NonNullable<Sprite["filters"]>
 }
 
 function captureBaseline(node: Sprite | Container | null): Baseline | null {
     if (!node) return null
-    return { x: node.x, y: node.y, width: node.width, height: node.height }
+    return { x: node.x, y: node.y, width: node.width, height: node.height, filters: node.filters ? [...node.filters] : [] }
 }
 
 function restoreBaseline(node: Sprite | Container | null, baseline: Baseline | null): void {
@@ -41,7 +42,7 @@ function restoreBaseline(node: Sprite | Container | null, baseline: Baseline | n
     }
     node.rotation = 0
     node.alpha = 1
-    node.filters = []
+    node.filters = [...baseline.filters]
 }
 
 export interface ActiveTransition {
@@ -59,18 +60,7 @@ export interface ActiveTransition {
 
 const activeTransitions = new Map<string, ActiveTransition>()
 
-export function startTransition(
-    id: string,
-    type: TransitionType,
-    duration: number,
-    easing: string,
-    oldSprite: Sprite | Container | null,
-    newSprite: Sprite | Container,
-    direction?: string,
-    onComplete?: () => void,
-    layerWidth: number = 1920,
-    layerHeight: number = 1080
-): void {
+export function startTransition(id: string, type: TransitionType, duration: number, easing: string, oldSprite: Sprite | Container | null, newSprite: Sprite | Container, direction?: string, onComplete?: () => void, layerWidth = 1920, layerHeight = 1080): void {
     cancelTransition(id)
 
     if (type === "none" || duration <= 0) {
@@ -101,7 +91,7 @@ export function startTransition(
     let blurFilter: BlurFilter | undefined
     if (type === "blur") {
         blurFilter = new BlurFilter({ strength: 10 })
-        newSprite.filters = [blurFilter]
+        newSprite.filters = [...(newSprite.filters || []), blurFilter]
     }
 
     const transition: ActiveTransition = {
@@ -113,7 +103,7 @@ export function startTransition(
         layerWidth,
         layerHeight,
         blurFilter,
-        onComplete: onComplete || (() => {}),
+        onComplete: onComplete || (() => undefined),
         rafId: 0
     }
 
@@ -242,6 +232,7 @@ function completeTransition(id: string): void {
 
     restoreBaseline(transition.newSprite, transition.newBaseline)
     if (transition.newSprite.pivot) transition.newSprite.pivot.set(0, 0)
+    transition.blurFilter?.destroy()
 
     transition.state.active = false
     transition.onComplete()
@@ -253,8 +244,7 @@ export function cancelTransition(id: string): void {
     if (!transition) return
 
     cancelAnimationFrame(transition.rafId)
-    transition.state.active = false
-    activeTransitions.delete(id)
+    completeTransition(id)
 }
 
 export function cancelAllTransitions(): void {

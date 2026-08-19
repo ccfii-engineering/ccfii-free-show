@@ -35,6 +35,15 @@ test("applied and rendered observations use the authenticated output identity", 
     assert.deepEqual(harness.calls.rendered, [[rendered, "one"]])
 })
 
+test("renderer status uses the authenticated output identity", () => {
+    const harness = createRoutingHarness()
+    const status = { outputId: "one", sessionId: "session-a", state: "gpu-active", backend: "webgpu" }
+
+    harness.receive(10, { channel: "OUTPUT_RENDERER_STATUS", data: status })
+
+    assert.deepEqual(harness.calls.rendererStatus, [[status, "one"]])
+})
+
 test("unregistered renderer state messages are rejected", () => {
     const harness = createRoutingHarness()
 
@@ -45,7 +54,7 @@ test("unregistered renderer state messages are rejected", () => {
 })
 
 function createRoutingHarness() {
-    const calls = { publish: [], ready: [], applied: [], rendered: [], rejected: [] }
+    const calls = { publish: [], ready: [], applied: [], rendered: [], rejected: [], rendererStatus: [] }
     const rejections = []
     const routing = new OutputStateRouting({
         broker: {
@@ -53,7 +62,8 @@ function createRoutingHarness() {
             ready: (...args) => calls.ready.push(args),
             applied: (...args) => calls.applied.push(args),
             rendered: (...args) => calls.rendered.push(args),
-            rejected: (...args) => calls.rejected.push(args)
+            rejected: (...args) => calls.rejected.push(args),
+            rendererStatus: (...args) => calls.rendererStatus.push(args)
         },
         getMainWebContentsId: () => 1,
         resolveOutputId: (webContentsId) => (webContentsId === 10 ? "one" : null),

@@ -3,8 +3,8 @@ import type { OutBackground, Transition } from "../../../../types/Show"
 
 export const PIXI_BG_BRIDGE_KEY = Symbol("pixiBackgroundBridge")
 
-/** Media types the Pixi layer can render reliably. Everything else must fall back to DOM. */
-export const PIXI_SUPPORTED_TYPES = new Set(["image"])
+/** File-backed media types the GPU layer owns. Live/native surfaces remain coordinator-managed DOM. */
+export const PIXI_SUPPORTED_TYPES = new Set(["image", "video", "media"])
 
 export function isPixiSupported(type: string | undefined | null): boolean {
     if (!type) return false
