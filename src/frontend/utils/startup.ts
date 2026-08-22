@@ -10,6 +10,7 @@ import { activePopup, alertMessage, cachePath, cloudSyncData, contentProviderDat
 import { startTracking } from "./analytics"
 import { wait, waitUntilValueIsDefined } from "./common"
 import { getDefaultElements } from "./createData"
+import { setLaunchGpuVideoLifecycleQualified } from "./launchFlags"
 import { setLanguage } from "./language"
 import { setupCloudSync } from "./cloudSync"
 import { storeSubscriber } from "./listeners"
@@ -39,6 +40,12 @@ export async function startup() {
 
             const type = msg.data
             currentWindow.set(type)
+
+            // explicit GPU video lifecycle qualification gate for tests/development (#15)
+            if (msg.gpuVideoLifecycleQualified === true) {
+                setLaunchGpuVideoLifecycleQualified(true)
+                special.update((a) => ({ ...a, gpuVideoLifecycleQualified: true }))
+            }
 
             if (type) loaded.set(true)
 

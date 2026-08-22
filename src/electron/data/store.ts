@@ -5,6 +5,7 @@
 import Store from "electron-store"
 import { mkdirSync, statSync } from "fs"
 import path from "path"
+import { app } from "electron"
 import type { Event } from "../../types/Calendar"
 import type { History } from "../../types/History"
 import { Main } from "../../types/IPC/Main"
@@ -22,7 +23,22 @@ import { defaultConfig, defaultSettings, defaultSyncedSettings } from "./default
 
 // NOTE: defaults will always replace the keys with any in the default when they are removed
 
-export const config = new Store<Config>({ defaults: defaultConfig })
+// consume an explicit --user-data-dir launch switch (tests/CI isolation) before any store is created,
+// so config and userData-derived paths land inside the requested directory instead of the real profile
+function getUserDataDirOverride(): string | undefined {
+    const prefix = "--user-data-dir="
+    const arg = process.argv.find((entry) => entry.startsWith(prefix))
+    if (!arg) return undefined
+
+    const userDataPath = arg.slice(prefix.length)
+    if (!userDataPath) return undefined
+    app.setPath("userData", userDataPath)
+    return userDataPath
+}
+
+const commandLineUserDataDir = getUserDataDirOverride()
+
+export const config = new Store<Config>({ defaults: defaultConfig, ...(commandLineUserDataDir ? { cwd: commandLineUserDataDir } : {}) })
 
 export const storeFilesData = {
     SHOWS: { fileName: "shows", portable: false, defaults: {} as TrimmedShows, minify: true }, // cache

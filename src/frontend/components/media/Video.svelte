@@ -61,6 +61,7 @@
     let hasLoaded = false
     function loaded() {
         hasLoaded = true
+        videoData = { ...videoData, duration: video?.duration || 0 }
         dispatch("loaded", true)
     }
 

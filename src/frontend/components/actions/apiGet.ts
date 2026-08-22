@@ -54,9 +54,11 @@ export function getOutputGroupName() {
 }
 
 export function getPlayingVideoDuration() {
-    const outputPath = getFirstActiveOutput()?.out?.background?.path || ""
-    const video = get(playingVideos)[outputPath] || {}
-    const time: number = video?.duration || video?.video?.duration || 0
+    const output = getFirstActiveOutput()
+    const outputId = output?.id || ""
+    const mediaIdentity = output?.out?.background?.path || output?.out?.background?.id || ""
+    const video = get(playingVideos).find((entry: any) => entry?.id === mediaIdentity) || {}
+    const time: number = get(videosData)[outputId]?.duration ?? video?.duration ?? video?.video?.duration ?? 0
     return time
 }
 
@@ -70,10 +72,10 @@ export function getPlayingVideoState() {
     const output = getFirstActiveOutput()
     const outputId = output?.id || ""
     const bg = output?.out?.background
-    const path = bg?.path || bg?.id || ""
+    const mediaIdentity = bg?.path || bg?.id || ""
 
     const playingList = get(playingVideos) || []
-    const videoEntry = playingList.find((v: any) => v?.id === path) || {}
+    const videoEntry = playingList.find((v: any) => v?.id === mediaIdentity) || {}
     const videoData = get(videosData)[outputId] || {}
 
     const duration = videoData?.duration ?? videoEntry?.duration ?? videoEntry?.video?.duration ?? 0

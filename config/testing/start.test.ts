@@ -1,10 +1,22 @@
+import { existsSync } from "node:fs"
+import path from "node:path"
 import { _electron as electron } from "playwright"
 import type { Page } from "playwright"
 import { expect, test } from "@playwright/test"
 import tmp from "tmp"
+import { delay, launchArgs } from "./electronTestHelpers"
 
 const timeoutMs = 2_000
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Never log full request URLs: query strings can carry sensitive credentials.
+const redactUrlQuery = (url: string): string => {
+    try {
+        const parsed = new URL(url)
+        return `${parsed.origin}${parsed.pathname}`
+    } catch {
+        return "<unparsable-url>"
+    }
+}
 
 test.beforeEach(async ({ context }) => {
     await context.route("https://api.github.com/repos/ChurchApps/freeshow/releases", (route) => route.abort())
@@ -14,9 +26,8 @@ test("Launch electron app", async () => {
     const tmpSettingFolder = tmp.dirSync({ unsafeCleanup: true })
     const gpuRendererErrors: string[] = []
     const electronApp = await electron.launch({
-        // --no-sandbox is required for Electron to launch reliably on Linux CI.
-        args: [".", "--no-sandbox"],
-        env: { ...process.env, NODE_ENV: "production", FS_MOCK_STORE_PATH: tmpSettingFolder.name }
+        args: launchArgs(tmpSettingFolder.name),
+        env: { ...process.env, NODE_ENV: "production" }
     })
     const attachPageDiagnostics = (page: Page) => {
         page.on("console", (message) => {
@@ -29,7 +40,7 @@ test("Launch electron app", async () => {
             console.log(`[renderer:error] ${text}`)
             if (/WebGPUOutput|GPUTextureUsage|GPU backend/i.test(text)) gpuRendererErrors.push(text)
         })
-        page.on("requestfailed", (request) => console.log(`[renderer:requestfailed] ${request.url()} — ${request.failure()?.errorText || "unknown"}`))
+        page.on("requestfailed", (request) => console.log(`[renderer:requestfailed] ${redactUrlQuery(request.url())} — ${request.failure()?.errorText || "unknown"}`))
     }
     electronApp.on("window", attachPageDiagnostics)
     electronApp.windows().forEach(attachPageDiagnostics)
@@ -211,6 +222,9 @@ test("Launch electron app", async () => {
     }
     await delay(1_000)
     console.log("App closed!")
+
+    // the app must consume --user-data-dir so config writes stay inside the isolated folder
+    expect(existsSync(path.join(tmpSettingFolder.name, "config.json"))).toBe(true)
 
     tmpDataFolder.removeCallback()
     tmpSettingFolder.removeCallback()

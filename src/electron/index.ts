@@ -45,7 +45,7 @@ export function setAutoProfile(profile: string) {
 }
 
 // parse command line arguments
-parseCommandLineArgs()
+const commandLineArgs = parseCommandLineArgs()
 
 // check if store works
 config.set("loaded", true)
@@ -229,7 +229,7 @@ export async function loadWindowContent(window: BrowserWindow, type: null | "out
     }
 
     window.webContents.on("did-finish-load", () => {
-        window.webContents.send(STARTUP, { channel: "TYPE", data: type, autoProfile, outputId })
+        window.webContents.send(STARTUP, { channel: "TYPE", data: type, autoProfile, outputId, gpuVideoLifecycleQualified: commandLineArgs.gpuVideoLifecycleQualified === true })
     })
 
     function loadingFailed(err: Error) {

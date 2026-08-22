@@ -26,16 +26,32 @@ test("stage output → never use webgpu regardless of flags", () => {
     assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true }, output: { stageOutput: "abc" } }), false)
 })
 
-test("video background stays in GPU renderer mode", () => {
-    assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true }, output: { out: { background: { type: "video", path: "/tmp/loop.mp4" } } } }), true)
+test("no background stays in GPU renderer mode", () => {
+    assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true }, output: { out: {} } }), true)
 })
 
-test("video path without explicit type stays in GPU renderer mode", () => {
-    assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true }, output: { out: { background: { path: "/tmp/loop.mov" } } } }), true)
+test("video background uses the legacy renderer until GPU video lifecycle qualification passes", () => {
+    assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true }, output: { out: { background: { type: "video", path: "/tmp/loop.mp4" } } } }), false)
+})
+
+test("video path without explicit type uses the legacy renderer", () => {
+    assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true }, output: { out: { background: { path: "/tmp/loop.mov" } } } }), false)
+})
+
+test("player background uses the legacy renderer", () => {
+    assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true }, output: { out: { background: { type: "player", id: "video-id" } } } }), false)
+})
+
+test("qualified GPU video can be exercised explicitly", () => {
+    assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true, gpuVideoLifecycleQualified: true }, output: { out: { background: { type: "video", path: "/tmp/loop.mp4" } } } }), true)
 })
 
 test("image background → still use webgpu when enabled", () => {
     assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true }, output: { out: { background: { type: "image", path: "/tmp/background.png" } } } }), true)
+})
+
+test("color background → still use webgpu when enabled", () => {
+    assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true }, output: { out: { background: { type: "color", id: "#112233" } } } }), true)
 })
 
 test("null-safe for missing special/output", () => {

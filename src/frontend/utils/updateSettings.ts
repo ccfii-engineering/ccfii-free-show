@@ -99,6 +99,7 @@ import {
 } from "./../stores"
 import { checkForUpdates } from "./checkForUpdates"
 import { isMainWindow, startAutosave } from "./common"
+import { withLaunchGpuVideoLifecycleQualified } from "./launchFlags"
 import { setLanguage } from "./language"
 import { startRemoteController } from "./remoteController"
 import { send } from "./request"
@@ -443,7 +444,7 @@ const updateList: { [key in SaveListSettings | SaveListSyncedSettings]: any } = 
         }
         if (Object.keys(deletedDefaultsValue).length) deletedDefaults.set(deletedDefaultsValue)
 
-        special.set(v)
+        special.set(withLaunchGpuVideoLifecycleQualified(v))
     },
     timeline: (v: any) => timeline.set(v),
     timecode: (v: any) => timecode.set(v),
