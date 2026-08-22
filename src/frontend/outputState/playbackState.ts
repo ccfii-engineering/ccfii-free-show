@@ -119,16 +119,33 @@ function mergeReport(state: PlaybackStateMap, report: PlaybackReport, now: numbe
     const current = state.snapshots[report.outputId]
     if (!current) return state
 
-    const next: PlaybackSnapshot = {
-        ...current,
-        duration: report.duration ?? current.duration,
-        progress: report.progress ?? current.progress,
-        paused: report.paused ?? current.paused,
-        loop: report.loop ?? current.loop,
-        muted: report.muted ?? current.muted,
-        updatedAt: now
-    }
-    if (report.identity && !current.identity) next.identity = report.identity
+    // media replacement on the same publisher (#18): a visual report describing a different
+    // resource adopts that resource wholesale instead of bleeding its progress/duration into
+    // the previous media's snapshot (video A → video B on one GPU mount shares a sourceId)
+    const replacedMedia = report.role === "visual" && !!report.identity && !!current.identity && report.identity !== current.identity
+
+    const next: PlaybackSnapshot = replacedMedia
+        ? {
+              ...current,
+              identity: report.identity!,
+              duration: report.duration ?? 0,
+              progress: report.progress ?? 0,
+              paused: report.paused ?? false,
+              loop: report.loop ?? false,
+              muted: report.muted ?? true,
+              lastWrapAt: null,
+              updatedAt: now
+          }
+        : {
+              ...current,
+              duration: report.duration ?? current.duration,
+              progress: report.progress ?? current.progress,
+              paused: report.paused ?? current.paused,
+              loop: report.loop ?? current.loop,
+              muted: report.muted ?? current.muted,
+              updatedAt: now
+          }
+    if (!replacedMedia && report.identity && !current.identity) next.identity = report.identity
     if (report.event === "wrap") {
         next.progress = report.progress ?? 0
         next.lastWrapAt = now

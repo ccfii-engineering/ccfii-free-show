@@ -102,6 +102,22 @@ export function remoteListen() {
 
 // OUTPUT
 
+// Late MAIN_DATA/MAIN_TIME messages can arrive after a background was cleared (IPC race with
+// clearBackground's store cleanup) and resurrect stale duration/progress (#16/#18). Drop updates
+// for outputs that no longer have a live background.
+function filterLiveBackgroundUpdates(msg: any): Record<string, any> | null {
+    if (!msg || typeof msg !== "object") return null
+    const filtered: Record<string, any> = {}
+    let kept = false
+    for (const [outputId, value] of Object.entries(msg)) {
+        const background = get(outputs)[outputId]?.out?.background
+        if (!background || (!background.path && !background.id)) continue
+        filtered[outputId] = value
+        kept = true
+    }
+    return kept ? filtered : null
+}
+
 const clearing: string[] = []
 const receiveOUTPUTasMAIN: any = {
     BUFFER: ({ id, time, buffer, size }) => {
@@ -191,8 +207,16 @@ const receiveOUTPUTasMAIN: any = {
         })
     },
     MAIN_LOG: (msg: any) => console.info(msg),
-    MAIN_DATA: (msg: any) => videosData.update((a) => ({ ...a, ...msg })),
-    MAIN_TIME: (msg: any) => videosTime.update((a) => ({ ...a, ...msg })),
+    MAIN_DATA: (msg: any) => {
+        const filtered = filterLiveBackgroundUpdates(msg)
+        if (!filtered) return
+        videosData.update((a) => ({ ...a, ...filtered }))
+    },
+    MAIN_TIME: (msg: any) => {
+        const filtered = filterLiveBackgroundUpdates(msg)
+        if (!filtered) return
+        videosTime.update((a) => ({ ...a, ...filtered }))
+    },
     PLAYBACK_STATE: (msg: any) => publishPlaybackReport(msg),
     MAIN_VIDEO_ENDED: async (msg) => {
         if (!msg || clearing.includes(msg.id)) return

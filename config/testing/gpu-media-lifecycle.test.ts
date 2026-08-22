@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process"
 import path from "node:path"
-import { _electron as electron } from "playwright"
+import { _electron as electron, type Page } from "playwright"
 import { expect, test } from "@playwright/test"
 import tmp from "tmp"
 import { delay, findMainWindow, findOutputWindow, finishFirstRun, launchArgs, queryAPI, seedWindowConfig } from "./electronTestHelpers"
@@ -108,7 +108,11 @@ test("GPU video publishes one canonical snapshot to all public endpoints and res
         expect(combined.duration, "combined duration agrees with individual").toBe(individualDuration)
         expect(await queryAPI(apiUrl, "get_media_loop_state"), "loop state agrees").toBe(combined.loop)
 
-        // progress advances from the same output-scoped state
+        // progress advances from the same output state.
+        // Seek away from the wrap boundary first so the sample window cannot cross the
+        // short fixture's loop point mid-measurement.
+        await queryAPI(apiUrl, "video_seekto", { seconds: 0.2 })
+        await delay(300)
         const progressA = await queryAPI(apiUrl, "get_playing_video_time")
         await delay(600)
         const progressB = await queryAPI(apiUrl, "get_playing_video_time")
@@ -203,12 +207,111 @@ test("GPU playback controls round-trip through the canonical state", async () =>
     }
 })
 
+test("GPU media replacement keeps a single canonical publisher (#18)", async () => {
+    const { electronApp, dataFolder, settingsFolder, outputWindow, mainWindow } = await launchWithVideoFixture(["--gpu-video-lifecycle-qualified"])
+
+    try {
+        await mainWindow.locator("button#media").click()
+        await mainWindow.getByText("Add folder", { exact: true }).first().click()
+        await mainWindow.getByText(path.basename(dataFolder.name), { exact: true }).first().click()
+
+        // play video A (1.5s fixture)
+        const apiUrl = await startApiServer(mainWindow)
+        const state = await playMediaCardUntil(mainWindow, apiUrl, "gpu-loop.webm", (s) => s.duration > 1 && s.duration < 2)
+        expect(state.duration, "video A metadata live").toBeGreaterThan(1)
+
+        // replace with video B (3s fixture): only B's metadata/progress may publish afterwards
+        const replaced = await playMediaCardUntil(mainWindow, apiUrl, "gpu-second.webm", (s) => s.duration >= 2.5)
+        expect(replaced.duration, "video B metadata replaced A's").toBeGreaterThanOrEqual(2.5)
+
+        // anchor away from B's wrap boundary before sampling progress
+        await queryAPI(apiUrl, "video_seekto", { seconds: 0.3 })
+        await delay(300)
+        const before = await queryAPI(apiUrl, "get_playing_video_time")
+        await delay(600)
+        const after = await queryAPI(apiUrl, "get_playing_video_time")
+        expect(after, "only B publishes progress after replacement").toBeGreaterThan(before)
+        expect(after, "progress stays inside B's timeline").toBeLessThan(2.5)
+    } finally {
+        await closeElectron(electronApp)
+        dataFolder.removeCallback()
+        settingsFolder.removeCallback()
+    }
+})
+
+test("an unavailable source reaches a bounded failure and a valid source recovers (#18)", async () => {
+    const { electronApp, dataFolder, settingsFolder, outputWindow, mainWindow } = await launchWithVideoFixture(["--gpu-video-lifecycle-qualified"])
+
+    try {
+        await mainWindow.locator("button#media").click()
+        await mainWindow.getByText("Add folder", { exact: true }).first().click()
+        await mainWindow.getByText(path.basename(dataFolder.name), { exact: true }).first().click()
+
+        // undecodable fixture: indexed like any media file, but the decoder must reject it
+        await mainWindow.locator('#media.selectElem[data-item*="gpu-broken.webm"]').click()
+        await delay(1500)
+
+        // bounded outcome: renderer survives, and no phantom playback state was published
+        await expect(outputWindow.locator("[data-output-coordinator]")).toHaveCount(1)
+        await expect(outputWindow.locator("[data-output-coordinator]")).toHaveAttribute("data-renderer-mode", "gpu")
+        const apiUrl = await startApiServer(mainWindow)
+        const failedState = await queryAPI(apiUrl, "get_playing_video_state")
+        expect(failedState.duration, "no stale duration from the failed source").toBe(0)
+        expect(failedState.time, "no stale progress from the failed source").toBe(0)
+
+        // recovery: a valid video plays normally in the same session
+        const recovered = await playMediaCardUntil(mainWindow, apiUrl, "gpu-loop.webm", (s) => s.duration > 1)
+        expect(recovered.duration, "valid video reports duration after a failed source").toBeGreaterThan(1)
+
+        // anchor away from the wrap boundary so the advance window is unambiguous
+        await queryAPI(apiUrl, "video_seekto", { seconds: 0.3 })
+        await delay(300)
+        const before = await queryAPI(apiUrl, "get_playing_video_time")
+        await delay(600)
+        const after = await queryAPI(apiUrl, "get_playing_video_time")
+        expect(after, "valid video advances after a failed source").toBeGreaterThan(before)
+        expect(after, "progress stays inside the valid video's timeline").toBeLessThan(recovered.duration)
+    } finally {
+        await closeElectron(electronApp)
+        dataFolder.removeCallback()
+        settingsFolder.removeCallback()
+    }
+})
+
+async function startApiServer(mainWindow: Page): Promise<string> {
+    const apiPort = 15505
+    await mainWindow.evaluate((port) => (window as any).api.send("MAIN", { channel: "WEBSOCKET_START", data: port }), apiPort)
+    await delay(250)
+    return `http://127.0.0.1:${apiPort + 1}`
+}
+
+// Click a media card and poll the public state until `expected` holds. Clicks can be
+// intermittently swallowed by startup popups/indexer races, so retry like a real user
+// would — but the acceptance condition itself stays strict.
+async function playMediaCardUntil(mainWindow: Page, apiUrl: string, filePart: string, expected: (state: any) => boolean, attempts = 5): Promise<any> {
+    const card = mainWindow.locator(`#media.selectElem[data-item*="${filePart}"]`)
+    let state: any = {}
+    for (let attempt = 0; attempt < attempts; attempt++) {
+        await card.click()
+        for (let poll = 0; poll < 10 && !expected(state); poll++) {
+            await delay(250)
+            state = await queryAPI(apiUrl, "get_playing_video_state")
+        }
+        if (expected(state)) return state
+    }
+    return state
+}
+
 async function launchWithVideoFixture(extraArgs: string[] = []) {
     const settingsFolder = tmp.dirSync({ unsafeCleanup: true })
     const dataFolder = tmp.dirSync({ unsafeCleanup: true })
     seedWindowConfig(settingsFolder.name)
     const loopMediaPath = path.join(dataFolder.name, "gpu-loop.webm")
     execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=320x180:r=24", "-t", "1.5", "-c:v", "libvpx-vp9", "-an", loopMediaPath])
+    const secondMediaPath = path.join(dataFolder.name, "gpu-second.webm")
+    execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=320x180:r=24", "-t", "3", "-c:v", "libvpx-vp9", "-an", secondMediaPath])
+    // undecodable: correct extension, garbage payload
+    execFileSync("dd", ["if=/dev/urandom", `of=${path.join(dataFolder.name, "gpu-broken.webm")}`, "bs=1024", "count=64"])
 
     const electronApp = await electron.launch({
         args: launchArgs(settingsFolder.name, extraArgs),

@@ -93,3 +93,28 @@ test("two outputs never overwrite one another's snapshots", () => {
     assert.equal(state.snapshots.second, undefined)
     assert.ok(state.snapshots.default.duration === 10)
 })
+
+test("media replacement on the same publisher adopts the new resource wholesale (#18)", () => {
+    let state = applyPlaybackReport(emptyPlaybackState(), visualReport({ identity: "/media/a.webm", duration: 1.5, progress: 1.2, loop: true }))
+
+    // video B replaces A on the same output mount: metadata must reflect B, not bleed into A
+    state = applyPlaybackReport(state, visualReport({ identity: "/media/b.webm", duration: 3, progress: 0.01, loop: false }))
+    assert.equal(state.snapshots.default.identity, "/media/b.webm")
+    assert.equal(state.snapshots.default.duration, 3)
+    assert.equal(state.snapshots.default.progress, 0.01)
+    assert.equal(state.snapshots.default.loop, false)
+    assert.equal(state.snapshots.default.lastWrapAt, null)
+
+    // ongoing B reports merge normally afterwards
+    state = applyPlaybackReport(state, visualReport({ identity: "/media/b.webm", duration: 3, progress: 0.5 }))
+    assert.equal(state.snapshots.default.identity, "/media/b.webm")
+    assert.equal(state.snapshots.default.progress, 0.5)
+})
+
+test("a wrap published with the replacement report keeps its observable reset (#18)", () => {
+    let state = applyPlaybackReport(emptyPlaybackState(), visualReport({ identity: "/media/a.webm", duration: 1.5, progress: 1.4 }))
+    state = applyPlaybackReport(state, visualReport({ identity: "/media/b.webm", duration: 2, progress: 0, event: "wrap" }))
+    assert.equal(state.snapshots.default.identity, "/media/b.webm")
+    assert.equal(state.snapshots.default.progress, 0)
+    assert.ok(state.snapshots.default.lastWrapAt !== null)
+})

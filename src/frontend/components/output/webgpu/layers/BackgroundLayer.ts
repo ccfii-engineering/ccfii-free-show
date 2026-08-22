@@ -74,10 +74,35 @@ export function setAnimationTransform(state: BackgroundLayerState, animationStyl
     })
 }
 
-export async function updateBackground(state: BackgroundLayerState, data: GPUBackgroundData | null, transition: Transition, transitionId: string): Promise<void> {
-    const updateRequest = state.latestUpdate.start()
-    const authority = state.getAuthority()
+// media sources that failed to load (#18): reactive callers re-dispatch background updates on
+// every store touch, so a broken path must short-circuit instead of retrying forever. Capped so
+// the set itself can never grow unbounded.
+const FAILED_MEDIA_SOURCE_LIMIT = 50
+const failedMediaSources = new Map<string, string>()
 
+// Sprite destruction mode (#18): for video slots never destroy the Pixi textureSource — its
+// VideoSource nulls the element reference on destroy and the renderer can still touch it during
+// in-flight uploads. The hidden element's lifecycle is owned by cleanupVideoElement instead.
+function destroyMode(videoElement: HTMLVideoElement | null): boolean | { texture: boolean; textureSource: boolean } {
+    return videoElement ? { texture: true, textureSource: false } : true
+}
+
+// single-flight guard (#18): reactive callers dispatch the same background update multiple times
+// per store change; concurrent loads of one path race their async texture setup and tear each
+// other's video elements down mid-load
+const inFlightLoads = new Set<string>()
+
+function registerFailedMediaSource(path: string, reason: string): void {
+    if (failedMediaSources.has(path)) return
+    if (failedMediaSources.size >= FAILED_MEDIA_SOURCE_LIMIT) {
+        const oldest = failedMediaSources.keys().next().value
+        if (oldest !== undefined) failedMediaSources.delete(oldest)
+    }
+    failedMediaSources.set(path, reason)
+    console.warn(`BackgroundLayer: media source unavailable (${reason}), skipping until it changes: ${path}`)
+}
+
+export async function updateBackground(state: BackgroundLayerState, data: GPUBackgroundData | null, transition: Transition, transitionId: string): Promise<void> {
     if (!data || (!data.path && !data.id)) {
         clearBackground(state, transitionId)
         return
@@ -85,6 +110,9 @@ export async function updateBackground(state: BackgroundLayerState, data: GPUBac
 
     const newPath = data.path || data.id || ""
     const fit = data.fit || "contain"
+
+    // bounded failure outcome (#18): never retry a source that already failed to load
+    if (failedMediaSources.has(newPath)) return
 
     // Determine which slot is currently "active" (the visible one)
     let currentIsA = state.dualState.activeSlot === "a"
@@ -94,7 +122,8 @@ export async function updateBackground(state: BackgroundLayerState, data: GPUBac
     // Same-path short-circuit: hoisted ABOVE resource allocation + cancelTransition.
     // Reactive callers (WebGPUOutput.svelte) re-invoke updateBackground whenever ANY transition
     // field changes (including text/overlay). Without this early check, each text-transition edit
-    // leaks a hidden video element and cancels in-progress media transitions.
+    // leaks a hidden video element and cancels in-progress media transitions. Deliberately BEFORE
+    // latestUpdate.start(): fit/style tweaks must not invalidate an in-flight media load.
     if (newPath === currentPath && currentPath !== "") {
         if (currentSprite) {
             applyFit(currentSprite, state.width, state.height, fit, currentIsA ? state.sourceWidthA : state.sourceWidthB, currentIsA ? state.sourceHeightA : state.sourceHeightB)
@@ -105,6 +134,25 @@ export async function updateBackground(state: BackgroundLayerState, data: GPUBac
         await updateActiveVideoData(state, { loop: data.loop, muted: data.muted })
         return
     }
+
+    // a load of this exact path is already running: it owns the slot transition (#18).
+    // Must precede latestUpdate.start() — a duplicate dispatch starting a new token would
+    // invalidate the in-flight load and make it destroy its own texture mid-Pixi-setup.
+    if (inFlightLoads.has(newPath)) return
+
+    const updateRequest = state.latestUpdate.start()
+    const authority = state.getAuthority()
+    inFlightLoads.add(newPath)
+    try {
+        await performBackgroundUpdate(state, data, transition, transitionId, newPath, fit, updateRequest, authority)
+    } finally {
+        inFlightLoads.delete(newPath)
+    }
+}
+
+async function performBackgroundUpdate(state: BackgroundLayerState, data: GPUBackgroundData, transition: Transition, transitionId: string, newPath: string, fit: string, updateRequest: { isCurrent(): boolean }, authority: { sessionId: unknown; revision: unknown }): Promise<void> {
+    let currentIsA = state.dualState.activeSlot === "a"
+    let currentSprite = currentIsA ? state.spriteA : state.spriteB
 
     // Use file-extension detection as the authoritative check for video vs image. Style backgrounds
     // don't carry a data.type field (they're built from MediaStyle which only has
@@ -120,14 +168,34 @@ export async function updateBackground(state: BackgroundLayerState, data: GPUBac
 
     if (isVideo) {
         videoElement = createHiddenVideoElement(newPath, data.loop ?? false, data.muted ?? true)
-        attachVideoTimeListeners(videoElement, state.videoTimeHandler)
-        await waitForVideoReady(videoElement)
+        const ready = await waitForVideoReady(videoElement)
+        if (!ready.ok) {
+            // one bounded failure outcome per source (#18): no sprite, no publisher, no retry loop
+            cleanupVideoElement(videoElement)
+            registerFailedMediaSource(newPath, ready.reason)
+            return
+        }
+        attachVideoTimeListeners(videoElement, state.videoTimeHandler, newPath, state)
         if (data.startAt && Number.isFinite(data.startAt)) videoElement.currentTime = data.startAt
-        newTexture = createVideoTexture(videoElement)
-        srcW = videoElement.videoWidth
-        srcH = videoElement.videoHeight
+        try {
+            newTexture = createVideoTexture(videoElement)
+            srcW = videoElement.videoWidth
+            srcH = videoElement.videoHeight
+            if (!srcW || !srcH) throw new Error("video decoded with no dimensions")
+        } catch (error) {
+            // texture setup failed (decoder race, destroyed source): bounded outcome (#18)
+            cleanupVideoElement(videoElement)
+            registerFailedMediaSource(newPath, error instanceof Error ? error.message : "texture_setup_failed")
+            return
+        }
     } else {
         const loaded = await loadImageTexture(newPath)
+        if (!loaded.width || !loaded.height || loaded.texture === Texture.EMPTY) {
+            // one bounded failure outcome per source (#18)
+            registerFailedMediaSource(newPath, "image_load_failed")
+            releaseImageTexture(newPath)
+            return
+        }
         newTexture = loaded.texture
         srcW = loaded.width
         srcH = loaded.height
@@ -152,7 +220,7 @@ export async function updateBackground(state: BackgroundLayerState, data: GPUBac
     // Clean up the non-active slot (may have an orphaned sprite from a cancelled transition)
     if (currentIsA) {
         releaseImageTexture(state.dualState.slotBPath)
-        removeSprite(state.spriteB, state.container, !!state.videoElementB)
+        removeSprite(state.spriteB, state.container, destroyMode(state.videoElementB))
         cleanupVideoElement(state.videoElementB)
         state.spriteB = null
         state.videoElementB = null
@@ -162,7 +230,7 @@ export async function updateBackground(state: BackgroundLayerState, data: GPUBac
         state.dualState.slotBPath = ""
     } else {
         releaseImageTexture(state.dualState.slotAPath)
-        removeSprite(state.spriteA, state.container, !!state.videoElementA)
+        removeSprite(state.spriteA, state.container, destroyMode(state.videoElementA))
         cleanupVideoElement(state.videoElementA)
         state.spriteA = null
         state.videoElementA = null
@@ -199,7 +267,7 @@ export async function updateBackground(state: BackgroundLayerState, data: GPUBac
             transition.custom?.direction,
             () => {
                 releaseImageTexture(state.dualState.slotAPath)
-                removeSprite(state.spriteA, state.container, !!state.videoElementA)
+                removeSprite(state.spriteA, state.container, destroyMode(state.videoElementA))
                 cleanupVideoElement(state.videoElementA)
                 state.spriteA = null
                 state.videoElementA = null
@@ -231,7 +299,7 @@ export async function updateBackground(state: BackgroundLayerState, data: GPUBac
             transition.custom?.direction,
             () => {
                 releaseImageTexture(state.dualState.slotBPath)
-                removeSprite(state.spriteB, state.container, !!state.videoElementB)
+                removeSprite(state.spriteB, state.container, destroyMode(state.videoElementB))
                 cleanupVideoElement(state.videoElementB)
                 state.spriteB = null
                 state.videoElementB = null
@@ -259,8 +327,8 @@ function clearBackground(state: BackgroundLayerState, transitionId: string): voi
     cancelTransition(transitionId)
     releaseImageTexture(state.dualState.slotAPath)
     releaseImageTexture(state.dualState.slotBPath)
-    removeSprite(state.spriteA, state.container, !!state.videoElementA)
-    removeSprite(state.spriteB, state.container, !!state.videoElementB)
+    removeSprite(state.spriteA, state.container, destroyMode(state.videoElementA))
+    removeSprite(state.spriteB, state.container, destroyMode(state.videoElementB))
     cleanupVideoElement(state.videoElementA)
     cleanupVideoElement(state.videoElementB)
     state.spriteA = null
@@ -338,14 +406,16 @@ function createHiddenVideoElement(path: string, loop: boolean, muted: boolean): 
     return video
 }
 
-function waitForVideoReady(video: HTMLVideoElement): Promise<void> {
+type VideoReadyOutcome = { ok: true } | { ok: false; reason: "decode_error" | "timeout" }
+
+function waitForVideoReady(video: HTMLVideoElement): Promise<VideoReadyOutcome> {
     return new Promise((resolve) => {
         const checkDimensions = () => video.videoWidth > 0 && video.videoHeight > 0
         let settled = false
         let poll: ReturnType<typeof setInterval> | null = null
         let timeout: ReturnType<typeof setTimeout> | null = null
 
-        const finish = () => {
+        const finish = (outcome: VideoReadyOutcome) => {
             if (settled) return
             settled = true
             if (poll) clearInterval(poll)
@@ -353,18 +423,18 @@ function waitForVideoReady(video: HTMLVideoElement): Promise<void> {
             video.removeEventListener("canplay", onReady)
             video.removeEventListener("loadeddata", onReady)
             video.removeEventListener("error", onError)
-            resolve()
+            resolve(outcome)
         }
 
         if (video.readyState >= 2 && checkDimensions()) {
-            finish()
+            finish({ ok: true })
             return
         }
 
         function onReady() {
             // canplay fired but dimensions may not be available yet — poll briefly
             if (checkDimensions()) {
-                finish()
+                finish({ ok: true })
                 return
             }
             // Poll for dimensions (some browsers need a frame or two)
@@ -372,20 +442,21 @@ function waitForVideoReady(video: HTMLVideoElement): Promise<void> {
             let polls = 0
             poll = setInterval(() => {
                 polls++
-                if (checkDimensions() || polls > 20) {
-                    finish()
+                if (checkDimensions()) {
+                    finish({ ok: true })
+                } else if (polls > 20) {
+                    finish({ ok: false, reason: "timeout" })
                 }
             }, 50)
         }
         function onError() {
-            console.warn("BackgroundLayer: video load error:", video.src)
-            finish() // resolve anyway so we don't hang
+            finish({ ok: false, reason: "decode_error" })
         }
         video.addEventListener("canplay", onReady)
         video.addEventListener("loadeddata", onReady)
         video.addEventListener("error", onError)
         // Timeout fallback
-        timeout = setTimeout(finish, 5000)
+        timeout = setTimeout(() => finish({ ok: false, reason: "timeout" }), 5000)
     })
 }
 
@@ -399,8 +470,17 @@ function cleanupVideoElement(video: HTMLVideoElement | null): void {
     video.remove()
 }
 
-function attachVideoTimeListeners(video: HTMLVideoElement, handler: VideoTimeCallback | null): void {
-    const report = () => handler?.(getVideoControlSnapshot(video))
+function attachVideoTimeListeners(video: HTMLVideoElement, handler: VideoTimeCallback | null, path: string, state: BackgroundLayerState): void {
+    const report = () => {
+        if (!handler) return
+        // only the active slot publishes (#18): during a crossfade the outgoing video keeps
+        // playing until its transition-end cleanup, and its ticks must neither poison the
+        // incoming media's snapshot nor resurrect the outgoing one after ownership flips
+        const dual = state.dualState
+        const isActive = dual.activeSlot === "a" ? state.videoElementA === video && dual.slotAPath === path : state.videoElementB === video && dual.slotBPath === path
+        if (!isActive) return
+        handler({ ...getVideoControlSnapshot(video), identity: path })
+    }
     video.addEventListener("timeupdate", report)
     video.addEventListener("loadedmetadata", report)
     video.addEventListener("play", report)
