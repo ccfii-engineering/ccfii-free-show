@@ -103,7 +103,11 @@ function registerFailedMediaSource(path: string, reason: string): void {
 }
 
 export async function updateBackground(state: BackgroundLayerState, data: GPUBackgroundData | null, transition: Transition, transitionId: string): Promise<void> {
+    // A clear or a different media path must invalidate any in-flight load (#18/#19): the ghost
+    // would otherwise commit sprites/elements onto cleared slots after its await resolves.
+    // Same-path re-dispatches (fit/style churn) and duplicate dispatches must NOT invalidate.
     if (!data || (!data.path && !data.id)) {
+        state.latestUpdate.invalidate()
         clearBackground(state, transitionId)
         return
     }

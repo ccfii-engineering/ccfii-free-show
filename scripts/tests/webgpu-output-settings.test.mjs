@@ -30,20 +30,20 @@ test("no background stays in GPU renderer mode", () => {
     assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true }, output: { out: {} } }), true)
 })
 
-test("video background uses the legacy renderer until GPU video lifecycle qualification passes", () => {
-    assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true }, output: { out: { background: { type: "video", path: "/tmp/loop.mp4" } } } }), false)
+test("GPU video routes to the GPU renderer by default after lifecycle qualification (#19)", () => {
+    assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true }, output: { out: { background: { type: "video", path: "/tmp/loop.mp4" } } } }), true)
 })
 
-test("video path without explicit type uses the legacy renderer", () => {
-    assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true }, output: { out: { background: { path: "/tmp/loop.mov" } } } }), false)
+test("video path without explicit type routes to GPU by default (#19)", () => {
+    assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true }, output: { out: { background: { path: "/tmp/loop.mov" } } } }), true)
 })
 
-test("player background uses the legacy renderer", () => {
+test("player backgrounds stay on the legacy renderer", () => {
     assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true }, output: { out: { background: { type: "player", id: "video-id" } } } }), false)
 })
 
-test("qualified GPU video can be exercised explicitly", () => {
-    assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true, gpuVideoLifecycleQualified: true }, output: { out: { background: { type: "video", path: "/tmp/loop.mp4" } } } }), true)
+test("explicit qualification opt-out keeps video backgrounds on the legacy renderer", () => {
+    assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true, gpuVideoLifecycleQualified: false }, output: { out: { background: { type: "video", path: "/tmp/loop.mp4" } } } }), false)
 })
 
 test("bounded loop semantics select the safe renderer even when qualified", () => {

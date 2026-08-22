@@ -76,3 +76,27 @@ export async function queryAPI(apiUrl: string, action: string, data?: any): Prom
     if (!text) return undefined
     return JSON.parse(text).data
 }
+
+export async function startApiServer(mainWindow: Page): Promise<string> {
+    const apiPort = 15505
+    await mainWindow.evaluate((port) => (window as any).api.send("MAIN", { channel: "WEBSOCKET_START", data: port }), apiPort)
+    await delay(250)
+    return `http://127.0.0.1:${apiPort + 1}`
+}
+
+// Click a media card and poll the public state until `expected` holds. Clicks can be
+// intermittently swallowed by startup popups/indexer races, so retry like a real user
+// would — but the acceptance condition itself stays strict.
+export async function playMediaCardUntil(mainWindow: Page, apiUrl: string, filePart: string, expected: (state: any) => boolean, attempts = 5): Promise<any> {
+    const card = mainWindow.locator(`#media.selectElem[data-item*="${filePart}"]`)
+    let state: any = {}
+    for (let attempt = 0; attempt < attempts; attempt++) {
+        await card.click()
+        for (let poll = 0; poll < 10 && !expected(state); poll++) {
+            await delay(250)
+            state = await queryAPI(apiUrl, "get_playing_video_state")
+        }
+        if (expected(state)) return state
+    }
+    return state
+}

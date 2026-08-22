@@ -9,6 +9,7 @@ import { publishPlaybackReport } from "../outputState/playbackStore"
 import { handlePlaybackCommandMessage } from "../outputState/playbackCommands"
 import { runAction } from "../components/actions/actions"
 import { clone } from "../components/helpers/array"
+import { clearBackground } from "../components/output/clear"
 import { checkNextAfterMedia } from "../components/helpers/showActions"
 import { clearBackground } from "../components/output/clear"
 import { receiveMainGlobal } from "../IPC/main"
@@ -71,7 +72,8 @@ import {
     videosData,
     videosTime,
     visualizerData,
-    volume
+    volume,
+    outputRuntimeActive
 } from "../stores"
 import { newToast } from "./common"
 import { syncDrive } from "./drive"
@@ -134,6 +136,15 @@ const receiveOUTPUTasMAIN: any = {
     RESTART: ({ id }) => restartOutputs(id),
     // DISPLAY: (a: any) => outputDisplay.set(a.enabled),
     OUTPUT_STATE: (newStates: { id: string; active: boolean | "invisible" }[]) => {
+        newStates.forEach((newState) => {
+            // an output that stops being active must not keep media state alive (#19): a stale
+            // background re-opens misrouted into the legacy playback path because the canonical
+            // generation was already retired
+            if (newState.active === false && get(outputs)[newState.id]?.out?.background) clearBackground(newState.id)
+            // mirror runtime activation into output windows (#19): they need the rising edge to
+            // start a fresh playback generation after close/reopen
+            send(OUTPUT, ["OUTPUT_ACTIVE"], { [newState.id]: newState.active === true })
+        })
         outputState.update((a) => {
             newStates.forEach((newState) => {
                 const stateIndex = a.findIndex((state) => state.id === newState.id)
@@ -274,6 +285,7 @@ const receiveOUTPUTasMAIN: any = {
 
 let previousOutputs = ""
 export const receiveOUTPUTasOUTPUT: any = {
+    OUTPUT_ACTIVE: (msg: any) => outputRuntimeActive.set({ ...get(outputRuntimeActive), ...msg }),
     PLAYBACK_COMMAND: (msg: any) => handlePlaybackCommandMessage(msg),
     OUTPUTS: (a: any) => {
         // output.ts - only current output data is sent

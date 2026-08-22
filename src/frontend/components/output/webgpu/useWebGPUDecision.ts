@@ -12,10 +12,12 @@ const VIDEO_EXTENSIONS = new Set(["mp4", "webm", "ogg", "mov", "avi", "mkv"])
  * Decide whether a given output instance should render via the GPU output (Pixi-backed) or the
  * legacy DOM Output. Stage outputs always use DOM because they render via StageLayout and don't
  * need media transition smoothness. Per-output `useWebGPU=false` is an explicit opt-out that
- * overrides the global flag. Video backgrounds stay on the legacy renderer until the GPU video
- * lifecycle is explicitly qualified; this keeps the shared VideoPlayer contract authoritative for
- * progress, duration, audio, and loop behavior. `useWebGPUOutput` and `useWebGPU` are retained
- * serialized setting names; the runtime may qualify WebGPU or the WebGL compatibility backend.
+ * overrides the global flag. Since the GPU video lifecycle qualification suite passes (#19),
+ * video backgrounds default to GPU routing; an explicit opt-out (`gpuVideoLifecycleQualified`
+ * === false) or session fallback keeps them on the legacy renderer, and bounded/custom loop
+ * semantics always select the safe renderer. Player backgrounds (live streams) stay on the
+ * legacy path. `useWebGPUOutput` and `useWebGPU` are retained serialized setting names; the
+ * runtime may qualify WebGPU or the WebGL compatibility backend.
  */
 export function shouldUseGPUOutput({ special, output, sessionFallback }: DecisionInput): boolean {
     if (output?.stageOutput) return false
@@ -24,10 +26,12 @@ export function shouldUseGPUOutput({ special, output, sessionFallback }: Decisio
     if (output?.useWebGPU === false) return false
     const background = output?.out?.background
     if (!hasVideoBackground(background)) return true
+    // live players render through coordinator-managed DOM, not the Pixi layer (#19)
+    if (background.type === "player") return false
     // bounded/custom loop semantics are a documented legacy-only capability (#17):
     // never silently change their meaning, even for qualified GPU video
     if (hasUnsupportedLoopSemantics(background)) return false
-    return special?.gpuVideoLifecycleQualified === true
+    return special?.gpuVideoLifecycleQualified !== false
 }
 
 function hasVideoBackground(background: any): boolean {

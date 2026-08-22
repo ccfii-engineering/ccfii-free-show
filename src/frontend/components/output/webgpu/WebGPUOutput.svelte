@@ -5,7 +5,7 @@
     import { uid } from "uid"
     import { OUTPUT } from "../../../../types/Channels"
     import type { OutBackground, Transition } from "../../../../types/Show"
-    import { allOutputs, outputs } from "../../../stores"
+    import { allOutputs, outputRuntimeActive, outputs } from "../../../stores"
     import { getOutputRenderAuthority } from "../../../outputState/clientRuntime"
     import { registerPlaybackCommandTarget } from "../../../outputState/playbackCommands"
     import { sendPlaybackReport } from "../../../outputState/playbackStore"
@@ -33,8 +33,29 @@
     let lastVideoDataSent = ""
     let lastVideoTimeSent = Number.NaN
     let unregisterCommands: (() => void) | null = null
-    // canonical playback ownership: unique per mount so a remount supersedes this generation (#16)
-    const playbackSourceId = `gpu-${uid()}`
+    // canonical playback ownership: unique per mount so a remount supersedes this generation (#16).
+    // Regenerated when the output window is re-shown (#19): closing tombstoned the previous
+    // generation, and a surviving mount must come back as a fresh one or its reports are dropped.
+    let playbackSourceId = `gpu-${uid()}`
+    let lastRuntimeActive: boolean | null = null
+
+    function handleRuntimeActive(active: boolean | undefined) {
+        if (active === undefined || active === lastRuntimeActive) return
+        const reopened = lastRuntimeActive === false && active === true
+        lastRuntimeActive = active
+        if (!reopened || !pixiReady) return
+
+        // close/reopen tombstoned this mount's previous generation (#19): come back fresh
+        playbackSourceId = `gpu-${uid()}`
+        lastVideoDataSent = ""
+        lastVideoTimeSent = Number.NaN
+        unregisterCommands?.()
+        unregisterCommands = registerPlaybackCommandTarget(outputId, (command) => {
+            layerMgrMod?.applyPlaybackCommand(layerMgr, command)
+        })
+    }
+
+    $: handleRuntimeActive($outputRuntimeActive[outputId])
 
     $: myOutput = outputEntry(outputId)
     $: currentOutput = $myOutput || $allOutputs[outputId] || {}

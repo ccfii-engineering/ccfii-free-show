@@ -3,56 +3,10 @@ import path from "node:path"
 import { _electron as electron, type Page } from "playwright"
 import { expect, test } from "@playwright/test"
 import tmp from "tmp"
-import { delay, findMainWindow, findOutputWindow, finishFirstRun, launchArgs, queryAPI, seedWindowConfig } from "./electronTestHelpers"
-
-test("default video playback uses the safe renderer with live duration, progress, and looping", async () => {
-    const { electronApp, dataFolder, settingsFolder, outputWindow, mainWindow } = await launchWithVideoFixture()
-
-    try {
-        await expect(outputWindow.locator("[data-output-coordinator]")).toHaveAttribute("data-renderer-mode", "gpu")
-
-        await mainWindow.locator("button#media").click()
-        await mainWindow.getByText("Add folder", { exact: true }).first().click()
-        await mainWindow.getByText(path.basename(dataFolder.name), { exact: true }).first().click()
-        const loopMediaCard = mainWindow.locator('#media.selectElem[data-item*="gpu-loop.webm"]')
-        await expect(loopMediaCard).toHaveCount(1)
-
-        await loopMediaCard.click()
-
-        await expect(outputWindow.locator("[data-output-coordinator]")).toHaveAttribute("data-renderer-mode", "legacy-fallback")
-
-        const video = outputWindow.locator('video[src*="gpu-loop.webm"]')
-        await expect(video).toHaveCount(1, { timeout: 10_000 })
-        await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.duration)).toBeGreaterThan(1)
-        await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0.25)
-        await expect(video).toHaveJSProperty("loop", true)
-
-        const apiPort = 15505
-        await mainWindow.evaluate((port) => (window as any).api.send("MAIN", { channel: "WEBSOCKET_START", data: port }), apiPort)
-        await delay(250)
-        const apiUrl = `http://127.0.0.1:${apiPort + 1}`
-        const state = await queryAPI(apiUrl, "get_playing_video_state")
-        const duration = await queryAPI(apiUrl, "get_playing_video_duration")
-        const progress = await queryAPI(apiUrl, "get_playing_video_time")
-        const loop = await queryAPI(apiUrl, "get_media_loop_state")
-        expect.soft(state.duration, "combined state duration").toBeGreaterThan(1)
-        expect.soft(duration, "established duration endpoint").toBeGreaterThan(1)
-        expect.soft(progress, "established progress endpoint").toBeGreaterThan(0.25)
-        expect.soft(loop, "loop state endpoint").toBe(true)
-
-        await delay(2_000)
-        const currentTimeAfterWrap = await video.evaluate((element: HTMLVideoElement) => element.currentTime)
-        expect(currentTimeAfterWrap).toBeGreaterThan(0)
-        expect(currentTimeAfterWrap).toBeLessThan(1.5)
-    } finally {
-        await closeElectron(electronApp)
-        dataFolder.removeCallback()
-        settingsFolder.removeCallback()
-    }
-})
+import { delay, findMainWindow, findOutputWindow, finishFirstRun, launchArgs, playMediaCardUntil, queryAPI, seedWindowConfig, startApiServer } from "./electronTestHelpers"
 
 test("explicit GPU video lifecycle qualification keeps video backgrounds on the GPU renderer", async () => {
-    const { electronApp, dataFolder, settingsFolder, outputWindow, mainWindow } = await launchWithVideoFixture(["--gpu-video-lifecycle-qualified"])
+    const { electronApp, dataFolder, settingsFolder, outputWindow, mainWindow } = await launchWithVideoFixture()
 
     try {
         // the qualification switch must be reachable end-to-end so tests/development can exercise
@@ -77,7 +31,7 @@ test("explicit GPU video lifecycle qualification keeps video backgrounds on the 
 })
 
 test("GPU video publishes one canonical snapshot to all public endpoints and resets when cleared", async () => {
-    const { electronApp, dataFolder, settingsFolder, outputWindow, mainWindow } = await launchWithVideoFixture(["--gpu-video-lifecycle-qualified"])
+    const { electronApp, dataFolder, settingsFolder, outputWindow, mainWindow } = await launchWithVideoFixture()
 
     try {
         await mainWindow.locator("button#media").click()
@@ -105,6 +59,10 @@ test("GPU video publishes one canonical snapshot to all public endpoints and res
             if (individualDuration <= 1) await delay(250)
         }
         expect(individualDuration, "established duration endpoint").toBeGreaterThan(1)
+
+        // re-read both together so the comparison cannot straddle a publish boundary
+        combined = await queryAPI(apiUrl, "get_playing_video_state")
+        individualDuration = await queryAPI(apiUrl, "get_playing_video_duration")
         expect(combined.duration, "combined duration agrees with individual").toBe(individualDuration)
         expect(await queryAPI(apiUrl, "get_media_loop_state"), "loop state agrees").toBe(combined.loop)
 
@@ -132,7 +90,7 @@ test("GPU video publishes one canonical snapshot to all public endpoints and res
 })
 
 test("GPU playback controls round-trip through the canonical state", async () => {
-    const { electronApp, dataFolder, settingsFolder, outputWindow, mainWindow } = await launchWithVideoFixture(["--gpu-video-lifecycle-qualified"])
+    const { electronApp, dataFolder, settingsFolder, outputWindow, mainWindow } = await launchWithVideoFixture()
 
     try {
         await mainWindow.locator("button#media").click()
@@ -208,7 +166,7 @@ test("GPU playback controls round-trip through the canonical state", async () =>
 })
 
 test("GPU media replacement keeps a single canonical publisher (#18)", async () => {
-    const { electronApp, dataFolder, settingsFolder, outputWindow, mainWindow } = await launchWithVideoFixture(["--gpu-video-lifecycle-qualified"])
+    const { electronApp, dataFolder, settingsFolder, outputWindow, mainWindow } = await launchWithVideoFixture()
 
     try {
         await mainWindow.locator("button#media").click()
@@ -240,7 +198,7 @@ test("GPU media replacement keeps a single canonical publisher (#18)", async () 
 })
 
 test("an unavailable source reaches a bounded failure and a valid source recovers (#18)", async () => {
-    const { electronApp, dataFolder, settingsFolder, outputWindow, mainWindow } = await launchWithVideoFixture(["--gpu-video-lifecycle-qualified"])
+    const { electronApp, dataFolder, settingsFolder, outputWindow, mainWindow } = await launchWithVideoFixture()
 
     try {
         await mainWindow.locator("button#media").click()
@@ -277,30 +235,6 @@ test("an unavailable source reaches a bounded failure and a valid source recover
         settingsFolder.removeCallback()
     }
 })
-
-async function startApiServer(mainWindow: Page): Promise<string> {
-    const apiPort = 15505
-    await mainWindow.evaluate((port) => (window as any).api.send("MAIN", { channel: "WEBSOCKET_START", data: port }), apiPort)
-    await delay(250)
-    return `http://127.0.0.1:${apiPort + 1}`
-}
-
-// Click a media card and poll the public state until `expected` holds. Clicks can be
-// intermittently swallowed by startup popups/indexer races, so retry like a real user
-// would — but the acceptance condition itself stays strict.
-async function playMediaCardUntil(mainWindow: Page, apiUrl: string, filePart: string, expected: (state: any) => boolean, attempts = 5): Promise<any> {
-    const card = mainWindow.locator(`#media.selectElem[data-item*="${filePart}"]`)
-    let state: any = {}
-    for (let attempt = 0; attempt < attempts; attempt++) {
-        await card.click()
-        for (let poll = 0; poll < 10 && !expected(state); poll++) {
-            await delay(250)
-            state = await queryAPI(apiUrl, "get_playing_video_state")
-        }
-        if (expected(state)) return state
-    }
-    return state
-}
 
 async function launchWithVideoFixture(extraArgs: string[] = []) {
     const settingsFolder = tmp.dirSync({ unsafeCleanup: true })

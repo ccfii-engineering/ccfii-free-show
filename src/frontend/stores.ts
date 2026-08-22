@@ -143,6 +143,10 @@ export const paintCache: Writable<DrawLine[]> = writable([])
 // OUTPUTS
 export const outputDisplay: Writable<boolean> = writable(false)
 export const outputState: Writable<{ id: string; active: boolean | "invisible" }[]> = writable([])
+// runtime on/off mirror for OUTPUT WINDOWS (outputState above is main-window-only): lets a
+// surviving output mount know its window was closed/reopened so it can start a fresh
+// playback generation (#19)
+export const outputRuntimeActive: Writable<Record<string, boolean>> = writable({})
 export const outputStateHealth: Writable<{ [outputId: string]: OutputStateHealth }> = writable({})
 export const currentOutputSettings: Writable<string | null> = writable(null)
 export const slideTimers: Writable<{ [key: string]: SlideTimer }> = writable({})
