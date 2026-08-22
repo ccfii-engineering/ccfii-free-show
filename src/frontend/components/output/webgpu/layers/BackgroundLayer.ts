@@ -10,7 +10,7 @@ import { startTransition, cancelTransition } from "../transitionManager"
 import { applyVideoControlData, getVideoControlSnapshot, type VideoControlData } from "../videoControlState"
 import { isVideoSource } from "./mediaSource"
 
-export type VideoTimeCallback = (info: ReturnType<typeof getVideoControlSnapshot>) => void
+export type VideoTimeCallback = (info: ReturnType<typeof getVideoControlSnapshot> & { identity?: string }) => void
 const videoListenerCleanup = new WeakMap<HTMLVideoElement, () => void>()
 
 export interface BackgroundLayerState {
@@ -291,7 +291,8 @@ function getActiveVideoElement(state: BackgroundLayerState): HTMLVideoElement | 
 
 function reportVideoState(state: BackgroundLayerState, video: HTMLVideoElement): void {
     if (!state.videoTimeHandler) return
-    state.videoTimeHandler(getVideoControlSnapshot(video))
+    const identity = state.dualState.activeSlot === "b" ? state.dualState.slotBPath : state.dualState.slotAPath
+    state.videoTimeHandler({ ...getVideoControlSnapshot(video), identity: identity || undefined })
 }
 
 function toFileUrl(path: string): string {

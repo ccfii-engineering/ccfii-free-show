@@ -2,10 +2,12 @@
 
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
+    import { uid } from "uid"
     import { OUTPUT } from "../../../../types/Channels"
     import type { OutBackground, Transition } from "../../../../types/Show"
     import { allOutputs, outputs } from "../../../stores"
     import { getOutputRenderAuthority } from "../../../outputState/clientRuntime"
+    import { sendPlaybackReport } from "../../../outputState/playbackStore"
     import { outputEntry } from "../../../utils/perEntryStores"
     import { destroy, receive, send } from "../../../utils/request"
     import { getOutputResolution } from "../../helpers/output"
@@ -29,6 +31,8 @@
     let timeSendingTimeout: NodeJS.Timeout | null = null
     let lastVideoDataSent = ""
     let lastVideoTimeSent = Number.NaN
+    // canonical playback ownership: unique per mount so a remount supersedes this generation (#16)
+    const playbackSourceId = `gpu-${uid()}`
 
     $: myOutput = outputEntry(outputId)
     $: currentOutput = $myOutput || $allOutputs[outputId] || {}
@@ -177,10 +181,17 @@
             // we live in the output window — we send via IPC to the main window where receivers.ts
             // handles MAIN_TIME/MAIN_DATA → videosTime/videosData. Throttled ~220ms to match the
             // regular path.
-            const videoTimeHandler = ({ currentTime, duration, paused, loop, muted }: { currentTime: number; duration: number; paused: boolean; loop: boolean; muted: boolean }) => {
+            const videoTimeHandler = ({ currentTime, duration, paused, loop, muted, identity }: { currentTime: number; duration: number; paused: boolean; loop: boolean; muted: boolean; identity?: string }) => {
                 const timeReset = isVideoTimeReset(currentTime, lastVideoTimeSent)
                 const nextVideoData = JSON.stringify({ duration, paused, loop, muted })
-                if (nextVideoData !== lastVideoDataSent) {
+                const dataChanged = nextVideoData !== lastVideoDataSent
+
+                // canonical per-output playback state (#16) — wraps always get through the time throttle
+                if (dataChanged || timeReset || !timeSendingTimeout) {
+                    sendPlaybackReport({ outputId, sourceId: playbackSourceId, role: "visual", identity, duration, progress: currentTime, paused, loop, muted, ...(timeReset ? { event: "wrap" } : {}) })
+                }
+
+                if (dataChanged) {
                     lastVideoDataSent = nextVideoData
                     send(OUTPUT, ["MAIN_DATA"], { [outputId]: { duration, paused, loop, muted } })
                 }

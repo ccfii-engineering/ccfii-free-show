@@ -52,6 +52,7 @@ export async function finishFirstRun(mainWindow: Page): Promise<void> {
 export async function queryAPI(apiUrl: string, action: string): Promise<any> {
     const response = await fetch(apiUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) })
     if (!response.ok) throw new Error(`API request failed for ${action}: ${response.status}`)
-    const body = await response.json()
-    return body.data
+    const text = await response.text()
+    if (!text) return undefined
+    return JSON.parse(text).data
 }

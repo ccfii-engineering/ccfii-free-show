@@ -9,6 +9,7 @@
     import type { OutBackground, Transition } from "../../../../types/Show"
     import { AudioAnalyser } from "../../../audio/audioAnalyser"
     import { audioChannelsData, currentWindow, media, outputs, playerVideos, playingVideos, special, videosData, videosTime, volume } from "../../../stores"
+    import { sendPlaybackReport } from "../../../outputState/playbackStore"
     import { destroy, receive, send } from "../../../utils/request"
     import BmdStream from "../../drawer/live/BMDStream.svelte"
     import NdiStream from "../../drawer/live/NDIStream.svelte"
@@ -19,6 +20,7 @@
     import OutputTransition from "../transitions/OutputTransition.svelte"
     import Window from "../Window.svelte"
     import Media from "./Media.svelte"
+    import { isVideoTimeReset } from "../webgpu/videoControlState"
 
     export let outputId = ""
 
@@ -84,12 +86,17 @@
     }
 
     let lastSentVideoData = ""
+    let lastReportedTime = Number.NaN
+    const playbackSourceId = `dom-${uid()}`
     $: if (!mirror && !fadingOut) sendVideoData(videoData)
     $: if (!mirror && !fadingOut) sendVideoTime(videoTime)
 
     let sendingTimeout: NodeJS.Timeout | null = null
     let timeUpdateTimeout = 220
     function sendVideoData(data: typeof videoData) {
+        // canonical per-output playback state (#16)
+        sendPlaybackReport({ outputId, sourceId: playbackSourceId, role: "visual", identity: id, duration: data?.duration || 0, progress: videoTime, paused: data?.paused ?? true, loop: data?.loop ?? false, muted: data?.muted ?? true })
+
         const next = JSON.stringify(data)
         if (next === lastSentVideoData) return
 
@@ -98,6 +105,12 @@
     }
     function sendVideoTime(time: number) {
         if (sendingTimeout) return
+
+        const wrapped = isVideoTimeReset(time, lastReportedTime)
+        lastReportedTime = time
+
+        // canonical per-output playback state (#16) — wraps bypass the throttle like GPU reports do
+        sendPlaybackReport({ outputId, sourceId: playbackSourceId, role: "visual", identity: id, duration: videoData?.duration || 0, progress: time, paused: videoData?.paused ?? true, loop: videoData?.loop ?? false, muted: videoData?.muted ?? true, ...(wrapped ? { event: "wrap" } : {}) })
 
         send(OUTPUT, ["MAIN_TIME"], { [outputId]: time })
         sendingTimeout = setTimeout(() => {

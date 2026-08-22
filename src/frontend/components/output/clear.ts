@@ -4,6 +4,7 @@ import type { OutSlide } from "../../../types/Show"
 import { clearAudio } from "../../audio/audioFading"
 import { AudioPlayer } from "../../audio/audioPlayer"
 import { sendMain } from "../../IPC/main"
+import { clearPlaybackForOutput } from "../../outputState/playbackStore"
 import { activeEdit, activePage, activePopup, activeStage, contextActive, customMessageCredits, drawSettings, focusMode, lockedOverlays, outLocked, outputCache, outputs, outputSlideCache, overlays, overlayTimers, playingAudio, playingMetronome, selected, slideTimers, topContextActive, videosData, videosTime } from "../../stores"
 import { customActionActivation } from "../actions/actions"
 import { startMetronome } from "../drawer/audio/metronome"
@@ -101,6 +102,7 @@ export function clearBackground(specificOutputId = "") {
         // clearVideo()
         setOutput("background", null, false, outputId)
         clearPlayingVideo(outputId)
+        clearPlaybackForOutput(outputId)
 
         // WIP this does not clear time properly
         videosData.update((a) => {

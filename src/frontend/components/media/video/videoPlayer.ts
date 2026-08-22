@@ -7,6 +7,7 @@ import { fadeinAllPlayingAudio, fadeoutAllPlayingAudio } from "../../../audio/au
 import { AudioInputCapture } from "../../../audio/routing/audioInputCapture"
 import { requestMain } from "../../../IPC/main"
 import { media, outputs, playerVideos, playingVideos, playingVideoState, special, transitionData } from "../../../stores"
+import { publishPlaybackReport } from "../../../outputState/playbackStore"
 import { playFolder } from "../../../utils/shortcuts"
 import { customActionActivation } from "../../actions/actions"
 import { getVimeoData, getYouTubeData } from "../../drawer/player/playerHelper"
@@ -717,6 +718,12 @@ export class VideoPlayer {
                         softLoopOpacity,
                         type: video.type || "background",
                         isFadingOut: this.isFadingOut.includes(video.path)
+                    }
+
+                    // canonical per-output playback state (#16): the legacy sync clock enriches
+                    // snapshots published by the visual owner, it never claims ownership itself
+                    if ((video.type || "background") === "background") {
+                        publishPlaybackReport({ outputId, sourceId: "sync-video-player", role: "sync", identity: video.path, duration: activeAudio.duration, progress: activeAudio.currentTime, paused: activeAudio.paused, loop: video.loop || false, muted: activeAudio.muted })
                     }
                 })
 

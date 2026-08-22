@@ -11,6 +11,7 @@ import { startTracking } from "./analytics"
 import { wait, waitUntilValueIsDefined } from "./common"
 import { getDefaultElements } from "./createData"
 import { setLaunchGpuVideoLifecycleQualified } from "./launchFlags"
+import { watchOutputBackgrounds } from "../outputState/playbackStore"
 import { setLanguage } from "./language"
 import { setupCloudSync } from "./cloudSync"
 import { storeSubscriber } from "./listeners"
@@ -78,6 +79,7 @@ async function startupMain() {
 
     storeSubscriber()
     startOutputStatePublisher()
+    watchOutputBackgrounds()
     remoteListen()
     checkStartupActions()
     startTracking()

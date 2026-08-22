@@ -1,6 +1,7 @@
 import { get } from "svelte/store"
 import type { Shows } from "../../../types/Show"
 import { activePlaylist, audioPlaylists, outputs, playingAudio, playingVideos, projects, shows, showsCache, variables, videosData, videosTime } from "../../stores"
+import { getPlaybackSnapshot } from "../../outputState/playbackStore"
 import { isVideoLooping } from "../../utils/videoLoopState"
 import { getTextLines } from "../edit/scripts/textStyle"
 import { keysToID } from "../helpers/array"
@@ -56,6 +57,11 @@ export function getOutputGroupName() {
 export function getPlayingVideoDuration() {
     const output = getFirstActiveOutput()
     const outputId = output?.id || ""
+
+    // canonical per-output snapshot first (#16), established sources as fallback
+    const snapshot = getPlaybackSnapshot(outputId)
+    if (snapshot) return snapshot.duration
+
     const mediaIdentity = output?.out?.background?.path || output?.out?.background?.id || ""
     const video = get(playingVideos).find((entry: any) => entry?.id === mediaIdentity) || {}
     const time: number = get(videosData)[outputId]?.duration ?? video?.duration ?? video?.video?.duration ?? 0
@@ -64,6 +70,11 @@ export function getPlayingVideoDuration() {
 
 export function getPlayingVideoTime() {
     const outputId = getFirstActiveOutput()?.id || ""
+
+    // canonical per-output snapshot first (#16)
+    const snapshot = getPlaybackSnapshot(outputId)
+    if (snapshot) return snapshot.progress
+
     const time: number = get(videosTime)[outputId] || 0
     return time
 }
@@ -73,6 +84,18 @@ export function getPlayingVideoState() {
     const outputId = output?.id || ""
     const bg = output?.out?.background
     const mediaIdentity = bg?.path || bg?.id || ""
+
+    // canonical per-output snapshot first (#16), established sources as fallback
+    const snapshot = getPlaybackSnapshot(outputId)
+    if (snapshot) {
+        return {
+            duration: snapshot.duration,
+            time: snapshot.progress,
+            paused: snapshot.paused,
+            loop: snapshot.loop,
+            muted: snapshot.muted
+        }
+    }
 
     const playingList = get(playingVideos) || []
     const videoEntry = playingList.find((v: any) => v?.id === mediaIdentity) || {}

@@ -5,6 +5,7 @@ import type { OutputStateHealth } from "../../types/OutputState"
 import { AudioAnalyser } from "../audio/audioAnalyser"
 import { AudioAnalyserMerger } from "../audio/audioAnalyserMerger"
 import { setEqualizerEnabled, updateEqualizerBands } from "../audio/audioEqualizer"
+import { publishPlaybackReport } from "../outputState/playbackStore"
 import { runAction } from "../components/actions/actions"
 import { clone } from "../components/helpers/array"
 import { checkNextAfterMedia } from "../components/helpers/showActions"
@@ -191,6 +192,7 @@ const receiveOUTPUTasMAIN: any = {
     MAIN_LOG: (msg: any) => console.info(msg),
     MAIN_DATA: (msg: any) => videosData.update((a) => ({ ...a, ...msg })),
     MAIN_TIME: (msg: any) => videosTime.update((a) => ({ ...a, ...msg })),
+    PLAYBACK_STATE: (msg: any) => publishPlaybackReport(msg),
     MAIN_VIDEO_ENDED: async (msg) => {
         if (!msg || clearing.includes(msg.id)) return
         clearing.push(msg.id)
