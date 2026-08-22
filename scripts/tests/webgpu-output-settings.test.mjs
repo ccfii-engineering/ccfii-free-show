@@ -46,6 +46,14 @@ test("qualified GPU video can be exercised explicitly", () => {
     assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true, gpuVideoLifecycleQualified: true }, output: { out: { background: { type: "video", path: "/tmp/loop.mp4" } } } }), true)
 })
 
+test("bounded loop semantics select the safe renderer even when qualified", () => {
+    assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true, gpuVideoLifecycleQualified: true }, output: { out: { background: { type: "video", path: "/tmp/loop.mp4", startAt: 2 } } } }), false)
+})
+
+test("soft loop semantics select the safe renderer even when qualified", () => {
+    assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true, gpuVideoLifecycleQualified: true }, output: { out: { background: { type: "video", path: "/tmp/loop.mp4", softLoop: 3 } } } }), false)
+})
+
 test("image background → still use webgpu when enabled", () => {
     assert.equal(shouldUseGPUOutput({ special: { useWebGPUOutput: true }, output: { out: { background: { type: "image", path: "/tmp/background.png" } } } }), true)
 })

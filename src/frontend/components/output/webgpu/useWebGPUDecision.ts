@@ -22,16 +22,24 @@ export function shouldUseGPUOutput({ special, output, sessionFallback }: Decisio
     if (sessionFallback) return false
     if (special?.useWebGPUOutput === false) return false
     if (output?.useWebGPU === false) return false
-    if (hasVideoBackground(output) && special?.gpuVideoLifecycleQualified !== true) return false
-    return true
+    const background = output?.out?.background
+    if (!hasVideoBackground(background)) return true
+    // bounded/custom loop semantics are a documented legacy-only capability (#17):
+    // never silently change their meaning, even for qualified GPU video
+    if (hasUnsupportedLoopSemantics(background)) return false
+    return special?.gpuVideoLifecycleQualified === true
 }
 
-function hasVideoBackground(output: DecisionInput["output"]): boolean {
-    const background = output?.out?.background
+function hasVideoBackground(background: any): boolean {
     if (!background) return false
     if (background.type === "video" || background.type === "player") return true
 
     const mediaPath = background.path || background.id || ""
     const extension = String(mediaPath).split(".").pop()?.toLowerCase() || ""
     return VIDEO_EXTENSIONS.has(extension)
+}
+
+// GPU video only supports native whole-file looping today (#17)
+function hasUnsupportedLoopSemantics(background: any): boolean {
+    return Number(background.startAt) > 0 || Number(background.softLoop) > 0
 }

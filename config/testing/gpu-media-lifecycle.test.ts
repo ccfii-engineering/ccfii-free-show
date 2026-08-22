@@ -127,6 +127,79 @@ test("GPU video publishes one canonical snapshot to all public endpoints and res
     }
 })
 
+test("GPU playback controls round-trip through the canonical state", async () => {
+    const { electronApp, dataFolder, settingsFolder, outputWindow, mainWindow } = await launchWithVideoFixture(["--gpu-video-lifecycle-qualified"])
+
+    try {
+        await mainWindow.locator("button#media").click()
+        await mainWindow.getByText("Add folder", { exact: true }).first().click()
+        await mainWindow.getByText(path.basename(dataFolder.name), { exact: true }).first().click()
+        await mainWindow.locator('#media.selectElem[data-item*="gpu-loop.webm"]').click()
+
+        const apiPort = 15505
+        await mainWindow.evaluate((port) => (window as any).api.send("MAIN", { channel: "WEBSOCKET_START", data: port }), apiPort)
+        await delay(250)
+        const apiUrl = `http://127.0.0.1:${apiPort + 1}`
+
+        let state: any = {}
+        for (let attempt = 0; attempt < 20 && !(state.duration > 1); attempt++) {
+            state = await queryAPI(apiUrl, "get_playing_video_state")
+            if (!(state.duration > 1)) await delay(250)
+        }
+        expect(state.duration).toBeGreaterThan(1)
+
+        // PAUSE stops observable progress
+        await queryAPI(apiUrl, "toggle_playing_media")
+        for (let attempt = 0; attempt < 20 && !state.paused; attempt++) {
+            await delay(250)
+            state = await queryAPI(apiUrl, "get_playing_video_state")
+        }
+        expect(state.paused, "pause command reaches the active GPU video").toBe(true)
+
+        // SEEK applies to the visible position and the public snapshot while paused
+        await queryAPI(apiUrl, "video_seekto", { seconds: 0.4 })
+        await delay(400)
+        state = await queryAPI(apiUrl, "get_playing_video_time")
+        expect(state, "seek lands near the requested time").toBeGreaterThan(0.25)
+        expect(state, "seek lands near the requested time").toBeLessThan(0.6)
+        const seekedProgress = state
+
+        // RESUME restarts it
+        await queryAPI(apiUrl, "toggle_playing_media")
+        let resumed = false
+        for (let attempt = 0; attempt < 20 && !resumed; attempt++) {
+            await delay(300)
+            resumed = (await queryAPI(apiUrl, "get_playing_video_time")) > seekedProgress + 0.05
+        }
+        expect(resumed, "progress resumes advancing").toBe(true)
+        state = await queryAPI(apiUrl, "get_playing_video_state")
+        expect(state.paused, "resume clears paused state").toBe(false)
+
+        // MUTE round-trips without transferring ownership (progress keeps flowing)
+        await queryAPI(apiUrl, "toggle_media_mute")
+        await delay(400)
+        state = await queryAPI(apiUrl, "get_playing_video_state")
+        expect(state.muted, "mute toggles off default-muted background").toBe(false)
+        await queryAPI(apiUrl, "toggle_media_mute")
+        await delay(400)
+        state = await queryAPI(apiUrl, "get_playing_video_state")
+        expect(state.muted, "second toggle restores mute").toBe(true)
+        expect(state.duration, "ownership unchanged: duration still live").toBeGreaterThan(1)
+
+        // LOOP toggle reflects in public state
+        await queryAPI(apiUrl, "toggle_media_loop")
+        await delay(400)
+        expect(await queryAPI(apiUrl, "get_media_loop_state"), "loop off").toBe(false)
+        await queryAPI(apiUrl, "toggle_media_loop")
+        await delay(400)
+        expect(await queryAPI(apiUrl, "get_media_loop_state"), "loop restored").toBe(true)
+    } finally {
+        await closeElectron(electronApp)
+        dataFolder.removeCallback()
+        settingsFolder.removeCallback()
+    }
+})
+
 async function launchWithVideoFixture(extraArgs: string[] = []) {
     const settingsFolder = tmp.dirSync({ unsafeCleanup: true })
     const dataFolder = tmp.dirSync({ unsafeCleanup: true })
@@ -139,6 +212,7 @@ async function launchWithVideoFixture(extraArgs: string[] = []) {
     })
     electronApp.on("window", (page) => {
         page.on("pageerror", (error) => console.log(`[renderer:error] ${error.stack || error.message}`))
+        page.on("console", (message) => console.log(`[renderer:${message.type()}] ${message.text()}`))
     })
 
     await electronApp.evaluate(async ({ dialog }, selectedFolder) => {

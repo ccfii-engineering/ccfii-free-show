@@ -284,6 +284,22 @@ export async function updateActiveVideoData(state: BackgroundLayerState, data: V
     reportVideoState(state, video)
 }
 
+// playback command round-trip (#17): apply an operator/API command to the active hidden
+// video and republish the canonical snapshot immediately after it is applied
+export async function applyPlaybackCommand(state: BackgroundLayerState, command: { type: "pause" | "resume" | "seek" | "mute" | "unmute"; time?: number }): Promise<void> {
+    const video = getActiveVideoElement(state)
+    if (!video) return
+
+    if (command.type === "pause" && !video.paused) video.pause()
+    else if (command.type === "resume" && video.paused) await video.play().catch((e) => console.warn("BackgroundLayer: resume failed:", e))
+    else if (command.type === "seek" && Number.isFinite(command.time)) video.currentTime = command.time!
+    else if (command.type === "mute") video.muted = true
+    else if (command.type === "unmute") video.muted = false
+    else return
+
+    reportVideoState(state, video)
+}
+
 function getActiveVideoElement(state: BackgroundLayerState): HTMLVideoElement | null {
     const activeVideo = state.dualState.activeSlot === "a" ? state.videoElementA : state.videoElementB
     return activeVideo || state.videoElementA || state.videoElementB

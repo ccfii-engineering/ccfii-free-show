@@ -7,6 +7,7 @@
     import type { OutBackground, Transition } from "../../../../types/Show"
     import { allOutputs, outputs } from "../../../stores"
     import { getOutputRenderAuthority } from "../../../outputState/clientRuntime"
+    import { registerPlaybackCommandTarget } from "../../../outputState/playbackCommands"
     import { sendPlaybackReport } from "../../../outputState/playbackStore"
     import { outputEntry } from "../../../utils/perEntryStores"
     import { destroy, receive, send } from "../../../utils/request"
@@ -31,6 +32,7 @@
     let timeSendingTimeout: NodeJS.Timeout | null = null
     let lastVideoDataSent = ""
     let lastVideoTimeSent = Number.NaN
+    let unregisterCommands: (() => void) | null = null
     // canonical playback ownership: unique per mount so a remount supersedes this generation (#16)
     const playbackSourceId = `gpu-${uid()}`
 
@@ -216,6 +218,12 @@
             pixiReady = true
             reportRendererStatus("gpu-active", gpuBackend)
 
+            // playback command round-trip (#17): this mount is the owning Render Generation
+            unregisterCommands?.()
+            unregisterCommands = registerPlaybackCommandTarget(outputId, (command) => {
+                layerMgrMod?.applyPlaybackCommand(layerMgr, command)
+            })
+
             // Flush anything buffered before Pixi was ready
             for (const u of pendingUpdates) bridge.update(u.slot, u.data, u.transition)
             pendingUpdates.length = 0
@@ -274,6 +282,8 @@
     onDestroy(() => {
         sessionActive = false
         pixiReady = false
+        unregisterCommands?.()
+        unregisterCommands = null
         if (listenerId) destroy(OUTPUT, listenerId)
         if (slideBgClearTimer) clearTimeout(slideBgClearTimer)
         if (styleBgClearTimer) clearTimeout(styleBgClearTimer)

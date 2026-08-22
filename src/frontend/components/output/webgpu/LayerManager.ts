@@ -88,6 +88,12 @@ export async function updateSlideVideoData(state: LayerManagerState, data: Video
     await bg.updateActiveVideoData(state.slideBackground, data)
 }
 
+// playback command round-trip (#17)
+export async function applyPlaybackCommand(state: LayerManagerState, command: { type: "pause" | "resume" | "seek" | "mute" | "unmute"; time?: number }): Promise<void> {
+    const bg = await getBgMod()
+    await bg.applyPlaybackCommand(state.slideBackground, command)
+}
+
 export async function updateSlideVideoTime(state: LayerManagerState, time: number): Promise<void> {
     const bg = await getBgMod()
     await bg.updateActiveVideoData(state.slideBackground, { currentTime: time })

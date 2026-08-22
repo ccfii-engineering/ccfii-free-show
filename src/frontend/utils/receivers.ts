@@ -6,6 +6,7 @@ import { AudioAnalyser } from "../audio/audioAnalyser"
 import { AudioAnalyserMerger } from "../audio/audioAnalyserMerger"
 import { setEqualizerEnabled, updateEqualizerBands } from "../audio/audioEqualizer"
 import { publishPlaybackReport } from "../outputState/playbackStore"
+import { handlePlaybackCommandMessage } from "../outputState/playbackCommands"
 import { runAction } from "../components/actions/actions"
 import { clone } from "../components/helpers/array"
 import { checkNextAfterMedia } from "../components/helpers/showActions"
@@ -249,6 +250,7 @@ const receiveOUTPUTasMAIN: any = {
 
 let previousOutputs = ""
 export const receiveOUTPUTasOUTPUT: any = {
+    PLAYBACK_COMMAND: (msg: any) => handlePlaybackCommandMessage(msg),
     OUTPUTS: (a: any) => {
         // output.ts - only current output data is sent
         const id = Object.keys(a)[0]

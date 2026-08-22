@@ -23,6 +23,8 @@ import { getLabelId, getLayoutRef } from "../helpers/show"
 import { playNextGroup, selectProjectShow, updateOut } from "../helpers/showActions"
 import { _show } from "../helpers/shows"
 import { VideoPlayer } from "../media/video/videoPlayer"
+import { getPlaybackSnapshot } from "../../outputState/playbackStore"
+import { isGpuGeneration, sendPlaybackCommand } from "../../outputState/playbackCommands"
 import { resolveScriptureReference } from "../drawer/bible/scripture"
 import { clearBackground, clearSlide } from "../output/clear"
 import { getPlainEditorText } from "../show/getTextEditor"
@@ -691,6 +693,15 @@ export function videoSeekTo(data: API_seek) {
     const bg = get(outputs)[outputId]?.out?.background
     const path = bg?.path || bg?.id
     if (!path) return
+
+    // route to the renderer that owns the active output (#17); mirror to the
+    // legacy audio engine so sound and visible position stay aligned
+    const snapshot = getPlaybackSnapshot(outputId)
+    if (snapshot && isGpuGeneration(snapshot.generation)) {
+        sendPlaybackCommand(outputId, { type: "seek", time: data.seconds })
+        VideoPlayer.seekTo(path, outputId, data.seconds)
+        return
+    }
 
     VideoPlayer.seekTo(path, outputId, data.seconds)
 }

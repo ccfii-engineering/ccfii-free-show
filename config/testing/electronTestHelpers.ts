@@ -49,8 +49,9 @@ export async function finishFirstRun(mainWindow: Page): Promise<void> {
     if ((await skipGuide.count()) > 0) await skipGuide.click()
 }
 
-export async function queryAPI(apiUrl: string, action: string): Promise<any> {
-    const response = await fetch(apiUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) })
+export async function queryAPI(apiUrl: string, action: string, data?: any): Promise<any> {
+    // REST bodies are flat: { action, ...params } — triggerAction hands the whole body to the handler
+    const response = await fetch(apiUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...(data || {}) }) })
     if (!response.ok) throw new Error(`API request failed for ${action}: ${response.status}`)
     const text = await response.text()
     if (!text) return undefined
