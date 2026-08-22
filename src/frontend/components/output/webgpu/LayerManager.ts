@@ -99,6 +99,13 @@ export async function updateSlideVideoTime(state: LayerManagerState, time: numbe
     await bg.updateActiveVideoData(state.slideBackground, { currentTime: time })
 }
 
+// true while the slide-background layer manages a hidden video (#17): its clock is
+// authoritative and legacy TIME echoes must not reposition it
+export function hasActiveSlideVideo(state: LayerManagerState): boolean {
+    const dual = state?.slideBackground?.dualState
+    return !!(dual && (dual.slotAPath || dual.slotBPath))
+}
+
 export async function updateSlideText(state: LayerManagerState, slideElement: HTMLElement | null, slideKey: string, transition: Transition, isClearing: boolean): Promise<void> {
     const sl = await getSlideMod()
     sl.updateSlideContent(state.slideLayer, slideElement, slideKey, transition, isClearing)

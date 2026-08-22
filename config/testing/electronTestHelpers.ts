@@ -1,3 +1,5 @@
+import { writeFileSync } from "node:fs"
+import path from "node:path"
 import type { ElectronApplication, Page } from "playwright"
 
 export const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -5,6 +7,23 @@ export const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve
 export function launchArgs(userDataDir: string, extraArgs: string[] = []) {
     // --no-sandbox is required for Electron to launch reliably on Linux CI.
     return [".", "--no-sandbox", `--user-data-dir=${userDataDir}`, ...extraArgs]
+}
+
+// Single-display hosts (Linux CI/Xvfb): the app sizes its main window to fill the
+// whole virtual screen, leaving no room for the presentation Output and tripping
+// the "choose screen" alert (error.display). Pre-seed Electron's config so the
+// main window opens at ~2/3 of each screen dimension instead — then auto-placed
+// output bounds cover <50% of it and the native placement path succeeds.
+export function seedWindowConfig(userDataDir: string, screenWidth = 1920, screenHeight = 1080) {
+    const width = Math.floor(screenWidth * 0.66)
+    const height = Math.floor(screenHeight * 0.66)
+    const bounds = {
+        x: Math.floor((screenWidth - width) / 2),
+        y: Math.floor((screenHeight - height) / 2),
+        width,
+        height
+    }
+    writeFileSync(path.join(userDataDir, "config.json"), JSON.stringify({ maximized: false, bounds }))
 }
 
 export async function findMainWindow(electronApp: ElectronApplication): Promise<Page> {

@@ -3,7 +3,7 @@ import path from "node:path"
 import { _electron as electron } from "playwright"
 import { expect, test } from "@playwright/test"
 import tmp from "tmp"
-import { delay, findMainWindow, findOutputWindow, finishFirstRun, launchArgs, queryAPI } from "./electronTestHelpers"
+import { delay, findMainWindow, findOutputWindow, finishFirstRun, launchArgs, queryAPI, seedWindowConfig } from "./electronTestHelpers"
 
 test("default video playback uses the safe renderer with live duration, progress, and looping", async () => {
     const { electronApp, dataFolder, settingsFolder, outputWindow, mainWindow } = await launchWithVideoFixture()
@@ -175,15 +175,18 @@ test("GPU playback controls round-trip through the canonical state", async () =>
         state = await queryAPI(apiUrl, "get_playing_video_state")
         expect(state.paused, "resume clears paused state").toBe(false)
 
-        // MUTE round-trips without transferring ownership (progress keeps flowing)
+        // MUTE round-trips without transferring ownership (progress keeps flowing).
+        // The starting mute state depends on style/media defaults, so assert the toggle
+        // flips it and flips back rather than assuming an initial value.
+        const muteBefore = (await queryAPI(apiUrl, "get_playing_video_state")).muted
         await queryAPI(apiUrl, "toggle_media_mute")
         await delay(400)
         state = await queryAPI(apiUrl, "get_playing_video_state")
-        expect(state.muted, "mute toggles off default-muted background").toBe(false)
+        expect(state.muted, "mute toggles").toBe(!muteBefore)
         await queryAPI(apiUrl, "toggle_media_mute")
         await delay(400)
         state = await queryAPI(apiUrl, "get_playing_video_state")
-        expect(state.muted, "second toggle restores mute").toBe(true)
+        expect(state.muted, "second toggle restores mute").toBe(muteBefore)
         expect(state.duration, "ownership unchanged: duration still live").toBeGreaterThan(1)
 
         // LOOP toggle reflects in public state
@@ -203,6 +206,7 @@ test("GPU playback controls round-trip through the canonical state", async () =>
 async function launchWithVideoFixture(extraArgs: string[] = []) {
     const settingsFolder = tmp.dirSync({ unsafeCleanup: true })
     const dataFolder = tmp.dirSync({ unsafeCleanup: true })
+    seedWindowConfig(settingsFolder.name)
     const loopMediaPath = path.join(dataFolder.name, "gpu-loop.webm")
     execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=320x180:r=24", "-t", "1.5", "-c:v", "libvpx-vp9", "-an", loopMediaPath])
 

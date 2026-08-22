@@ -183,21 +183,23 @@
             // we live in the output window — we send via IPC to the main window where receivers.ts
             // handles MAIN_TIME/MAIN_DATA → videosTime/videosData. Throttled ~220ms to match the
             // regular path.
-            const videoTimeHandler = ({ currentTime, duration, paused, loop, muted, identity }: { currentTime: number; duration: number; paused: boolean; loop: boolean; muted: boolean; identity?: string }) => {
+            const videoTimeHandler = ({ currentTime, duration, paused, loop, muted, identity, force }: { currentTime: number; duration: number; paused: boolean; loop: boolean; muted: boolean; identity?: string; force?: boolean }) => {
                 const timeReset = isVideoTimeReset(currentTime, lastVideoTimeSent)
                 const nextVideoData = JSON.stringify({ duration, paused, loop, muted })
                 const dataChanged = nextVideoData !== lastVideoDataSent
 
-                // canonical per-output playback state (#16) — wraps always get through the time throttle
-                if (dataChanged || timeReset || !timeSendingTimeout) {
+                // canonical per-output playback state (#16) — wraps always get through the time throttle.
+                // Command results force their way through (#17): a republish must never be swallowed
+                // because a stale report reset the throttle moments earlier.
+                if (force || dataChanged || timeReset || !timeSendingTimeout) {
                     sendPlaybackReport({ outputId, sourceId: playbackSourceId, role: "visual", identity, duration, progress: currentTime, paused, loop, muted, ...(timeReset ? { event: "wrap" } : {}) })
                 }
 
-                if (dataChanged) {
+                if (dataChanged || (force && lastVideoDataSent !== nextVideoData)) {
                     lastVideoDataSent = nextVideoData
                     send(OUTPUT, ["MAIN_DATA"], { [outputId]: { duration, paused, loop, muted } })
                 }
-                if (timeSendingTimeout && !timeReset) return
+                if (!force && timeSendingTimeout && !timeReset) return
                 if (timeSendingTimeout) {
                     clearTimeout(timeSendingTimeout)
                     timeSendingTimeout = null
@@ -263,11 +265,21 @@
             const outputData = data?.[outputId]
             if (!outputData || !layerMgr || !layerMgrMod) return
 
+            // GPU-managed backgrounds receive control updates reactively (#17); delayed
+            // legacy echoes (helpers/output.ts) carry stale values and must not overwrite
+            // newer command/state results
+            if (layerMgrMod.hasActiveSlideVideo(layerMgr)) return
+
             layerMgrMod.updateSlideVideoData(layerMgr, outputData)
         },
         TIME: (data: any) => {
             const outputTime = data?.[outputId]
             if (!Number.isFinite(outputTime) || !layerMgr || !layerMgrMod) return
+
+            // GPU-owned video is its own authoritative clock (#17). Legacy startAt echoes
+            // (helpers/output.ts re-broadcasting background state) must not clobber live
+            // position — seeks arrive as PLAYBACK_COMMANDs instead.
+            if (layerMgrMod.hasActiveSlideVideo(layerMgr)) return
 
             layerMgrMod.updateSlideVideoTime(layerMgr, outputTime)
         }

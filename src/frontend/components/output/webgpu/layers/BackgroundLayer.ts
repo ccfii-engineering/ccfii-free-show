@@ -10,7 +10,7 @@ import { startTransition, cancelTransition } from "../transitionManager"
 import { applyVideoControlData, getVideoControlSnapshot, type VideoControlData } from "../videoControlState"
 import { isVideoSource } from "./mediaSource"
 
-export type VideoTimeCallback = (info: ReturnType<typeof getVideoControlSnapshot> & { identity?: string }) => void
+export type VideoTimeCallback = (info: ReturnType<typeof getVideoControlSnapshot> & { identity?: string; force?: boolean }) => void
 const videoListenerCleanup = new WeakMap<HTMLVideoElement, () => void>()
 
 export interface BackgroundLayerState {
@@ -297,7 +297,8 @@ export async function applyPlaybackCommand(state: BackgroundLayerState, command:
     else if (command.type === "unmute") video.muted = false
     else return
 
-    reportVideoState(state, video)
+    // command results must always reach the canonical snapshot (#17) — bypass the time throttle
+    reportVideoState(state, video, true)
 }
 
 function getActiveVideoElement(state: BackgroundLayerState): HTMLVideoElement | null {
@@ -305,10 +306,10 @@ function getActiveVideoElement(state: BackgroundLayerState): HTMLVideoElement | 
     return activeVideo || state.videoElementA || state.videoElementB
 }
 
-function reportVideoState(state: BackgroundLayerState, video: HTMLVideoElement): void {
+function reportVideoState(state: BackgroundLayerState, video: HTMLVideoElement, force = false): void {
     if (!state.videoTimeHandler) return
     const identity = state.dualState.activeSlot === "b" ? state.dualState.slotBPath : state.dualState.slotAPath
-    state.videoTimeHandler({ ...getVideoControlSnapshot(video), identity: identity || undefined })
+    state.videoTimeHandler({ ...getVideoControlSnapshot(video), identity: identity || undefined, force })
 }
 
 function toFileUrl(path: string): string {
@@ -405,12 +406,16 @@ function attachVideoTimeListeners(video: HTMLVideoElement, handler: VideoTimeCal
     video.addEventListener("play", report)
     video.addEventListener("pause", report)
     video.addEventListener("seeked", report)
+    // mute/unmute can arrive through reactive state updates (not playback commands) — republish so
+    // the canonical per-output snapshot never goes stale (#17)
+    video.addEventListener("volumechange", report)
     videoListenerCleanup.set(video, () => {
         video.removeEventListener("timeupdate", report)
         video.removeEventListener("loadedmetadata", report)
         video.removeEventListener("play", report)
         video.removeEventListener("pause", report)
         video.removeEventListener("seeked", report)
+        video.removeEventListener("volumechange", report)
     })
 }
 

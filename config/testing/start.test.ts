@@ -4,7 +4,7 @@ import { _electron as electron } from "playwright"
 import type { Page } from "playwright"
 import { expect, test } from "@playwright/test"
 import tmp from "tmp"
-import { delay, launchArgs } from "./electronTestHelpers"
+import { delay, launchArgs, seedWindowConfig } from "./electronTestHelpers"
 
 const timeoutMs = 2_000
 
@@ -24,6 +24,7 @@ test.beforeEach(async ({ context }) => {
 
 test("Launch electron app", async () => {
     const tmpSettingFolder = tmp.dirSync({ unsafeCleanup: true })
+    seedWindowConfig(tmpSettingFolder.name)
     const gpuRendererErrors: string[] = []
     const electronApp = await electron.launch({
         args: launchArgs(tmpSettingFolder.name),

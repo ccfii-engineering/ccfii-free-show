@@ -501,7 +501,7 @@ export async function togglePlayingMedia(e: Event | null = null, back = false, a
             const snapshot = getPlaybackSnapshot(outputId)
             if (snapshot && isGpuGeneration(snapshot.generation) && backgroundType !== "player") {
                 sendPlaybackCommand(outputId, { type: snapshot.paused ? "resume" : "pause" })
-                VideoPlayer.start(currentlyPlaying, { paused: !snapshot.paused }, [outputId])
+                VideoPlayer.start(currentlyPlaying, { paused: !snapshot.paused, syncOnly: true }, [outputId])
                 return
             }
 

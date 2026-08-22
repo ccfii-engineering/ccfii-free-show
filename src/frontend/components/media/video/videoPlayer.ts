@@ -26,6 +26,9 @@ type VideoOptions = {
     muted?: boolean
     startAt?: number
     type?: "background" | "item"
+    // sound-only mirror of a GPU-owned video (#17): never makes lifecycle decisions
+    // (clear background / next-after-media) on its own
+    syncOnly?: boolean
 }
 // online videos
 type VirtualAudioElement = {
@@ -46,6 +49,7 @@ export type VideoAudioData = {
     loop?: boolean
     fromTime?: number
     toTime?: number
+    syncOnly?: boolean
 }
 
 export type PlayingVideoState = {
@@ -134,7 +138,7 @@ export class VideoPlayer {
         const toTime = this.getEndTime(id, audio.duration)
 
         playingVideos.update((a) => {
-            a.push({ path: id, audio, linkedOutputIds: linkedOutputIds || [], type: options.type || "background", softLoop, loop, fromTime, toTime })
+            a.push({ path: id, audio, linkedOutputIds: linkedOutputIds || [], type: options.type || "background", softLoop, loop, fromTime, toTime, syncOnly: options.syncOnly })
             return a
         })
 
@@ -245,6 +249,20 @@ export class VideoPlayer {
         const audio = new Audio(encodeFilePath(audioPath))
         audio.addEventListener("ended", () => {
             const playing = this.getPlaying(originalId, outputIds || [])
+            // GPU-mirrored entries are sound-only slaves (#17): the visual owner decides
+            // lifecycle, so mirror the active video's loop instead of ending/cleaning up
+            if (playing?.syncOnly) {
+                const outputId = outputIds?.[0] || ""
+                const background = get(outputs)[outputId]?.out?.background
+                const stillActive = background && (background.path === originalId || background.id === originalId)
+                if (!stillActive || background.loop === false) return
+
+                const startTime = this.getStartTime(originalId)
+                audio.currentTime = startTime
+                if ("timeTick" in audio) (audio as any).timeTick.update(startTime)
+                if (audio.paused) audio.play().catch(() => {})
+                return
+            }
             if (playing?.loop || this.getGlobalOptions(originalId)?.loop) {
                 const startTime = this.getStartTime(originalId)
                 audio.currentTime = startTime
@@ -284,6 +302,8 @@ export class VideoPlayer {
 
         const playing = this.getPlaying(path, outputIds || [])
         if (!playing || (playing.audio.paused && !force)) return finish()
+        // GPU-mirrored entries never clear backgrounds or trigger next-after-media (#17)
+        if (playing.syncOnly) return finish()
 
         const audio = this.getAudio(path, outputIds ? outputIds[0] : undefined)
         if (!audio) return finish()
