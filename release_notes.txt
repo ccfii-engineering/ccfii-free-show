@@ -1,3 +1,20 @@
+<-- Build v1.13.0 -->
+
+What's new in this build:
+
+GPU Video Playback by Default
+- Video backgrounds now play through the qualified GPU renderer by default, with live duration, advancing progress, and reliable looping across WebM VP9/VP8 and MP4/MKV/MOV H.264 formats.
+- Public playback readouts (remote, stage, and REST) all agree on one canonical per-output state during playback.
+
+Playback Controls
+- Pause, resume, seek, and mute commands round-trip reliably through the active output renderer, including while videos are cross-fading.
+- Loop wraps remain observable between progress updates, and bounded/custom loop behavior keeps using the proven legacy path instead of changing meaning.
+
+Reliability
+- Replacing one video with another hands playback state over cleanly: only the new video publishes progress and metadata.
+- Unavailable or undecodable media files fail once and quietly without retry storms or repeated errors, and a valid file plays normally afterwards in the same session.
+- Closing an output releases its playback state immediately, and reopening starts a fresh playback generation.
+
 <-- Build v1.12.0 -->
 
 What's new in this build:
