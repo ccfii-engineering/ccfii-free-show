@@ -2,6 +2,7 @@
 
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
+    import type { Unsubscriber } from "svelte/store"
     import { uid } from "uid"
     import { OUTPUT } from "../../../../types/Channels"
     import type { MediaStyle } from "../../../../types/Main"
@@ -9,7 +10,9 @@
     import type { OutBackground, Transition } from "../../../../types/Show"
     import { AudioAnalyser } from "../../../audio/audioAnalyser"
     import { audioChannelsData, currentWindow, media, outputs, playerVideos, playingVideos, special, videosData, videosTime, volume } from "../../../stores"
-    import { sendPlaybackReport } from "../../../outputState/playbackStore"
+    import { isGpuGeneration } from "../../../outputState/playbackCommands"
+    import type { PlaybackSnapshot } from "../../../outputState/playbackState"
+    import { sendPlaybackReport, subscribePlaybackState } from "../../../outputState/playbackStore"
     import { destroy, receive, send } from "../../../utils/request"
     import BmdStream from "../../drawer/live/BMDStream.svelte"
     import NdiStream from "../../drawer/live/NDIStream.svelte"
@@ -63,14 +66,57 @@
     }
     // draw
 
-    //Without the second if, the preview videos don't actually play but just skip ahead when kept in sync with the setTimeout()
-    $: if (mirror && !styleBackground && $videosData[outputId]?.paused) videoData.paused = true
-    $: if (mirror && !styleBackground && $videosData[outputId]?.paused === false) videoData.paused = false
+    let previewPlaybackUnsubscriber: Unsubscriber | null = null
+    let gpuOwnsPreviewPlayback = false
+    $: configurePreviewPlaybackSync(mirror, styleBackground, outputId, id)
 
-    $: if (mirror && !styleBackground && $videosTime[outputId] !== undefined) setPreviewVideoTime()
+    function configurePreviewPlaybackSync(mirror: boolean, styleBackground: boolean, outputId: string, identity: string) {
+        stopPreviewPlaybackSync()
+        if (!mirror || styleBackground || !outputId || !identity) return
+
+        previewPlaybackUnsubscriber = subscribePlaybackState((state) => {
+            const snapshot = state.snapshots[outputId]
+            gpuOwnsPreviewPlayback = !!snapshot && isGpuGeneration(snapshot.generation)
+            if (!gpuOwnsPreviewPlayback || snapshot?.identity !== identity) return
+
+            applyPreviewPlaybackSnapshot(snapshot)
+        })
+    }
+
+    function applyPreviewPlaybackSnapshot(snapshot: PlaybackSnapshot) {
+        const update = getPreviewVideoSyncUpdate({
+            fadingOut,
+            localPaused: videoData.paused,
+            localTime: videoTime,
+            remotePaused: snapshot.paused,
+            remoteTime: snapshot.progress
+        })
+
+        // This component is immutable, so replace the object to propagate playback changes
+        // through the Media/Video bindings instead of mutating the existing reference.
+        videoData = { ...videoData, duration: snapshot.duration, paused: snapshot.paused, loop: snapshot.loop, muted: true }
+        if (update) videoTime = update.time
+    }
+
+    function stopPreviewPlaybackSync() {
+        previewPlaybackUnsubscriber?.()
+        previewPlaybackUnsubscriber = null
+        gpuOwnsPreviewPlayback = false
+    }
+
+    onDestroy(stopPreviewPlaybackSync)
+
+    // Without the second if, legacy preview videos don't actually play but just skip ahead
+    // when kept in sync with the setTimeout(). GPU previews use the canonical snapshot above.
+    $: if (mirror && !styleBackground && !gpuOwnsPreviewPlayback && $videosData[outputId]?.paused) videoData.paused = true
+    $: if (mirror && !styleBackground && !gpuOwnsPreviewPlayback && $videosData[outputId]?.paused === false) videoData.paused = false
+
+    $: if (mirror && !styleBackground && !gpuOwnsPreviewPlayback && $videosTime[outputId] !== undefined) setPreviewVideoTime()
     function setPreviewVideoTime() {
         // timeout in case video is going to fade out
         setTimeout(() => {
+            if (gpuOwnsPreviewPlayback) return
+
             const update = getPreviewVideoSyncUpdate({
                 fadingOut,
                 localPaused: videoData.paused,
