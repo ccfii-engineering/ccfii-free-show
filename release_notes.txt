@@ -1,3 +1,16 @@
+<-- Build v1.13.1 -->
+
+What's new in this build:
+
+GPU Video Operator Controls
+- Selected GPU-rendered videos now show live duration and advancing progress in the operator media controls.
+- Play, pause, seek, mute, and loop controls now affect the active Presentation Output and acknowledge the applied state.
+- Playback commands and telemetry are scoped to the active output and video identity so replaced or outgoing videos cannot update the current controls.
+
+Reliability
+- Media controls reset cleanly when videos are replaced or cleared while Legacy Output Renderer and player backgrounds retain their established control path.
+- GPU video qualification now exercises the visible operator controls, including pause/resume progress, precise seek acknowledgement, mute state, loop state, wraparound, and continued playback.
+
 <-- Build v1.13.0 -->
 
 What's new in this build:
