@@ -1,3 +1,16 @@
+<-- Build v1.13.2 -->
+
+What's new in this build:
+
+GPU Video Preview
+- The Presentation Output preview now receives the selected GPU video's live duration and playback progress.
+- The mirrored preview now follows play, pause, seek, and resume actions instead of remaining paused at the beginning.
+- Playback updates are matched to the selected media so stale state from a replaced video cannot drive the new preview.
+
+Reliability
+- Legacy-rendered video previews retain their established synchronization path while GPU previews use the canonical per-output playback state.
+- Automated Electron coverage now verifies the actual preview video, operator progress bar, pause hold, seek position, and resumed playback.
+
 <-- Build v1.13.1 -->
 
 What's new in this build:
