@@ -1,14 +1,17 @@
 <script lang="ts">
     import { onDestroy } from "svelte"
-    import { Unsubscriber } from "svelte/store"
+    import type { Unsubscriber } from "svelte/store"
     import type { Output } from "../../../../types/Output"
     import type { MediaType, ShowType } from "../../../../types/Show"
+    import { isGpuGeneration, sendPlaybackCommand } from "../../../outputState/playbackCommands"
+    import { getPlaybackSnapshot, subscribePlaybackState } from "../../../outputState/playbackStore"
     import { activeFocus, activeShow, focusMode, outLocked, playerVideos } from "../../../stores"
     import { triggerClickOnEnterSpace } from "../../../utils/clickable"
     import { translateText } from "../../../utils/language"
     import Icon from "../../helpers/Icon.svelte"
     import { splitPath } from "../../helpers/get"
     import { getExtension, getMediaType } from "../../helpers/media"
+    import { setOutput } from "../../helpers/output"
     import FloatingInputs from "../../input/FloatingInputs.svelte"
     import Button from "../../inputs/Button.svelte"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
@@ -33,34 +36,62 @@
 
     // LISTENER
 
-    let unsubscriber: Unsubscriber | null = null
-    $: setTimeout(() => pathChanged(path, outputId))
-    function pathChanged(path: string | undefined, outputId: string) {
-        if (unsubscriber) {
-            unsubscriber()
-            unsubscriber = null
-        }
+    let legacyUnsubscriber: Unsubscriber | null = null
+    let canonicalUnsubscriber: Unsubscriber | null = null
+    let pathChangeTimer: ReturnType<typeof setTimeout> | null = null
+    $: schedulePathChanged(path, outputId, type)
 
-        if (!path || (type !== "video" && type !== "player")) return
-
-        // interpolate video time (so slider updates more smoothly) / slider step is 1 anyway
-        // const interpolator = new TimeInterpolator((time) => videoTime = time)
-
-        unsubscriber = videoSync(path, outputId, (data) => {
-            videoTime = data.currentTime || 0
-            if (data.duration) videoData.duration = data.duration
-            videoData.paused = data.paused
-            videoData.loop = data.loop
-            videoData.muted = data.muted
-
-            // interpolator.update(videoTime)
-            // if (videoData.paused) interpolator.stop()
-            // else interpolator.start()
+    function schedulePathChanged(path: string | undefined, outputId: string, type: MediaType) {
+        if (pathChangeTimer) clearTimeout(pathChangeTimer)
+        pathChangeTimer = setTimeout(() => {
+            pathChangeTimer = null
+            pathChanged(path, outputId, type)
         })
     }
+
+    function pathChanged(path: string | undefined, outputId: string, type: MediaType) {
+        if (legacyUnsubscriber) {
+            legacyUnsubscriber()
+            legacyUnsubscriber = null
+        }
+        if (canonicalUnsubscriber) {
+            canonicalUnsubscriber()
+            canonicalUnsubscriber = null
+        }
+
+        updateVideoState({ currentTime: 0, duration: 0, paused: true, loop: background?.loop ?? false, muted: background?.muted ?? false })
+        if (!path || (type !== "video" && type !== "player")) return
+
+        let gpuOwnsPlayback = false
+        if (type === "video") {
+            canonicalUnsubscriber = subscribePlaybackState((state) => {
+                const snapshot = state.snapshots[outputId]
+                const identityMatches = snapshot?.identity === path
+                gpuOwnsPlayback = !!snapshot && identityMatches && isGpuGeneration(snapshot.generation)
+                if (!gpuOwnsPlayback) return
+
+                updateVideoState({ currentTime: snapshot.progress, duration: snapshot.duration, paused: snapshot.paused, loop: snapshot.loop, muted: snapshot.muted })
+            })
+        }
+
+        legacyUnsubscriber = videoSync(path, outputId, (data) => {
+            if (gpuOwnsPlayback) return
+            updateVideoState(data)
+        })
+    }
+
+    function updateVideoState(data: { currentTime: number; duration: number; paused: boolean; loop: boolean; muted: boolean }) {
+        videoTime = data.currentTime || 0
+        videoData.duration = data.duration || 0
+        videoData.paused = data.paused
+        videoData.loop = data.loop
+        videoData.muted = data.muted
+    }
+
     onDestroy(() => {
-        // interpolator.stop()
-        if (unsubscriber) unsubscriber()
+        if (pathChangeTimer) clearTimeout(pathChangeTimer)
+        if (legacyUnsubscriber) legacyUnsubscriber()
+        if (canonicalUnsubscriber) canonicalUnsubscriber()
     })
 
     // $: if (path && videoData) VideoPlayer.updateProperties(path, videoData, outputId)
@@ -74,16 +105,21 @@
     function toggleMute() {
         if (!path) return
 
-        videoData.muted = !videoData.muted
-        // if (background) setOutput("background", { ...background, muted: videoData.muted }, false, outputId)
+        const muted = !videoData.muted
+        videoData.muted = muted
+        if (background && getActiveGpuSnapshot()) {
+            sendPlaybackCommand(outputId, { type: muted ? "mute" : "unmute" })
+            setOutput("background", { ...background, muted }, false, outputId)
+        }
         VideoPlayer.toggleMute(path, outputId)
     }
 
     function toggleLoop() {
         if (!path) return
 
-        videoData.loop = !videoData.loop
-        // if (background) setOutput("background", { ...background, loop: videoData.loop }, false, outputId)
+        const loop = !videoData.loop
+        videoData.loop = loop
+        if (background && getActiveGpuSnapshot()) setOutput("background", { ...background, loop }, false, outputId)
         VideoPlayer.toggleLoop(path, outputId)
     }
 
@@ -100,8 +136,35 @@
         const isPaused = videoData.paused
         videoData.paused = !isPaused
 
-        if (isPaused) VideoPlayer.play(path, outputId)
-        else VideoPlayer.pause(path, outputId)
+        if (isPaused) resumePlayback()
+        else pausePlayback()
+    }
+
+    function pausePlayback() {
+        if (!path) return
+        if (getActiveGpuSnapshot()) sendPlaybackCommand(outputId, { type: "pause" })
+        VideoPlayer.pause(path, outputId)
+    }
+
+    function resumePlayback() {
+        if (!path) return
+        if (getActiveGpuSnapshot()) sendPlaybackCommand(outputId, { type: "resume" })
+        VideoPlayer.play(path, outputId)
+    }
+
+    function seekPlayback(time: number) {
+        if (!path) return
+        if (getActiveGpuSnapshot()) sendPlaybackCommand(outputId, { type: "seek", time })
+        VideoPlayer.seekTo(path, outputId, time)
+    }
+
+    function getActiveGpuSnapshot() {
+        if (!path || type !== "video") return null
+
+        const snapshot = getPlaybackSnapshot(outputId)
+        if (!snapshot || !isGpuGeneration(snapshot.generation)) return null
+        if (snapshot.identity !== path) return null
+        return snapshot
     }
 
     let changeValue = 0
@@ -118,7 +181,7 @@
 
                 <div class="divider" />
 
-                <VideoSlider {outputId} {path} disabled={$outLocked} bind:videoData bind:videoTime bind:changeValue big />
+                <VideoSlider {outputId} {path} disabled={$outLocked} bind:videoData bind:videoTime bind:changeValue {pausePlayback} {resumePlayback} {seekPlayback} big />
 
                 <div class="divider" />
 
@@ -165,7 +228,7 @@
                     <Icon id={videoData.paused ? "play" : "pause"} white={videoData.paused} size={1.2} />
                 </Button>
 
-                <VideoSlider {outputId} {path} disabled={$outLocked} bind:videoData bind:videoTime bind:changeValue />
+                <VideoSlider {outputId} {path} disabled={$outLocked} bind:videoData bind:videoTime bind:changeValue {pausePlayback} {resumePlayback} {seekPlayback} />
 
                 <Button
                     center

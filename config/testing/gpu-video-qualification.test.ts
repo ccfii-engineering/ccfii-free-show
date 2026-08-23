@@ -132,7 +132,29 @@ test("GPU video lifecycle qualification across supported formats (#19)", async (
         const primary = SUPPORTED_FORMATS[0]
         await playMediaCardUntil(mainWindow, apiUrl, primary.file, () => true, 1)
 
-        await queryAPI(apiUrl, "toggle_playing_media") // pause
+        const operatorSeek = mainWindow.locator('#previewArea [data-testid="video-seek"] input[type=range]')
+        await expect(operatorSeek).toBeVisible()
+        await expect.poll(async () => Number(await operatorSeek.getAttribute("max")), { message: "operator controls receive live duration" }).toBeGreaterThan(1)
+        await expect.poll(async () => Number(await operatorSeek.inputValue()), { message: "operator seek position advances", intervals: [100] }).toBeGreaterThan(0)
+
+        await mainWindow.locator('#previewArea button[data-title="Pause"]').click()
+        await expect.poll(async () => (await queryAPI(apiUrl, "get_playing_video_state")).paused, { message: "operator pause reaches the active video" }).toBe(true)
+        const pausedAnchor = await queryAPI(apiUrl, "get_playing_video_time")
+        await delay(400)
+        expect(Math.abs((await queryAPI(apiUrl, "get_playing_video_time")) - pausedAnchor), "operator pause holds canonical progress").toBeLessThan(0.08)
+
+        const operatorSeekTarget = pausedAnchor >= 0.5 ? 0 : 1
+        expect(Math.abs(pausedAnchor - operatorSeekTarget), "seek target differs from the paused position").toBeGreaterThan(0.4)
+        await operatorSeek.fill(String(operatorSeekTarget))
+        await operatorSeek.dispatchEvent("change")
+        await expect.poll(async () => Math.abs((await queryAPI(apiUrl, "get_playing_video_time")) - operatorSeekTarget), { message: "operator seek reaches the requested position" }).toBeLessThan(0.2)
+
+        await mainWindow.locator('#previewArea button[data-title="Play"]').click()
+        await expect.poll(async () => (await queryAPI(apiUrl, "get_playing_video_state")).paused, { message: "operator resume reaches the active video" }).toBe(false)
+        const operatorResumeAnchor = await queryAPI(apiUrl, "get_playing_video_time")
+        await expect.poll(async () => (await queryAPI(apiUrl, "get_playing_video_time")) - operatorResumeAnchor, { message: "operator resume restarts canonical progress" }).toBeGreaterThan(0.08)
+
+        await queryAPI(apiUrl, "toggle_playing_media") // pause through API
         let pausedState: any = {}
         for (let attempt = 0; attempt < 16 && pausedState.paused !== true; attempt++) {
             await delay(200)
@@ -166,7 +188,42 @@ test("GPU video lifecycle qualification across supported formats (#19)", async (
             restored = (await queryAPI(apiUrl, "get_playing_video_state")).muted
         }
         expect(restored, "second toggle restores mute").toBe(muteBefore)
-        results.controls = { pause: true, resume: true, mute: true }
+
+        const operatorMuteBefore = (await queryAPI(apiUrl, "get_playing_video_state")).muted
+        await mainWindow.locator(`#previewArea button[data-title="${operatorMuteBefore ? "Unmute" : "Mute"}"]`).click()
+        await expect.poll(async () => (await queryAPI(apiUrl, "get_playing_video_state")).muted, { message: "operator mute reaches the active video" }).toBe(!operatorMuteBefore)
+        await mainWindow.locator(`#previewArea button[data-title="${operatorMuteBefore ? "Mute" : "Unmute"}"]`).click()
+        await expect.poll(async () => (await queryAPI(apiUrl, "get_playing_video_state")).muted, { message: "operator mute can be restored" }).toBe(operatorMuteBefore)
+
+        const operatorLoopBefore = (await queryAPI(apiUrl, "get_playing_video_state")).loop
+        const operatorLoop = mainWindow.locator('#previewArea button[data-title^="Loop"]')
+        await operatorLoop.click()
+        await expect.poll(async () => (await queryAPI(apiUrl, "get_playing_video_state")).loop, { message: "operator loop reaches the active video" }).toBe(!operatorLoopBefore)
+        await expect(operatorLoop).toHaveAttribute("data-title", operatorLoopBefore ? "Loop" : "Loop: Enabled")
+        await operatorLoop.click()
+        await expect.poll(async () => (await queryAPI(apiUrl, "get_playing_video_state")).loop, { message: "operator loop can be restored" }).toBe(operatorLoopBefore)
+        await expect(operatorLoop).toHaveAttribute("data-title", operatorLoopBefore ? "Loop: Enabled" : "Loop")
+
+        if (!operatorLoopBefore) {
+            await operatorLoop.click()
+            await expect.poll(async () => (await queryAPI(apiUrl, "get_playing_video_state")).loop, { message: "operator enables loop for wrap qualification" }).toBe(true)
+        }
+        const loopDuration = await queryAPI(apiUrl, "get_playing_video_duration")
+        await queryAPI(apiUrl, "video_seekto", { seconds: loopDuration - 0.2 })
+        let operatorLoopWrapped = false
+        let operatorLoopWrappedAt = 0
+        for (let attempt = 0; attempt < 20 && !operatorLoopWrapped; attempt++) {
+            await delay(150)
+            operatorLoopWrappedAt = await queryAPI(apiUrl, "get_playing_video_time")
+            operatorLoopWrapped = operatorLoopWrappedAt > 0.01 && operatorLoopWrappedAt < 0.4
+        }
+        expect(operatorLoopWrapped, "operator-enabled loop wraps to a positive position").toBe(true)
+        await expect.poll(async () => (await queryAPI(apiUrl, "get_playing_video_time")) - operatorLoopWrappedAt, { message: "operator-enabled loop continues after wrapping" }).toBeGreaterThan(0.05)
+        if (!operatorLoopBefore) {
+            await operatorLoop.click()
+            await expect.poll(async () => (await queryAPI(apiUrl, "get_playing_video_state")).loop, { message: "operator loop is restored after wrap qualification" }).toBe(false)
+        }
+        results.controls = { pause: true, resume: true, seek: true, mute: true, loop: true }
 
         // CLEAR CLEANUP through the public contract
         await queryAPI(apiUrl, "clear_background")

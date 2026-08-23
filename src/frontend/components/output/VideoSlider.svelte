@@ -12,6 +12,9 @@
     export let big = false
     export let disabled = false
     export let changeValue = 0
+    export let pausePlayback: (() => void) | null = null
+    export let resumePlayback: (() => void) | null = null
+    export let seekPlayback: ((time: number) => void) | null = null
 
     $: if (changeValue) updateValue()
     function updateValue() {
@@ -70,7 +73,7 @@
                 dragSeekTimeout = null
                 if (movePause && sliderValue !== null) {
                     videoTime = sliderValue
-                    if (path && outputId) VideoPlayer.seekTo(path, outputId, videoTime)
+                    seekTo(videoTime)
                 }
             }, 150)
         }
@@ -87,7 +90,7 @@
             latestValue = val
             sliderValue = val
             videoTime = val
-            if (path && outputId) VideoPlayer.seekTo(path, outputId, videoTime)
+            seekTo(videoTime)
         }
 
         if (movePause) pauseAtMove(false)
@@ -104,12 +107,21 @@
             wasPausedBeforeMove = !!videoData.paused
             movePause = true
             videoData.paused = true
-            if (outputId) VideoPlayer.pause(path, outputId)
+            if (pausePlayback) pausePlayback()
+            else if (outputId) VideoPlayer.pause(path, outputId)
         } else {
             movePause = false
             videoData.paused = wasPausedBeforeMove
-            if (outputId && !wasPausedBeforeMove) VideoPlayer.play(path, outputId)
+            if (!wasPausedBeforeMove) {
+                if (resumePlayback) resumePlayback()
+                else if (outputId) VideoPlayer.play(path, outputId)
+            }
         }
+    }
+
+    function seekTo(time: number) {
+        if (seekPlayback) seekPlayback(time)
+        else if (path && outputId) VideoPlayer.seekTo(path, outputId, time)
     }
 
     let fullLength = false
@@ -123,7 +135,7 @@
     }}
 />
 
-<div class="main" class:big>
+<div class="main" class:big data-testid="video-seek">
     {#if hover}
         <span>
             {time}
