@@ -18,3 +18,11 @@ _Avoid_: Capture type, network output
 **Stage Monitor**:
 An operator-facing display of presentation information, such as current and next content, that is not itself a Presentation Output.
 _Avoid_: Stage output, prompter output
+
+## PowerPoint Import
+
+**Rendered PowerPoint Import**:
+A PowerPoint import presented as rendered pages that preserve the deck's appearance.
+
+**Editable PowerPoint Import**:
+A PowerPoint import converted into editable FreeShow content, which may differ from the deck's original layout.
