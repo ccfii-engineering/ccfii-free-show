@@ -1,5 +1,6 @@
 import { XMLParser } from "fast-xml-parser"
 import path from "path"
+import { uid } from "uid"
 import { toApp } from "../.."
 import { MAIN } from "../../../types/Channels"
 import { decompressZipStream } from "../../data/zip"
@@ -13,14 +14,13 @@ export async function pptToShow(filePath: string) {
         const rawName = path.basename(filePath, path.extname(filePath))
         const fileName = sanitizeFileName(rawName)
         const importsFolder = getDataFolderPath("imports", "PowerPoint")
-        const contentFolder = createFolder(path.join(importsFolder, fileName))
+        const contentFolder = createFolder(path.join(importsFolder, fileName, uid()))
 
         // Decompress with streaming: media/fonts go directly to disk, XML/other files buffered in memory
         const entries = await decompressZipStream(filePath, true, {
             getOutputPath: (fileName: string) => {
                 if (fileName.startsWith("ppt/media/") || fileName.startsWith("ppt/fonts/")) {
-                    const mediaName = path.basename(fileName)
-                    return path.join(contentFolder, mediaName)
+                    return path.join(contentFolder, fileName)
                 }
                 return undefined
             }
