@@ -1,6 +1,8 @@
 <script lang="ts">
     import { onMount } from "svelte"
+    import "../common/brand.css"
     import Button from "../common/components/Button.svelte"
+    import Brand from "../common/components/Brand.svelte"
     import Icon from "../common/components/Icon.svelte"
     import { requestWakeLock } from "../common/util/wakeLock"
     import Slide from "./components/Slide.svelte"
@@ -11,8 +13,6 @@
     import { getCurrentSlideText, speakText, stopSpeech } from "./util/tts"
 
     initSocket()
-
-    const freeshowLogo = new URL("../../../public/import-logos/freeshow.webp", import.meta.url).href
 
     let inputPassword: string = ""
 
@@ -126,8 +126,9 @@
 {#if $passwordRequiredLayout}
     <div class="auth-page">
         <div class="panel">
-            <div class="brand">
-                <h1>{$passwordRequiredLayout.name || "StageShow"}</h1>
+            <div class="brand brand-with-layout">
+                <Brand role="Stage" />
+                <h1 class="layout-title">{$passwordRequiredLayout.name || "Stage layout"}</h1>
             </div>
 
             <form on:submit|preventDefault={submitPassword} class="auth-form">
@@ -165,8 +166,7 @@
     <div class="auth-page">
         <div class="panel" style="align-items: center; text-align: center;">
             <div class="brand">
-                <img class="logo" src={freeshowLogo} alt="FreeShow logo" draggable="false" />
-                <h1>StageShow</h1>
+                <Brand role="Stage" />
             </div>
             <p style="opacity: 0.7; font-size: 0.95em;">{translate("remote.loading", $dictionary, "Loading...")}</p>
         </div>
@@ -176,8 +176,7 @@
         <div class="auth-page">
             <div class="panel">
                 <div class="brand">
-                    <img class="logo" src={freeshowLogo} alt="FreeShow logo" draggable="false" />
-                    <h1>StageShow</h1>
+                    <Brand role="Stage" />
                 </div>
 
                 <div class="stage-selection-list">
@@ -200,8 +199,7 @@
         <div class="auth-page">
             <div class="panel" style="align-items: center; text-align: center;">
                 <div class="brand">
-                    <img class="logo" src={freeshowLogo} alt="FreeShow logo" draggable="false" />
-                    <h1>StageShow</h1>
+                    <Brand role="Stage" />
                 </div>
                 <p style="opacity: 0.6; padding: 12px 0;">{translate("empty.shows", $dictionary, "No stage layouts found")}</p>
             </div>
@@ -243,7 +241,7 @@
         -webkit-tap-highlight-color: transparent; /* Removes tap highlight on iOS */
 
         outline-offset: -4px;
-        outline-color: var(--secondary);
+        outline-color: var(--accent);
     }
 
     :global(html) {
@@ -269,26 +267,12 @@
     }
 
     :root {
-        --primary: #242832;
-        --primary-lighter: #2f3542;
-        --primary-darker: #191923;
-        --primary-darkest: #12121c;
-        --text: #f0f0ff;
-        --textInvert: #131313;
-        --secondary: #f0008c;
-        --secondary-opacity: rgba(240, 0, 140, 0.5);
-        --secondary-text: #f0f0ff;
-
-        --hover: rgb(255 255 255 / 0.05);
-        --focus: rgb(255 255 255 / 0.1);
-        /* --active: rgb(230 52 156 / .8); */
-
         /* --navigation-width: 18vw; */
         --navigation-width: 300px;
     }
 
     .error {
-        color: #ff6b6b;
+        color: var(--accent);
         position: absolute;
         margin: 10px;
         padding: 10px;
@@ -302,7 +286,7 @@
     }
 
     h1 {
-        color: var(--secondary);
+        color: var(--accent);
         text-align: center;
         padding-bottom: 20px;
     }
@@ -352,20 +336,23 @@
         justify-content: center;
         align-self: center;
     }
-    .logo {
-        width: 44px;
-        height: 44px;
-        object-fit: contain;
-        flex-shrink: 0;
-        display: block;
+    .brand-with-layout {
+        flex-direction: column;
     }
-    .brand h1 {
-        margin: 0;
-        font-size: 1.2em;
+    .layout-title {
+        margin: 4px 0 0;
         color: var(--text);
-        letter-spacing: 0.4px;
-        line-height: 1;
-        padding-bottom: 0;
+        font-size: 1.15em;
+        text-align: center;
+        overflow-wrap: anywhere;
+    }
+
+    .auth-page :global(.brand-lockup) {
+        justify-content: center;
+    }
+
+    .auth-page :global(.brand-name) {
+        color: var(--text);
     }
 
     .auth-form {
@@ -375,9 +362,9 @@
     }
 
     .auth-error {
-        background: color-mix(in oklab, red 15%, transparent);
-        border: 1px solid color-mix(in oklab, red 45%, transparent);
-        color: #ff6b6b;
+        background: var(--secondary);
+        border: 1px solid var(--accent);
+        color: var(--text);
         padding: 10px 14px;
         border-radius: 10px;
         font-size: 0.9em;
@@ -418,14 +405,14 @@
         box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
     }
     .input:hover {
-        border-color: color-mix(in oklab, var(--primary-lighter) 65%, var(--secondary) 35%);
+        border-color: var(--accent);
         background: rgb(255 255 255 / 0.08);
     }
     .input:focus-visible {
         outline: none;
-        border-color: var(--secondary);
+        border-color: var(--accent);
         box-shadow:
-            0 0 0 3px var(--secondary-opacity),
+            0 0 0 3px var(--accent-opacity),
             inset 0 1px 0 rgb(255 255 255 / 0.08);
         background: rgb(255 255 255 / 0.1);
     }
@@ -455,7 +442,7 @@
         filter: brightness(1.08);
     }
     .submit-button:disabled {
-        opacity: 0.4;
+        opacity: 0.75;
         cursor: not-allowed;
     }
 
@@ -510,7 +497,7 @@
     }
 
     .layout-button:hover {
-        border-color: color-mix(in oklab, var(--primary-lighter) 65%, var(--secondary) 35%);
+        border-color: var(--accent);
         background: rgb(255 255 255 / 0.1);
         transform: translateY(-1px);
     }

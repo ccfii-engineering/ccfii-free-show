@@ -50,12 +50,12 @@
         background-color: var(--primary);
     }
     input:hover:not(:disabled) {
-        border-color: color-mix(in oklab, var(--primary-lighter) 60%, var(--secondary));
+        border-color: color-mix(in oklab, var(--primary-lighter) 60%, var(--accent));
         background-color: var(--hover);
     }
     input:focus {
-        border-color: var(--secondary);
-        box-shadow: 0 0 0 3px var(--secondary-opacity);
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-opacity);
         background-color: var(--primary-darker);
     }
 </style>

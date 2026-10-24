@@ -1,11 +1,10 @@
 <script lang="ts">
     import Icon from "../../common/components/Icon.svelte"
+    import Brand from "../../common/components/Brand.svelte"
     import { getValue } from "../../common/util/helpers"
     import { translate } from "../util/helpers"
     import { send } from "../util/socket"
     import { _get, _update, dictionary, password } from "../util/stores"
-
-    const freeshowLogo = new URL("../../../../public/import-logos/freeshow.webp", import.meta.url).href
 
     function submit() {
         const password = _get("password").stored
@@ -17,8 +16,7 @@
 <div class="auth-page">
     <div class="panel">
         <div class="brand">
-            <img class="logo" src={freeshowLogo} alt="FreeShow logo" draggable="false" />
-            <h1>RemoteShow</h1>
+            <Brand role="Remote" />
         </div>
 
         <form on:submit|preventDefault={submit} class="auth-form">
@@ -65,28 +63,7 @@
     }
 
     .brand {
-        display: inline-flex;
-        gap: 12px;
-        align-items: center;
-        justify-content: center;
         align-self: center;
-    }
-    .logo {
-        width: 50px;
-        height: 50px;
-        object-fit: contain;
-        flex-shrink: 0;
-        display: block;
-    }
-    h1 {
-        margin: 0;
-        font-size: 1.9em;
-        color: var(--text);
-        letter-spacing: 0.4px;
-        line-height: 1;
-        display: flex;
-        align-items: center;
-        padding-top: 20px;
     }
 
     .auth-form {
@@ -134,14 +111,14 @@
         box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
     }
     .input:hover {
-        border-color: color-mix(in oklab, var(--primary-lighter) 65%, var(--secondary) 35%);
+        border-color: var(--accent);
         background: rgb(255 255 255 / 0.08);
     }
     .input:focus-visible {
         outline: none;
-        border-color: var(--secondary);
+        border-color: var(--accent);
         box-shadow:
-            0 0 0 3px var(--secondary-opacity),
+            0 0 0 3px var(--accent-opacity),
             inset 0 1px 0 rgb(255 255 255 / 0.08);
         background: rgb(255 255 255 / 0.1);
         transform: translateY(-1px);
@@ -178,7 +155,7 @@
         filter: brightness(1.08);
     }
     .submit-button:disabled {
-        opacity: 0.4;
+        opacity: 0.75;
         cursor: not-allowed;
     }
     .submit-button:active {
@@ -187,16 +164,13 @@
     }
     .submit-button:focus-visible {
         outline: none;
-        box-shadow: 0 0 0 3px var(--secondary-opacity);
+        box-shadow: 0 0 0 3px var(--accent-opacity);
     }
 
     @media only screen and (max-width: 620px) {
         .panel {
             padding: 22px;
             gap: 20px;
-        }
-        h1 {
-            font-size: 1.6em;
         }
         .actions {
             flex-direction: column;

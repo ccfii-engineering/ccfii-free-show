@@ -54,12 +54,21 @@ function staticAssetsPlugin(serverId) {
             return
           }
         }
-        // Serve icon.png
-        if (req.url === '/icon.png') {
-          const iconPath = resolve(process.cwd(), 'src/server/icon.png')
+        // Serve the shared CCFII app icon from the desktop app asset.
+        const staticPath = req.url?.split('?')[0]
+        if (staticPath === '/icon.png' || staticPath === '/ccfii-icon.png') {
+          const iconPath = resolve(process.cwd(), 'public/icon.png')
           if (existsSync(iconPath)) {
             res.setHeader('Content-Type', 'image/png')
             createReadStream(iconPath).pipe(res)
+            return
+          }
+        }
+        if (staticPath === '/ccfii-logo.png') {
+          const logoPath = resolve(process.cwd(), 'public/ccfii-logo.png')
+          if (existsSync(logoPath)) {
+            res.setHeader('Content-Type', 'image/png')
+            createReadStream(logoPath).pipe(res)
             return
           }
         }
@@ -90,7 +99,9 @@ function copyServerFiles(id) {
   const files = [
     { src: `src/server/${id}/index.html`, dest: `${dest}/index.html` },
     { src: `src/server/${id}/manifest.json`, dest: `${dest}/manifest.json` },
-    { src: `src/server/icon.png`, dest: `${dest}/icon.png` },
+    { src: `public/icon.png`, dest: `${dest}/icon.png` },
+    { src: `public/icon.png`, dest: `${dest}/ccfii-icon.png` },
+    { src: `public/ccfii-logo.png`, dest: `${dest}/ccfii-logo.png` },
     { src: `src/server/sw.js`, dest: `${dest}/sw.js` },
   ]
   
@@ -127,6 +138,8 @@ function copyServerFilesPlugin(serverId) {
 
 export default defineConfig({
   plugins: [
+    htmlTransformPlugin(),
+    staticAssetsPlugin(serverId),
     svelte({
       preprocess: sveltePreprocess({
         typescript: serverConfig.typescript ? {

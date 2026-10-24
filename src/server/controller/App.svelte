@@ -1,5 +1,7 @@
 <script lang="ts">
+    import "../common/brand.css"
     import { io } from "socket.io-client"
+    import Brand from "../common/components/Brand.svelte"
     import Icon from "../common/components/Icon.svelte"
 
     let socket = io()
@@ -115,6 +117,10 @@
 
 <svelte:window bind:innerHeight={windowHeight} on:keydown={keydown} on:mouseup={mouseup} on:touchend={mouseup} on:mousemove={mousemove} on:touchmove={mousemove} />
 
+<div class="operator-brand">
+    <Brand role="Controller" compact />
+</div>
+
 {#if draw}
     <div class="draw">
         <select name="tools" value={tool} on:change={changeTool}>
@@ -180,7 +186,7 @@
         user-select: none;
 
         outline-offset: -4px;
-        outline-color: var(--secondary);
+        outline-color: var(--accent);
     }
 
     :global(html) {
@@ -202,22 +208,16 @@
     }
 
     :root {
-        --primary: #242832;
-        --primary-lighter: #2f3542;
-        --primary-darker: #191923;
-        --primary-darkest: #12121c;
-        --text: #f0f0ff;
-        --textInvert: #131313;
-        --secondary: #f0008c;
-        --secondary-opacity: rgba(240, 0, 140, 0.5);
-        --secondary-text: #f0f0ff;
-
-        --hover: rgb(255 255 255 / 0.05);
-        --focus: rgb(255 255 255 / 0.1);
-        /* --active: rgb(230 52 156 / .8); */
-
         /* --navigation-width: 18vw; */
         --navigation-width: 300px;
+    }
+
+    .operator-brand {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        z-index: 20;
+        pointer-events: none;
     }
 
     :global(svg.white) {
@@ -466,6 +466,6 @@
     }
 
     button.red {
-        background-color: #4d0d15;
+        background-color: var(--secondary);
     }
 </style>

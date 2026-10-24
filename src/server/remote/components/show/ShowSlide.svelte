@@ -115,9 +115,9 @@ class:left={overIndex === index && (!selected.length || index <= selected[0])} -
         /* border: 2px solid var(--primary-lighter); */
     }
     .slide.active {
-        /* outline: 2px solid var(--secondary);
+        /* outline: 2px solid var(--accent);
     outline-offset: 4px; */
-        outline: 3px solid var(--secondary);
+        outline: 3px solid var(--accent);
         outline-offset: -1px;
 
         z-index: 2;

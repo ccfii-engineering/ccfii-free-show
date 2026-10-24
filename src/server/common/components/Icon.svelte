@@ -22,7 +22,7 @@
 
 <style>
     svg {
-        fill: var(--secondary);
+        fill: var(--accent);
     }
 
     svg.select {

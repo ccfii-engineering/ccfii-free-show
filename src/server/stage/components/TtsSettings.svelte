@@ -245,7 +245,7 @@
     }
 
     .check {
-        color: var(--secondary);
+        color: var(--accent);
         visibility: hidden;
         display: flex;
         flex-shrink: 0;

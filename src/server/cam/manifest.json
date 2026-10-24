@@ -1,47 +1,18 @@
 {
     "$schema": "https://json.schemastore.org/web-manifest-combined.json",
-    "name": "CamShow",
-    "short_name": "CamShow",
+    "name": "FreeShow Camera - CCFII Edition",
+    "short_name": "FreeShow Camera",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#242832",
-    "theme_color": "#242832",
-    "description": "A camera app for FreeShow.",
+    "background_color": "#2a1a1a",
+    "theme_color": "#2a1a1a",
+    "description": "Camera feed for FreeShow - CCFII Edition.",
     "icons": [
         {
-            "src": "icon.png",
-            "sizes": "48x48",
-            "type": "image/png"
-        },
-        {
-            "src": "icon.png",
-            "sizes": "72x72",
-            "type": "image/png"
-        },
-        {
-            "src": "icon.png",
-            "sizes": "96x96",
-            "type": "image/png"
-        },
-        {
-            "src": "icon.png",
-            "sizes": "144x144",
-            "type": "image/png"
-        },
-        {
-            "src": "icon.png",
-            "sizes": "168x168",
-            "type": "image/png"
-        },
-        {
-            "src": "icon.png",
-            "sizes": "192x192",
-            "type": "image/png"
-        },
-        {
-            "src": "icon.png",
+            "src": "ccfii-icon.png",
             "sizes": "512x512",
-            "type": "image/png"
+            "type": "image/png",
+            "purpose": "any"
         }
     ]
 }

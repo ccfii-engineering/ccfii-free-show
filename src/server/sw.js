@@ -11,9 +11,10 @@
  limitations under the License.
 */
 
-var urlsToPrefetch = ["/", "styles.css", "client.js", "icon.png", "index.html"]
+var urlsToPrefetch = ["/", "styles.css", "client.js", "icon.png", "ccfii-icon.png", "ccfii-logo.png", "index.html"]
 
-var version = "1.0.0"
+var cachePrefix = "freeshow-ccfii-"
+var version = cachePrefix + "1.0.1-"
 
 self.addEventListener("install", function (event) {
     console.log("WORKER: install event in progress.")
@@ -160,8 +161,8 @@ self.addEventListener("activate", function (event) {
                 return Promise.all(
                     keys
                         .filter(function (key) {
-                            // Filter by keys that don't start with the latest version prefix.
-                            return !key.startsWith(version)
+                            // Remove this app's prior caches and the exact legacy cache names.
+                            return (key === "1.0.0fundamentals" || key === "1.0.0pages" || (key.startsWith(cachePrefix) && !key.startsWith(version)))
                         })
                         .map(function (key) {
                             /* Return a promise that's fulfilled

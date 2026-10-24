@@ -284,7 +284,8 @@
             </div>
         {:else}
             <div class="empty-hero">
-                <h1 class="hero-title">RemoteShow</h1>
+                <h1 class="hero-title">FreeShow Remote</h1>
+                <p class="hero-edition">CCFII Edition</p>
                 <div class="hero-actions">
                     <button class="hero-row" type="button" on:click={newProjectCTA}>
                         <Icon id="project" size={1.6} />
@@ -362,9 +363,16 @@
     .hero-title {
         font-size: clamp(2.2rem, 4vw, 3.4rem);
         margin: 0;
-        color: var(--secondary);
+        color: var(--accent);
         letter-spacing: 0.4px;
         font-weight: 700;
+    }
+
+    .hero-edition {
+        color: var(--accent);
+        font-size: 0.72em;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
     }
     .hero-actions {
         display: flex;
@@ -390,7 +398,7 @@
         align-self: center;
     }
     .hero-row :global(svg) {
-        fill: var(--secondary);
+        fill: var(--accent);
     }
     .hero-row:hover {
         background: rgb(255 255 255 / 0.06);

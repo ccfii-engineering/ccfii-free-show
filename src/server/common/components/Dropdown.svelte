@@ -172,6 +172,6 @@
     }
     span.active {
         background-color: var(--focus);
-        color: var(--secondary);
+        color: var(--accent);
     }
 </style>

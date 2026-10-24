@@ -310,7 +310,7 @@
     /* Active state - purple accent bar */
     .projectItem :global(button.active) {
         background-color: rgb(255 255 255 / 0.08) !important;
-        box-shadow: inset 4px 0 0 var(--secondary) !important;
+        box-shadow: inset 4px 0 0 var(--accent) !important;
         border-top: none !important;
         border-right: none !important;
         border-bottom: none !important;

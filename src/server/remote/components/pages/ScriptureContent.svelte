@@ -18,7 +18,7 @@
     // Generate dynamic colors for Bible versions that match FreeShow's theme
     function getVersionColor(index: number): string {
         const goldenAngle = 137.508
-        const baseHue = 330 // FreeShow's pink
+        const baseHue = 8
         const hue = (baseHue + index * goldenAngle) % 360
         const saturation = 75
         const lightness = 65
@@ -27,7 +27,7 @@
 
     function getVersionBgColor(index: number): string {
         const goldenAngle = 137.508
-        const baseHue = 330
+        const baseHue = 8
         const hue = (baseHue + index * goldenAngle) % 360
         return `hsla(${hue}, 70%, 50%, 0.12)`
     }
@@ -668,7 +668,7 @@
                         class:displayed={isDisplayed}
                     >
                         <span class="verse-left">
-                            <span class="verse-num" style="color: var(--secondary);font-weight: bold;">
+                            <span class="verse-num" style="color: var(--accent);font-weight: bold;">
                                 {verseNumber}
                             </span>
                             {#if $scriptureMultiSelect && $scriptureViewList}
@@ -778,7 +778,7 @@
         width: 20px;
         height: 20px;
         cursor: pointer;
-        accent-color: var(--secondary);
+        accent-color: var(--accent);
     }
 
     .grid .verses.list .verse-button .verse-num {
@@ -864,7 +864,7 @@
     }
 
     .grid .verses {
-        color: var(--secondary);
+        color: var(--accent);
         font-weight: bold;
     }
 
@@ -879,14 +879,14 @@
     .grid .books .output,
     .grid .chapters .output {
         background-color: var(--focus);
-        box-shadow: inset 0 0 0 2px var(--secondary);
+        box-shadow: inset 0 0 0 2px var(--accent);
         border-radius: 6px;
     }
     /* Highlight currently displayed verse - works across all translations */
     .grid .verses .displayed {
         position: relative;
         background-color: var(--focus);
-        box-shadow: inset 0 0 0 2px var(--secondary);
+        box-shadow: inset 0 0 0 2px var(--accent);
         border-radius: 6px;
     }
 
@@ -903,7 +903,7 @@
         top: 0;
         bottom: 0;
         background-color: var(--focus);
-        box-shadow: inset 0 0 0 2px var(--secondary);
+        box-shadow: inset 0 0 0 2px var(--accent);
         border-radius: 6px;
         z-index: -1;
     }
@@ -958,7 +958,7 @@
         max-width: 100% !important;
         height: auto !important;
         padding: 6px 10px 6px 12px !important;
-        border-left: 4px solid var(--version-color, var(--secondary));
+        border-left: 4px solid var(--version-color, var(--accent));
         background: var(--version-bg, transparent);
         border-radius: 0 6px 6px 0;
         line-height: 1.3;

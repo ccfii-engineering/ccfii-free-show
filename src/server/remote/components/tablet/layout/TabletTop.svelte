@@ -10,7 +10,7 @@
 
 <div class="top">
     <span class="logo-area">
-        <h1 style="align-self: center;width: 100%;padding: 0px 10px;text-align: center;font-size: 1.8em;">FreeShow</h1>
+        <h1 class="product-name">FreeShow <span>CCFII Edition</span></h1>
     </span>
     <span class="middle-buttons">
         <!-- Show Mode -->
@@ -51,6 +51,25 @@
         width: 300px; /* Match navigation width */
     }
 
+    .product-name {
+        align-self: center;
+        width: 100%;
+        padding: 0 10px;
+        text-align: center;
+        font-size: 1.3em;
+        line-height: 1;
+    }
+
+    .product-name span {
+        display: block;
+        margin-top: 3px;
+        color: var(--accent);
+        font-size: 0.38em;
+        font-weight: 600;
+        letter-spacing: 1.3px;
+        text-transform: uppercase;
+    }
+
     .middle-buttons {
         flex: 1;
         justify-content: center;
@@ -86,7 +105,7 @@
 
     :global(.top-button.active) {
         opacity: 1;
-        border-bottom: 2px solid var(--secondary) !important;
+        border-bottom: 2px solid var(--accent) !important;
     }
 
     .label {

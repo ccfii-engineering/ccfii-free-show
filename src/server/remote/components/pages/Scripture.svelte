@@ -1169,7 +1169,7 @@
         align-items: center;
         align-self: stretch; /* fill header height */
         cursor: pointer;
-        color: var(--secondary);
+        color: var(--accent);
         border-radius: 6px;
         margin-top: 0;
         min-width: 44px; /* accessible hit size */
@@ -1279,7 +1279,7 @@
         border: none;
         font-size: inherit;
 
-        border-bottom: 2px solid var(--secondary);
+        border-bottom: 2px solid var(--accent);
     }
     .search-bar-row {
         display: flex;
@@ -1291,7 +1291,7 @@
     }
     .input:active,
     .input:focus {
-        outline: 2px solid var(--secondary);
+        outline: 2px solid var(--accent);
         outline-offset: -2px;
     }
     .input::placeholder {
@@ -1416,7 +1416,7 @@
 
     .section-items :global(.scripture-item.active) {
         background-color: rgb(255 255 255 / 0.08) !important;
-        box-shadow: inset 4px 0 0 var(--secondary) !important;
+        box-shadow: inset 4px 0 0 var(--accent) !important;
     }
 
     .section-items > :global(.scripture-item:first-child.active) {
@@ -1606,7 +1606,7 @@
         line-height: 18px;
         font-weight: 600;
         background: var(--secondary);
-        color: var(--primary-darkest);
+        color: var(--text);
         height: 18px;
         padding: 0 6px;
         border-radius: 999px;

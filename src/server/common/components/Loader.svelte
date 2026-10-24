@@ -8,7 +8,7 @@
     .loader {
         border: 5px solid var(--primary-lighter);
         border-radius: 50%;
-        border-top: 5px solid var(--secondary);
+        border-top: 5px solid var(--accent);
         /* border-top: 20px solid var(--secondary); */
         /* border-top: 35px solid var(--secondary); */
         width: 40px;

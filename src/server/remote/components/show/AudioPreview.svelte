@@ -98,14 +98,14 @@
                 <Icon id={paused ? "play" : "pause"} white={paused} size={1.2} />
             </Button>
 
-            <span style="color: var(--secondary)">
+            <span style="color: var(--accent)">
                 {joinTime(secondsToTime(currentTime))}
             </span>
 
             <div style="width: 100%;"></div>
             <!-- <Slider disabled={isMic} value={currentTime} max={duration} on:input={setSliderValue} on:change={setTime} /> -->
 
-            <span style={isMic ? "opacity: 0.5;" : !currentTime ? "" : "color: var(--secondary)"}>
+            <span style={isMic ? "opacity: 0.5;" : !currentTime ? "" : "color: var(--accent)"}>
                 {joinTime(secondsToTime(duration - Math.floor(currentTime)))}
             </span>
 

@@ -76,7 +76,7 @@
     }
     button.outlined:hover:not(:disabled) {
         background-color: var(--hover);
-        border-color: var(--secondary);
+        border-color: var(--accent);
     }
 
     button.text {
@@ -115,13 +115,13 @@
         /* background-color: var(--secondary-opacity); */
         /* background-color: var(--primary-darkest); */
         background-color: var(--primary-darker);
-        color: var(--text);
-        outline: none;
+        color: var(--accent);
+        outline: 1px solid var(--accent);
     }
     button.active.border {
         outline-offset: -2px;
         /* outline: 2px solid var(--secondary); */
-        outline: 2px solid var(--primary-lighter);
+        outline: 2px solid var(--accent);
     }
 
     button :global(div) {
@@ -138,7 +138,7 @@
         box-sizing: content-box;
     }
     button.active :global(svg) {
-        fill: var(--text);
+        fill: var(--accent);
     }
 
     button:disabled {

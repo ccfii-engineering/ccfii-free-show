@@ -414,7 +414,7 @@
 
     :global(.section-item-button.active) {
         background-color: rgb(255 255 255 / 0.08) !important;
-        box-shadow: inset 4px 0 0 var(--secondary) !important;
+        box-shadow: inset 4px 0 0 var(--accent) !important;
     }
 
     :global(.section-item-button) :global(svg) {
@@ -476,7 +476,7 @@
 
     .show-button-wrapper.active {
         background-color: rgb(255 255 255 / 0.08);
-        box-shadow: inset 4px 0 0 var(--secondary);
+        box-shadow: inset 4px 0 0 var(--accent);
     }
 
     .section-items > .show-button-wrapper:last-child.active,

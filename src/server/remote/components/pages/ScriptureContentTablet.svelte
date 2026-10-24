@@ -270,7 +270,7 @@
     // Generate dynamic colors for Bible versions that match FreeShow's theme
     // Uses HSL to create evenly distributed, vibrant colors on dark background
     const GOLDEN_ANGLE = 137.508
-    const BASE_HUE = 330 // FreeShow's pink
+    const BASE_HUE = 8
     
     function getVersionHue(index: number): number {
         return (BASE_HUE + index * GOLDEN_ANGLE) % 360
@@ -799,7 +799,7 @@
     }
     .main span.isDisplayed {
         background-color: var(--focus);
-        box-shadow: inset 0 0 0 2px var(--secondary);
+        box-shadow: inset 0 0 0 2px var(--accent);
     }
     .main span.isSelected {
         background-color: rgba(255, 105, 180, 0.3);
@@ -828,7 +828,7 @@
         padding: 6px 10px;
     }
     .main .list span.verse .v {
-        color: var(--secondary);
+        color: var(--accent);
         font-weight: bold;
         display: inline-block;
         margin: 0;
@@ -860,7 +860,7 @@
         display: inline;
     }
     .main .list span.verse .v-inline {
-        color: var(--secondary);
+        color: var(--accent);
         font-weight: bold;
         display: inline-block;
         width: 45px;
@@ -881,7 +881,7 @@
         height: 20px;
         flex-shrink: 0;
         cursor: pointer;
-        accent-color: var(--secondary);
+        accent-color: var(--accent);
     }
     
     /* Wrap text mode - allows verses to have different heights */
@@ -956,7 +956,7 @@
     }
 
     .grid .verses {
-        color: var(--secondary);
+        color: var(--accent);
         font-weight: bold;
     }
     .grid .verses .v {
@@ -997,7 +997,7 @@
         display: block !important;
         padding: 3px 6px 3px 8px !important;
         margin: 0 0 2px 0 !important;
-        border-left: 4px solid var(--version-color, var(--secondary));
+        border-left: 4px solid var(--version-color, var(--accent));
         background: var(--version-bg, transparent);
         border-radius: 0 4px 4px 0;
         line-height: 1.2;

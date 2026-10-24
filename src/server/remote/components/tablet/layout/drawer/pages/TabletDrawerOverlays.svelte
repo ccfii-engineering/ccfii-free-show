@@ -161,7 +161,7 @@
     }
 
     .overlay-card.active {
-        outline: 2px solid var(--secondary);
+        outline: 2px solid var(--accent);
         outline-offset: -1px;
     }
 

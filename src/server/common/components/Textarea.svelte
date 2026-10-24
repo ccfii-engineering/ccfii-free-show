@@ -34,8 +34,8 @@
         border-color: var(--primary-lighter);
     }
     textarea:focus {
-        border-color: var(--secondary);
-        box-shadow: 0 0 0 3px var(--secondary-opacity);
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-opacity);
         background-color: var(--primary-darker);
     }
     textarea::-webkit-scrollbar {

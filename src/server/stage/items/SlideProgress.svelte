@@ -75,7 +75,6 @@
         align-items: center;
         justify-content: center;
 
-        --accent: var(--secondary);
     }
 
     .progress.barBG {

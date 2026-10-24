@@ -312,13 +312,13 @@
         min-height: 56px;
         border: none;
         font-size: 1.05em;
-        border-bottom: 2px solid var(--secondary);
+        border-bottom: 2px solid var(--accent);
         box-sizing: border-box;
     }
 
     .input:active,
     .input:focus {
-        outline: 2px solid var(--secondary);
+        outline: 2px solid var(--accent);
         outline-offset: -2px;
     }
 
@@ -347,7 +347,7 @@
     .floating-input-container {
         --size: 40px;
         --padding: 12px;
-        --background: rgba(25, 25, 35, 0.85);
+        --background: rgba(22, 12, 12, 0.9);
 
         position: absolute;
         bottom: 10px;
@@ -372,7 +372,7 @@
         gap: 0.5em;
         background:
             linear-gradient(var(--background), var(--background)) padding-box,
-            linear-gradient(160deg, #8000f0 0%, #9000f0 10%, #b300f0 20%, #d100db 35%, var(--secondary) 100%) border-box !important;
+            linear-gradient(140deg, var(--accent), var(--accent)) border-box !important;
         border: 2px solid transparent !important;
         transition: 0.4s filter ease;
         box-shadow: 1px 1px 6px rgb(0 0 0 / 0.4);
@@ -383,15 +383,15 @@
     :global(.floating-add-button:not(:disabled):hover) {
         background:
             linear-gradient(var(--background), var(--background)) padding-box,
-            linear-gradient(160deg, #8000f0 0%, #9000f0 10%, #b300f0 20%, #d100db 35%, var(--secondary) 100%) border-box !important;
-        filter: hue-rotate(15deg);
+            linear-gradient(140deg, var(--accent), var(--accent)) border-box !important;
+        filter: brightness(1.08);
     }
 
     :global(.floating-add-button:not(:disabled):active) {
         background:
             linear-gradient(var(--background), var(--background)) padding-box,
-            linear-gradient(160deg, #8000f0 0%, #9000f0 10%, #b300f0 20%, #d100db 35%, var(--secondary) 100%) border-box !important;
-        filter: hue-rotate(30deg);
+            linear-gradient(140deg, var(--accent), var(--accent)) border-box !important;
+        filter: brightness(0.92);
     }
 
     :global(.floating-add-button) :global(span) {

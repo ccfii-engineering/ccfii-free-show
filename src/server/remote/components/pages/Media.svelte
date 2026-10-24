@@ -259,7 +259,7 @@
     }
 
     .media-click:focus-visible {
-        outline: 2px solid var(--secondary);
+        outline: 2px solid var(--accent);
         outline-offset: -2px;
     }
 
@@ -339,7 +339,7 @@
 
     /* Play/Pause: white when paused (play icon), secondary when playing (pause icon) */
     .float-btn.play-pause:not(.paused) :global(svg) {
-        fill: var(--secondary);
+        fill: var(--accent);
     }
 
     .divider {
@@ -369,19 +369,19 @@
     .slider {
         flex: 1;
         min-width: 60px;
-        accent-color: var(--secondary);
+        accent-color: var(--accent);
         height: 4px;
         cursor: pointer;
     }
 
     /* Loop button: white when off, secondary color when on */
     .float-btn.loop-btn.loop-on :global(svg) {
-        fill: var(--secondary);
+        fill: var(--accent);
     }
 
     /* Mute button: white when muted, secondary color when unmuted (has sound) */
     .float-btn.mute-btn.muted :global(svg) {
-        fill: var(--secondary);
+        fill: var(--accent);
     }
 
     @media (max-width: 768px) {

@@ -54,6 +54,10 @@
         border-radius: 0;
     }
 
+    .tabs :global(button.active) {
+        color: var(--accent);
+    }
+
     .tabs :global(button) {
         flex: auto;
         padding-inline-start: 0 !important;

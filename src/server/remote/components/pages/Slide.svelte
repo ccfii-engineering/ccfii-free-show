@@ -169,7 +169,7 @@
         }
 
         .slide-progress :global(.desktop-nav) :global(svg) {
-            fill: var(--secondary);
+            fill: var(--accent);
         }
 
         .slide-progress .counter {

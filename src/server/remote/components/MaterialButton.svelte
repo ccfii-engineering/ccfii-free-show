@@ -12,7 +12,6 @@
     export let isActive = false
     export let showOutline = false
     export let disabled = false
-    export let gradient = false
     export let small = false
     export let tab = false
     export let red = false
@@ -88,7 +87,7 @@
     class:red
     {disabled}
     style="
-    background: {variant === 'contained' ? (gradient ? 'linear-gradient(160deg, #8000f0 0%, #9000f0 10%, #b300f0 30%, #d100db 50%, #f0008c 100%)' : 'var(--secondary)') : variant === 'outlined' ? 'var(--primary-darkest)' : 'transparent'};
+    background: {variant === 'contained' ? 'var(--secondary)' : variant === 'outlined' ? 'var(--primary-darkest)' : 'transparent'};
     color: {variant === 'contained' ? 'var(--secondary-text)' : white ? 'var(--text)' : 'var(--text)'};
     border-color: {white ? 'rgb(255 255 255 / 0.08)' : variant === 'outlined' ? 'var(--primary-lighter)' : 'transparent'};
     {$$props.style || ''}
@@ -148,13 +147,13 @@
 
     button.isActive {
         background-color: var(--primary-darkest) !important;
-        border-bottom: 2px solid var(--secondary) !important;
+        border-bottom: 2px solid var(--accent) !important;
         cursor: default;
     }
 
     button.tab.isActive {
         border: none !important;
-        border-left: 4px solid var(--secondary) !important;
+        border-left: 4px solid var(--accent) !important;
     }
     button.tab:not(.outlined) {
         border-left: 4px solid var(--primary-darker);
@@ -164,7 +163,7 @@
     }
 
     button.showOutline {
-        --outline-color: var(--secondary);
+        --outline-color: var(--accent);
         outline: 2px solid var(--outline-color);
         outline-offset: -2px;
     }
@@ -223,7 +222,7 @@
     }
 
     button:focus-visible:not(:disabled) {
-        outline: 2px solid var(--secondary);
+        outline: 2px solid var(--accent);
         outline-offset: 2px;
     }
 

@@ -41,7 +41,7 @@
         transition: all 300ms;
     }
     .switch div.on {
-        background-color: var(--secondary);
+        background-color: var(--accent);
     }
 
     .switch input:checked + div {

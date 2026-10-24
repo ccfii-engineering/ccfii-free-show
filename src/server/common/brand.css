@@ -1,0 +1,25 @@
+:root {
+    --primary: #2a1a1a;
+    --primary-lighter: #3a2828;
+    --primary-darker: #1e1010;
+    --primary-darkest: #160c0c;
+    --text: #f0f0ff;
+    --textInvert: #131313;
+    --secondary: #810e0e;
+    --secondary-opacity: rgba(129, 14, 14, 0.5);
+    --secondary-text: #ffffff;
+    --accent: #faa739;
+    --accent-opacity: rgba(250, 167, 57, 0.3);
+    --connected: #27a827;
+    --disconnected: #a82727;
+    --red: rgba(129, 14, 14, 0.45);
+    --hover: rgba(250, 167, 57, 0.08);
+    --focus: rgba(250, 167, 57, 0.16);
+    --transparent: #232530;
+    --font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+::selection {
+    color: var(--text);
+    background: rgba(250, 167, 57, 0.35);
+}

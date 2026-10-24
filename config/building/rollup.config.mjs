@@ -171,7 +171,9 @@ function webFiles(id) {
     const files = [
         { src: `src/server/${id}/index.html`, dest },
         { src: `src/server/${id}/manifest.json`, dest },
-        { src: `src/server/icon.png`, dest },
+        { src: `public/icon.png`, dest },
+        { src: `public/icon.png`, dest, rename: "ccfii-icon.png" },
+        { src: `public/ccfii-logo.png`, dest },
         { src: `src/server/sw.js`, dest },
     ]
 

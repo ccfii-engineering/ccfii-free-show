@@ -258,7 +258,7 @@
     }
 
     .tabs :global(button.isActive) {
-        border-bottom: 2px solid var(--secondary) !important;
+        border-bottom: 2px solid var(--accent) !important;
     }
 
     .right-controls {

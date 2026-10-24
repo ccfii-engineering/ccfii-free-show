@@ -290,7 +290,7 @@
     }
 
     .action.running {
-        outline: 2px solid var(--secondary);
+        outline: 2px solid var(--accent);
         outline-offset: -2px;
     }
 
@@ -333,7 +333,7 @@
     }
 
     .timer.outline {
-        outline: 2px solid var(--secondary);
+        outline: 2px solid var(--accent);
         outline-offset: -2px;
     }
 
@@ -382,7 +382,7 @@
         appearance: none;
         width: 10px;
         height: 10px;
-        background: var(--secondary);
+        background: var(--accent);
         cursor: pointer;
         pointer-events: none;
         opacity: 0.8;
@@ -392,7 +392,7 @@
     .timer-slider::-moz-range-thumb {
         width: 10px;
         height: 10px;
-        background: var(--secondary);
+        background: var(--accent);
         cursor: pointer;
         pointer-events: none;
         opacity: 0.8;

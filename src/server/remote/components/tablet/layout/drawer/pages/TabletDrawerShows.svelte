@@ -154,7 +154,7 @@
                         {@const showIcon = getIcon(show)}
                         {@const timestamp = getShowTimestamp(show)}
                         <div class="show-wrapper">
-                            <MaterialButton class="show-item" style="width: 100%; justify-content: space-between; padding: 0.15em 0.8em; font-weight: normal; --outline-color: var(--secondary);" isActive={$activeShow?.id === show.id} tab on:click={() => openShow(show)}>
+                            <MaterialButton class="show-item" style="width: 100%; justify-content: space-between; padding: 0.15em 0.8em; font-weight: normal; --outline-color: var(--accent);" isActive={$activeShow?.id === show.id} tab on:click={() => openShow(show)}>
                                 <div class="row">
                                     <span class="cell" style="max-width: calc(100% {showWithNumber ? '- var(--number-width)' : ''} - var(--modified-width, 0px));">
                                         <Icon id={show.played ? "check" : showIcon} custom={!show.played && showIcon !== "private" && showIcon !== "locked" && showIcon !== "noIcon"} box={24} white={show.played} right />
@@ -265,7 +265,7 @@
 
     :global(.show-item.isActive) {
         background-color: var(--primary-darkest) !important;
-        border-left: 4px solid var(--secondary) !important;
+        border-left: 4px solid var(--accent) !important;
     }
 
     .row {

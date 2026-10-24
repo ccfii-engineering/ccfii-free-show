@@ -1,4 +1,5 @@
 <script lang="ts">
+    import "../common/brand.css"
     import { io } from "socket.io-client"
     import { onMount } from "svelte"
     import Icon from "../common/components/Icon.svelte"
@@ -198,7 +199,7 @@
         user-select: none;
 
         outline-offset: -4px;
-        outline-color: var(--secondary);
+        outline-color: var(--accent);
     }
 
     :global(html) {
@@ -222,20 +223,6 @@
     }
 
     :root {
-        --primary: #242832;
-        --primary-lighter: #2f3542;
-        --primary-darker: #191923;
-        --primary-darkest: #12121c;
-        --text: #f0f0ff;
-        --textInvert: #131313;
-        --secondary: #f0008c;
-        --secondary-opacity: rgba(240, 0, 140, 0.5);
-        --secondary-text: #f0f0ff;
-
-        --hover: rgb(255 255 255 / 0.05);
-        --focus: rgb(255 255 255 / 0.1);
-        /* --active: rgb(230 52 156 / .8); */
-
         /* --navigation-width: 18vw; */
         --navigation-width: 300px;
     }

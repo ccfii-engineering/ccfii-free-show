@@ -222,7 +222,7 @@
 
     .slider {
         width: 100%;
-        accent-color: var(--secondary);
+        accent-color: var(--accent);
     }
 
     .controls-row {
@@ -241,20 +241,20 @@
     }
 
     .controls-row :global(.pause-btn svg) {
-        fill: var(--secondary);
+        fill: var(--accent);
     }
 
     .controls-row :global(.seek-btn svg) {
         fill: white;
     }
     .controls-row :global(.seek-btn:active svg) {
-        fill: var(--secondary);
+        fill: var(--accent);
     }
 
     .controls-row :global(.loop-btn svg) {
         fill: white;
     }
     .controls-row :global(.loop-btn.loop-on svg) {
-        fill: var(--secondary);
+        fill: var(--accent);
     }
 </style>

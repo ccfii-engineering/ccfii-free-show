@@ -12,13 +12,14 @@
 
 <style>
     .error {
-        color: red;
+        color: var(--text);
         position: absolute;
         margin: 10px;
         padding: 10px;
         width: calc(100% - 20px);
         text-align: center;
-        background-color: var(--primary-darker);
+        background-color: var(--secondary);
+        border: 1px solid var(--accent);
         display: flex;
         flex-direction: column;
     }
