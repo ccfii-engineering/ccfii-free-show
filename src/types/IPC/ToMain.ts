@@ -2,7 +2,7 @@ import type { ICommonTagsResult } from "music-metadata"
 import type { RtmpStatus } from "../Output"
 import type { ContentProviderId } from "../../electron/contentProviders/base/types"
 import type { FileFolder } from "../Main"
-import type { TrimmedShows } from "../Show"
+import type { ImportSource, TrimmedShows } from "../Show"
 import type { IPCRequestMetadata } from "./Request"
 
 export enum ToMain {
@@ -20,6 +20,9 @@ export enum ToMain {
     IMAGES_TO_SHOW = "IMAGES_TO_SHOW",
     MEDIA_DOWNLOAD_PROGRESS = "MEDIA_DOWNLOAD_PROGRESS",
     PDF_IMPORT_PROGRESS = "PDF_IMPORT_PROGRESS",
+    PDF_RENDER_OPEN = "PDF_RENDER_OPEN",
+    PDF_RENDER_PAGE = "PDF_RENDER_PAGE",
+    PDF_RENDER_CLOSE = "PDF_RENDER_CLOSE",
     RTMP_STATUS = "RTMP_STATUS",
     // Unified provider callbacks
     PROVIDER_CONNECT = "PROVIDER_CONNECT",
@@ -53,9 +56,12 @@ export interface ToMainSendPayloads {
     [ToMain.CAPTURE_CANVAS]: { input: string; output: string; size: any; extension: string; config: any; id: string }
     [ToMain.REPLACE_MEDIA_PATHS]: any[]
     [ToMain.LESSONS_DONE]: { showId: string; status: { finished: number; failed: number } }
-    [ToMain.IMAGES_TO_SHOW]: { images: string[]; name: string }
+    [ToMain.IMAGES_TO_SHOW]: { images: string[]; name: string; source?: ImportSource }
     [ToMain.MEDIA_DOWNLOAD_PROGRESS]: { url: string; progress: number; total: number; status: "downloading" | "complete" | "error"; name?: string }
-    [ToMain.PDF_IMPORT_PROGRESS]: { filePath: string; name: string; progress: number; total: number; status: "importing" | "complete" | "error"; message?: string }
+    [ToMain.PDF_IMPORT_PROGRESS]: { filePath: string; name: string; progress: number; total: number; status: "importing" | "complete" | "error"; message?: string; jobId?: string }
+    [ToMain.PDF_RENDER_OPEN]: { jobId: string; pdfPath: string }
+    [ToMain.PDF_RENDER_PAGE]: { jobId: string; pageIndex: number; maxWidth: number; maxHeight: number; maxPixels: number; format: "png" }
+    [ToMain.PDF_RENDER_CLOSE]: { jobId: string }
     [ToMain.RTMP_STATUS]: { outputId: string; destinations: RtmpStatus }
     // Unified provider callbacks
     [ToMain.PROVIDER_CONNECT]: { providerId: ContentProviderId; success: boolean; isFirstConnection?: boolean }
@@ -82,6 +88,9 @@ export interface ToMainReturnPayloads {
     [ToMain.API]: Promise<any>
     [ToMain.GET_DYNAMIC_VALUES]: Promise<{ [key: string]: string }>
     [ToMain.READ_FOLDER_BATCH]: { requestId: string; batchSequence: number; ownerId: number; accepted: true }
+    [ToMain.PDF_RENDER_OPEN]: { pageCount: number; rendererVersion: string }
+    [ToMain.PDF_RENDER_PAGE]: { png: ArrayBuffer; width: number; height: number }
+    [ToMain.PDF_RENDER_CLOSE]: { closed: true }
 }
 
 ///////////

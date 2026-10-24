@@ -7,9 +7,10 @@ import { OUTPUT } from "../../types/Channels"
 import { ToMain } from "../../types/IPC/ToMain"
 import type { Output } from "../../types/Output"
 import type { Resolution } from "../../types/Settings"
-import { requestToMain, sendToMain } from "../IPC/main"
+import { sendToMain } from "../IPC/main"
 import { OutputHelper } from "../output/OutputHelper"
-import { createFolder, deleteFile, doesPathExist, doesPathExistAsync, getDataFolderPath, getFileStatsAsync, makeDir, openInSystem, sanitizeFileName } from "../utils/files"
+import { importPDFToImageShow } from "./renderedPowerPointImport"
+import { createFolder, deleteFile, doesPathExist, doesPathExistAsync, getDataFolderPath, getFileStatsAsync, makeDir, openInSystem } from "../utils/files"
 import { waitUntilValueIsDefined } from "../utils/helpers"
 import { captureOptions } from "../utils/windowOptions"
 import { imageExtensions, videoExtensions } from "./media"
@@ -271,84 +272,8 @@ export function saveImage(data: { id?: string; path?: string; base64?: string; b
     saveToDisk(savePath, image, data.format || "png", data.id)
 }
 
-export async function pdfToImage({ filePath }: { filePath: string }) {
-    // normalize filePath to handle special characters robustly
-    filePath = path.normalize(filePath)
-    const rawPdfName = path.basename(filePath, path.extname(filePath))
-    const pdfName = sanitizeFileName(rawPdfName)
-    const pdfImportPath = getDataFolderPath("imports", "PDF")
-    const pathName = createFolder(path.join(pdfImportPath, pdfName))
-    const renderPhasePercent = 80
-    const savePhasePercent = 20
-
-    const sendPdfImportProgress = (data: { progress: number; total?: number; status: "importing" | "complete" | "error"; message?: string }) => {
-        sendToMain(ToMain.PDF_IMPORT_PROGRESS, {
-            filePath,
-            name: pdfName,
-            progress: data.progress,
-            total: data.total || 100,
-            status: data.status,
-            ...(data.message ? { message: data.message } : {})
-        })
-    }
-
-    try {
-        // Large PDFs can take significantly longer than the default 15s IPC timeout.
-        const response: { pages?: string[] } | null = await requestToMain(ToMain.API, { action: "get_pdf_thumbnails", data: { path: filePath } }, undefined, 5 * 60 * 1000)
-        const pdfImages = response?.pages
-
-        if (!Array.isArray(pdfImages) || !pdfImages.length) {
-            sendPdfImportProgress({ progress: 0, total: 1, status: "error", message: "PDF import failed (timeout or unsupported file)." })
-            return
-        }
-
-        const images: string[] = []
-        for (let i = 0; i < pdfImages.length; i++) {
-            const base64 = pdfImages[i]
-            const image = nativeImage.createFromDataURL(base64)
-            const imagePath = path.join(pathName, `${i + 1}.jpg`)
-
-            createFolder(pathName)
-            saveToDisk(imagePath, image, "jpg")
-            images.push(imagePath)
-
-            const saveProgress = renderPhasePercent + Math.round(((i + 1) / Math.max(1, pdfImages.length)) * savePhasePercent)
-            sendPdfImportProgress({ progress: saveProgress, status: "importing" })
-        }
-
-        if (images.length) {
-            sendToMain(ToMain.IMAGES_TO_SHOW, { images, name: pdfName })
-            sendPdfImportProgress({ progress: 100, status: "complete" })
-        }
-    } catch (error: any) {
-        sendPdfImportProgress({ progress: 0, total: 1, status: "error", message: `PDF import failed: ${error?.message || "Unknown error"}` })
-    }
-
-    // const loadingTask = getDocument(filePath)
-    // const pdfDoc = await loadingTask.promise
-    // const pageCount = pdfDoc.numPages
-
-    // let images: string[] = []
-    // for (let i = 0; i < pageCount; i++) {
-    //     const pdfPage = await pdfDoc.getPage(i + 1)
-    //     const operatorList = await pdfPage.getOperatorList()
-
-    //     const imgIndex = operatorList.fnArray.indexOf(OPS.paintImageXObject)
-    //     const imgArgs = operatorList.argsArray[imgIndex]
-    //     const { data } = pdfPage.objs.get(imgArgs[0])
-
-    //     const imagePath = path.join(pathName, `${i + 1}.jpg`)
-
-    //     // let image = nativeImage.createFromDataURL(data)
-    //     let image = nativeImage.createFromBuffer(data)
-    //     saveToDisk(imagePath, image, false, "jpg")
-
-    //     images.push(imagePath)
-    // }
-
-    // await loadingTask.destroy()
-
-    // return images
+export function pdfToImage({ filePath }: { filePath: string }, signal?: AbortSignal) {
+    return importPDFToImageShow(path.normalize(filePath), signal)
 }
 
 // https://www.electronjs.org/docs/latest/api/native-image

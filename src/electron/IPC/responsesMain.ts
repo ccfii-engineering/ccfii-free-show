@@ -19,6 +19,7 @@ import { deleteBackup, getBackups, restoreFiles } from "../data/backup"
 import { getLocalIPs } from "../data/bonjour"
 import { checkIfMediaDownloaded, downloadLessonsMedia, downloadMedia } from "../data/downloadMedia"
 import { importShow } from "../data/import"
+import { importPowerPointFiles, shouldUseRenderedPowerPointImport } from "../data/renderedPowerPointImport"
 import { save } from "../data/save"
 import { _store, appDataPath, config, createStores, getStore, getStoreValue, setStoreValue } from "../data/store"
 import { captureSlide, doesMediaExist, getThumbnail, getThumbnailFolderPath, pdfToImage, saveImage } from "../data/thumbnails"
@@ -79,8 +80,8 @@ export const mainResponses: MainResponses = {
     [Main.SAVE]: (a) => save(a),
     [Main.BACKUPS]: () => getBackups(),
     [Main.DELETE_BACKUP]: (data) => deleteBackup(data),
-    [Main.IMPORT]: (data) => startImport(data),
-    [Main.IMPORT_FILES]: (data) => importFiles(data),
+    [Main.IMPORT]: (data, _event, signal) => startImport(data, signal),
+    [Main.IMPORT_FILES]: (data, _event, signal) => importFiles(data, signal),
     [Main.BIBLE]: (data) => loadScripture(data),
     [Main.SHOW]: (data) => loadShow(data),
     // MAIN
@@ -117,7 +118,7 @@ export const mainResponses: MainResponses = {
     [Main.DOES_MEDIA_EXIST]: (data) => doesMediaExist(data),
     [Main.GET_THUMBNAIL]: async (data) => await getThumbnail(data),
     [Main.SAVE_IMAGE]: (data) => saveImage(data),
-    [Main.PDF_TO_IMAGE]: (data) => pdfToImage(data),
+    [Main.PDF_TO_IMAGE]: (data, _event, signal) => pdfToImage(data, signal),
     [Main.READ_EXIF]: (data) => readExifData(data),
     [Main.MEDIA_CODEC]: (data) => getMediaCodec(data),
     [Main.MEDIA_TRACKS]: (data) => getMediaTracks(data),
@@ -291,17 +292,35 @@ export const mainResponses: MainResponses = {
 /// ///////
 
 // IMPORT
-export function startImport(data: { channel: string; format: { name: string; extensions: string[] }; settings?: any }) {
+export async function startImport(data: { channel: string; format: { name: string; extensions: string[] }; settings?: any; mode?: "rendered" | "editable" }, signal?: AbortSignal) {
     const files: string[] = selectFilesDialog("", data.format)
 
     const needsFileAndNoFileSelected = data.format.extensions && !files.length
-    if (needsFileAndNoFileSelected) return
+    if (needsFileAndNoFileSelected) {
+        if (shouldUseRenderedPowerPointImport(data.channel, data.mode)) return { status: "cancelled" as const, message: "No PowerPoint file was selected" }
+        return
+    }
 
-    importShow(data.channel, files || null, data.settings || {})
+    if (shouldUseRenderedPowerPointImport(data.channel, data.mode)) {
+        const result = await importPowerPointFiles(files, signal)
+        if (!signal && result && result.status !== "complete") sendToMain(ToMain.TOAST, result.message)
+        return result
+    }
+
+    await importShow(data.channel, files || null, data.settings || {})
+    return undefined
 }
 
-function importFiles(data: { id: string; paths: string[] }) {
-    importShow(data.id, data.paths, {})
+export async function importFiles(data: { id: string; paths: string[]; mode?: "rendered" | "editable" }, signal?: AbortSignal) {
+    if (shouldUseRenderedPowerPointImport(data.id, data.mode)) {
+        if (!data.paths.length) return { status: "cancelled" as const, message: "No PowerPoint file was selected" }
+        const result = await importPowerPointFiles(data.paths, signal)
+        if (!signal && result && result.status !== "complete") sendToMain(ToMain.TOAST, result.message)
+        return result
+    }
+
+    await importShow(data.id, data.paths, {})
+    return undefined
 }
 
 // BIBLE

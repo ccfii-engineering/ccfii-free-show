@@ -7,27 +7,11 @@ import { ToMain } from "../../../types/IPC/ToMain"
 import { sendToMain } from "../../IPC/main"
 import { openURL } from "../../IPC/responsesMain"
 import { getDataFolderPath, selectFilesDialog, sanitizeFileName } from "../../utils/files"
+import { getSofficePath } from "./soffice"
+
+export { getSofficePath } from "./soffice"
 
 const execFileAsync = promisify(execFile)
-
-function getSofficePath(): string {
-    const defaultPaths: Record<string, string[]> = {
-        win32: [path.join(process.env.PROGRAMFILES || "C:\\Program Files", "LibreOffice", "program", "soffice.exe"), path.join(process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)", "LibreOffice", "program", "soffice.exe")],
-        darwin: ["/Applications/LibreOffice.app/Contents/MacOS/soffice"],
-        linux: ["/usr/bin/soffice", "/usr/bin/libreoffice"]
-    }
-
-    const standardPaths = defaultPaths[process.platform] || []
-    for (const p of standardPaths) {
-        try {
-            if (fs.existsSync(p) && fs.lstatSync(p).isFile()) return p
-        } catch (err) {
-            // ignore
-        }
-    }
-
-    return "soffice"
-}
 
 export function libreConvert(data: { type: string }) {
     if (data.type !== "powerpoint") return

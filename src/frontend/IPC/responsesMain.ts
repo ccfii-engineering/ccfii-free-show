@@ -14,6 +14,7 @@ import { clone, keysToID } from "../components/helpers/array"
 import { addDrawerFolder } from "../components/helpers/dropActions"
 import { history } from "../components/helpers/history"
 import { captureCanvas, getExtension, getFileName, removeExtension, setMediaTracks } from "../components/helpers/media"
+import { closePdfRenderJob, openPdfRenderJob, renderPdfPage } from "../components/actions/pdfRenderJob"
 import { getActiveOutputs } from "../components/helpers/output"
 import { loadShows, saveTextCache } from "../components/helpers/setShow"
 import { checkName, getGlobalGroup, getLabelId } from "../components/helpers/show"
@@ -33,6 +34,7 @@ import { convertMediaShout } from "../converters/mediashout"
 import { convertOpenLP } from "../converters/openlp"
 import { convertOpenSong } from "../converters/opensong"
 import { convertPowerpoint } from "../converters/powerpoint/powerpointImporter"
+import { showPdfImportError } from "../converters/powerpoint/importJob"
 import { addToProject, importProject, updateRecentlyAddedFiles } from "../converters/project"
 import { convertProPresenter } from "../converters/propresenter"
 import { convertQuelea } from "../converters/quelea"
@@ -63,6 +65,7 @@ import {
     outputs,
     overlays,
     pdfImports,
+    pdfImportControllers,
     popupData,
     presentationData,
     projects,
@@ -93,7 +96,7 @@ import { invalidateSearchIndex } from "../utils/searchFast"
 import { updateSettings, updateSyncedSettings, updateThemeValues } from "../utils/updateSettings"
 import type { MainReturnPayloads } from "./../../types/IPC/Main"
 import { Main } from "./../../types/IPC/Main"
-import { dispatchBatch, sendMain } from "./main"
+import { dispatchBatch, requestMainResult, sendMain } from "./main"
 
 type MainHandler<ID extends Main | ToMain> = (data: ID extends keyof ToMainSendPayloads ? ToMainSendPayloads[ID] : ID extends keyof MainReturnPayloads ? Awaited<MainReturnPayloads[ID]> : undefined, signal?: AbortSignal) => void
 export type MainResponses = {
@@ -234,6 +237,9 @@ export const mainResponses: MainResponses = {
     [ToMain.CAPTURE_CANVAS]: (data) => captureCanvas(data),
     [ToMain.LESSONS_DONE]: (data) => lessonsLoaded.set({ ...get(lessonsLoaded), [data.showId]: data.status }),
     [ToMain.IMAGES_TO_SHOW]: (data) => createImageShow(data),
+    [ToMain.PDF_RENDER_OPEN]: (data, signal) => openPdfRenderJob(data, signal),
+    [ToMain.PDF_RENDER_PAGE]: (data, signal) => renderPdfPage(data, signal),
+    [ToMain.PDF_RENDER_CLOSE]: (data) => closePdfRenderJob(data),
     [ToMain.RTMP_STATUS]: (data) => rtmpStatus.update((a) => ({ ...a, [data.outputId]: data.destinations })),
     [ToMain.MEDIA_DOWNLOAD_PROGRESS]: (data) => {
         mediaDownloads.update((downloads) => {
@@ -257,20 +263,30 @@ export const mainResponses: MainResponses = {
     [ToMain.PDF_IMPORT_PROGRESS]: (data) => {
         pdfImports.update((imports) => {
             const updated = new Map(imports)
-            updated.set(data.filePath, {
+            const key = data.jobId || data.filePath
+            const previous = updated.get(key) || updated.get(data.filePath)
+            const controller = (data.jobId && pdfImportControllers.get(data.jobId)) || pdfImportControllers.get(data.filePath) || pdfImportControllers.get("powerpoint")
+            if (key !== data.filePath && updated.get(data.filePath)?.cancelController === controller) updated.delete(data.filePath)
+
+            updated.set(key, {
+                ...previous,
                 name: data.name,
                 progress: data.progress,
                 total: data.total,
                 status: data.status,
-                message: data.message
+                message: data.message,
+                jobId: data.jobId,
+                cancelController: data.status === "importing" ? controller : undefined,
+                cancel: data.status === "importing" && controller ? () => controller.abort() : undefined
             })
 
             if (data.status === "complete" || data.status === "error") {
+                const terminalJobId = data.jobId
                 setTimeout(
                     () => {
                         pdfImports.update((current) => {
                             const cleaned = new Map(current)
-                            cleaned.delete(data.filePath)
+                            if (cleaned.get(key)?.jobId === terminalJobId) cleaned.delete(key)
                             return cleaned
                         })
                     },
@@ -527,9 +543,41 @@ export const mainResponses: MainResponses = {
 
         const receiveFilePathIMPORT = {
             // Media
-            pdf: () => {
+            pdf: async () => {
                 const paths = mainData as string[]
-                paths.forEach((path) => sendMain(Main.PDF_TO_IMAGE, { filePath: path }))
+                if (pdfImportControllers.size) {
+                    newToast("A file import is already in progress")
+                    return
+                }
+
+                const controller = new AbortController()
+                pdfImportControllers.set("pdf-manual", controller)
+                try {
+                    for (const path of paths) {
+                        pdfImportControllers.set(path, controller)
+                        try {
+                            const result = await requestMainResult(Main.PDF_TO_IMAGE, { filePath: path }, { signal: controller.signal, timeoutMs: 30 * 60 * 1000 })
+                            if (result.status === "timeout") showPdfImportError("The import timed out, so its final status is unknown. Check your show list before trying again.")
+                            else if (result.status === "error") showPdfImportError(result.error.message)
+                            else if (result.status === "success" && result.data && result.data.status !== "complete" && result.data.status !== "cancelled") showPdfImportError(result.data.message)
+                        } finally {
+                            if (pdfImportControllers.get(path) === controller) pdfImportControllers.delete(path)
+                        }
+
+                        if (controller.signal.aborted) break
+                    }
+                } finally {
+                    for (const [key, activeController] of pdfImportControllers) {
+                        if (activeController === controller) pdfImportControllers.delete(key)
+                    }
+                    pdfImports.update((imports) => {
+                        const cleaned = new Map(imports)
+                        for (const [key, progress] of cleaned) {
+                            if (progress.cancelController === controller && progress.status === "importing") cleaned.delete(key)
+                        }
+                        return cleaned
+                    })
+                }
 
                 // remove any PDFs with the same name from the Recommended project items list
                 const importedNames = paths.map((p) => removeExtension(getFileName(p)).toLowerCase())

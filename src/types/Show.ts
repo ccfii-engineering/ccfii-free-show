@@ -10,6 +10,7 @@ export interface Shows {
 export interface Show {
     name: string
     id?: string // this id should not be stored (but often used in the program as a temporary value)
+    importSource?: ImportSource
     origin?: string // "pco" | "churchApps" | "hymnary", etc.
     private?: boolean // hide from drawer
     locked?: boolean // disable edits
@@ -53,6 +54,19 @@ export interface Show {
     layouts: { [key: ID]: Layout }
     media: { [key: ID]: Media }
     midi?: { [key: ID]: Action }
+}
+
+export interface ImportSource {
+    kind: "powerpoint" | "pdf"
+    sourcePath: string
+    pdfPath: string
+    sourceHash: string
+    renderer: string
+    rendererVersion: string
+    resolution: { maxWidth: number; maxHeight: number; maxPixels: number }
+    format: "png"
+    cacheKey: string
+    pagePaths: string[]
 }
 
 export interface TrimmedShows {

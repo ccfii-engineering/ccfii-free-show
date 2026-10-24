@@ -22,6 +22,9 @@ import type { IPCRequestMetadata } from "./Request"
 
 export type FolderScanComplete = { status: "complete"; entryCount: number }
 
+export type PowerPointImportMode = "rendered" | "editable"
+export type PowerPointImportOutcome = { status: "complete"; jobId: string; showName: string; pages: number } | { status: "cancelled"; jobId?: string; message: string } | { status: "renderer-unavailable" | "error"; jobId?: string; message: string }
+
 export const MAIN = "MAIN"
 
 export enum Main {
@@ -186,8 +189,8 @@ export interface MainSendPayloads {
     // DEV
     [Main.LOG]: any
     /////
-    [Main.IMPORT]: { channel: string; format: { name: string; extensions: string[] }; settings?: any }
-    [Main.IMPORT_FILES]: { id: string; paths: string[] }
+    [Main.IMPORT]: { channel: string; format: { name: string; extensions: string[] }; settings?: any; mode?: PowerPointImportMode }
+    [Main.IMPORT_FILES]: { id: string; paths: string[]; mode?: PowerPointImportMode }
     [Main.BIBLE]: { id: string; name: string }
     [Main.SHOW]: { id: string; name: string }
     [Main.SAVE]: SaveData
@@ -318,7 +321,10 @@ export interface MainReturnPayloads {
     [Main.CLOSE]: boolean | void
     [Main.MAXIMIZED]: boolean
     /////////////////////
+    [Main.IMPORT]: Promise<PowerPointImportOutcome | undefined>
+    [Main.IMPORT_FILES]: Promise<PowerPointImportOutcome | undefined>
     [Main.BIBLE]: { id: string; error?: string; content?: [string, Bible] }
+    [Main.PDF_TO_IMAGE]: Promise<PowerPointImportOutcome | undefined>
     [Main.SHOW]: { id: string; error?: string; content?: [string, Show] }
     ///
     [Main.GET_DISPLAYS]: Display[]

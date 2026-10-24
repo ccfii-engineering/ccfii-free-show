@@ -1,11 +1,11 @@
 import { uid } from "uid"
-import type { Slide, SlideData } from "../../types/Show"
+import type { ImportSource, Slide, SlideData } from "../../types/Show"
 import { ShowObj } from "../classes/Show"
 import { getFileName, removeExtension } from "../components/helpers/media"
 import { checkName } from "../components/helpers/show"
 import { createCategory, setTempShows } from "./importHelpers"
 
-export function createImageShow({ images, name }: { images: string[]; name: string }) {
+export function createImageShow({ images, name, source }: { images: string[]; name: string; source?: ImportSource }) {
     // newToast("Creating show...")
 
     const categoryId = createCategory("Converted", "presentation", { isArchive: true })
@@ -15,6 +15,7 @@ export function createImageShow({ images, name }: { images: string[]; name: stri
     const show = new ShowObj(false, categoryId, layoutId, new Date().getTime(), false)
 
     show.name = checkName(name, showId)
+    if (source) show.importSource = source
 
     const backgrounds: any[] = []
     const slides: { [key: string]: Slide } = {}
@@ -48,7 +49,7 @@ export function createImageShow({ images, name }: { images: string[]; name: stri
     show.layouts[layoutId].slides = layoutShows
 
     backgrounds.forEach(([id, path]) => {
-        const media = { path, name: removeExtension(getFileName(path)) }
+        const media = { path, name: removeExtension(getFileName(path)), fit: "contain" as const }
         show.media[id] = media
     })
 

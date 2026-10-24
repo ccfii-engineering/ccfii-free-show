@@ -102,6 +102,9 @@
                     <div class="pdf-top-row">
                         <div class="file-name" title={data.name}>{data.name}</div>
                         <span class="status {data.status === 'error' ? 'error' : data.status === 'complete' ? 'ok' : ''}">{getStatusLabel(data.status, data.progress, data.total, filePath)}</span>
+                        {#if data.status === "importing" && data.cancel}
+                            <MaterialButton style="padding: 2px;" icon="close" title="actions.cancel" on:click={data.cancel} white />
+                        {/if}
                     </div>
 
                     {#if data.status === "importing"}
@@ -165,6 +168,8 @@
     }
 
     .file-name {
+        flex: 1;
+        min-width: 0;
         font-size: 0.85em;
         margin-bottom: 8px;
         opacity: 0.9;

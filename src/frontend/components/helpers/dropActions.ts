@@ -19,6 +19,7 @@ import { getVimeoData, getYouTubeData, trimPlayerId } from "../drawer/player/pla
 import { addItem, DEFAULT_ITEM_STYLE } from "../edit/scripts/itemHelpers"
 import { clone, removeDuplicates } from "./array"
 import { projectDropFolders } from "./drop"
+import { runRenderedPowerPointImport } from "../../converters/powerpoint/importJob"
 import { history, historyAwait } from "./history"
 import { downloadOnlineMedia, getExtension, getFileName, getMediaLayerType, getMediaStyle, getMediaType, removeExtension } from "./media"
 import { addToPos, getIndexes, mover } from "./mover"
@@ -189,7 +190,7 @@ export const dropActions = {
             // add folders
             if (extraFiles.length) projectDropFolders(extraFiles, drop.index)
             // auto convert PPT to slides
-            if (pptFiles.length) sendMain(Main.IMPORT_FILES, { id: "powerpoint", paths: pptFiles })
+            if (pptFiles.length) void runRenderedPowerPointImport({ id: "powerpoint", paths: pptFiles, mode: "rendered" })
             // iport projects
             if (projectFiles.length) sendMain(Main.IMPORT_FILES, { id: "freeshow_project", paths: projectFiles })
         } else if (drag.id === "urls") {

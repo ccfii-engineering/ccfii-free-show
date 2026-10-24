@@ -100,7 +100,18 @@ export const scriptureMode: Writable<"grid" | "list"> = writable("list")
 export const providerConnections: Writable<{ [key in ContentProviderId]?: boolean }> = writable({})
 export const metronomeTimer: Writable<{ beat: number; timeToNext: number }> = writable({ beat: 0, timeToNext: 0 })
 export const mediaDownloads: Writable<Map<string, { progress: number; total: number; status: string }>> = writable(new Map())
-export const pdfImports: Writable<Map<string, { name: string; progress: number; total: number; status: "importing" | "complete" | "error"; message?: string }>> = writable(new Map())
+export type PdfImportProgress = {
+    name: string
+    progress: number
+    total: number
+    status: "importing" | "complete" | "error"
+    message?: string
+    jobId?: string
+    cancel?: () => void
+    cancelController?: AbortController
+}
+export const pdfImports: Writable<Map<string, PdfImportProgress>> = writable(new Map())
+export const pdfImportControllers = new Map<string, AbortController>()
 export const showChangeProfileMenu: Writable<boolean> = writable(false)
 export const cloudUsers: Writable<{ displayName: string; color: string; lastUpdate?: number; activePage?: string; activeShow?: ShowRef }[]> = writable([])
 export const isTimelinePlaying: Writable<boolean> = writable(false)

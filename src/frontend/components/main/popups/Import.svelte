@@ -3,6 +3,7 @@
     import { Main } from "../../../../types/IPC/Main"
     import { Popups } from "../../../../types/Main"
     import { importFromClipboard } from "../../../converters/importHelpers"
+    import { runRenderedPowerPointImport } from "../../../converters/powerpoint/importJob"
     import { sendMain } from "../../../IPC/main"
     import { activePopup, alertMessage, popupData } from "../../../stores"
     import { translateText } from "../../../utils/language"
@@ -63,14 +64,19 @@
     ]
 
     const powerpoint_options = [
-        { name: "info.slides", description: "Imperfect formatting.", icon: "txt", click: pptText },
+        { name: "Preserve appearance", description: "Imports each slide as an image.", icon: "pdf", click: pptRendered },
+        { name: "Editable slides", description: "Formatting may vary; text and objects stay editable.", icon: "txt", click: pptText },
         { name: "PDF", description: "Requires LibreOffice installed.", icon: "pdf", click: libreOfficeConvert },
         { name: "PDF (Online)", description: "Requires network connection, and manual steps.", icon: "pdf", click: onlineConvert },
         { name: "Controller (Deprecated)", description: "Requires PowerPoint/Keynote installed. Useful for live streams, but buggy.", icon: "powerkey", click: pptController }
     ]
 
+    function pptRendered() {
+        void runRenderedPowerPointImport({ channel: "powerpoint", format: { name: "PowerPoint", extensions: ["ppt", "pptx"] }, mode: "rendered" })
+        activePopup.set(null)
+    }
     function pptText() {
-        sendMain(Main.IMPORT, { channel: "powerpoint", format: { name: "PowerPoint", extensions: ["ppt", "pptx"] } })
+        sendMain(Main.IMPORT, { channel: "powerpoint", format: { name: "PowerPoint", extensions: ["ppt", "pptx"] }, mode: "editable" })
         activePopup.set(null)
     }
     function libreOfficeConvert() {
@@ -174,7 +180,7 @@
                     style="justify-content: start;flex: 1;min-height: 50px;font-weight: normal;"
                     on:click={() => {
                         if (format.id === "powerpoint") {
-                            pptText()
+                            pptRendered()
                             return
                         }
 
@@ -279,8 +285,7 @@
                     style="justify-content: start;flex: 1;min-height: 50px;font-weight: normal;"
                     on:click={() => {
                         if (format.id === "powerpoint") {
-                            // openedPage = "powerpoint"
-                            pptText()
+                            pptRendered()
                             return
                         }
 
