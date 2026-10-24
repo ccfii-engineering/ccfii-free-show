@@ -6,7 +6,8 @@ export type WalkOptions = {
     captureFolderContent: boolean
     batchSize?: number
     generateThumbnails?: boolean
+    signal?: AbortSignal
 }
 
 export type WalkBatch = FileFolder[]
-export type WalkBatchCallback = (batch: WalkBatch) => void
+export type WalkBatchCallback = (batch: WalkBatch) => Promise<void> | void

@@ -3,6 +3,7 @@ import type { ToMainReceiveValue, ToMainSendPayloads } from "../../types/IPC/ToM
 import { ToMain } from "../../types/IPC/ToMain"
 import type { MainReceiveValue, MainReturnPayloads } from "./../../types/IPC/Main"
 import { MAIN, Main, type MainSendValue } from "./../../types/IPC/Main"
+import { createIPCRequestMetadata, decodeIPCRequestReply, isIPCRequestMetadata, runIPCRequest, serializeIPCError, type IPCRequestOptions, type IPCRequestResult } from "../../types/IPC/Request"
 import { mainResponses } from "./responsesMain"
 import { isDev } from "../stores"
 import { get } from "svelte/store"
@@ -14,79 +15,158 @@ export function requestMainMultiple<T extends Main>(object: { [K in T]: (data: M
     })
 }
 
-const currentlyAwaiting: string[] = []
 // @ts-ignore
+// Compatibility API: non-success outcomes map to undefined. Use requestMainResult when timeout,
+// cancellation, and handler failure must remain distinct; this untagged path cannot propagate abort.
 export async function requestMain<ID extends Main, R = Awaited<MainReturnPayloads[ID]>>(id: ID, value?: MainSendValue<ID>, callback?: (data: R | undefined) => void, waitingTimeout: number = 15000) {
     const listenerId = id + uid(5)
-    currentlyAwaiting.push(listenerId)
-
-    sendMain(id, value, listenerId)
-
-    // LISTENER
-    let timeout: NodeJS.Timeout | null = null
-    let settled = false
-    const cleanup = () => {
-        if (timeout) clearTimeout(timeout)
-        window.api.removeListener(MAIN, listenerId)
-
-        const waitIndex = currentlyAwaiting.indexOf(listenerId)
-        if (waitIndex > -1) currentlyAwaiting.splice(waitIndex, 1)
-    }
-
-    const returnData: R | undefined = await new Promise((resolve) => {
-        timeout = setTimeout(() => {
-            if (settled) return
-            settled = true
-
-            if (get(isDev)) console.error(`IPC Message Timed Out: ${id}`)
-            cleanup()
-            resolve(undefined)
-        }, waitingTimeout)
-
-        window.api.receive(
-            MAIN,
-            (msg: MainReceiveValue, listenId: string) => {
-                if (settled) return
-                if (msg.channel !== id || listenId !== listenerId) return
-
-                settled = true
-                cleanup()
-                resolve(msg.data as R)
-            },
-            listenerId
-        )
+    const result = await runIPCRequest<R>({
+        timeoutMs: waitingTimeout,
+        subscribe: (receive) => {
+            window.api.receive(
+                MAIN,
+                (msg: MainReceiveValue, listenId: string) => {
+                    if (msg && msg.channel === id && listenId === listenerId && !Object.prototype.hasOwnProperty.call(msg, "ipcRequest")) receive({ status: "success", data: msg.data as R })
+                },
+                listenerId
+            )
+            return () => window.api.removeListener(MAIN, listenerId)
+        },
+        send: () => sendMain(id, value, listenerId),
+        cancel: () => {}
     })
+    const returnData = result.status === "success" ? result.data : undefined
+
+    if (result.status === "timeout" && get(isDev)) console.error(`IPC Message Timed Out: ${id}`)
 
     if (callback) callback(returnData)
     return returnData
+}
+
+// Opt-in lifecycle API. A timeout has unknown execution status and is never retried here.
+// @ts-ignore
+export function requestMainResult<ID extends Main, R = Awaited<MainReturnPayloads[ID]>>(id: ID, value?: MainSendValue<ID>, options: IPCRequestOptions = {}): Promise<IPCRequestResult<R>> {
+    const listenerId = id + uid(5)
+
+    return runIPCRequest<R>({
+        timeoutMs: options.timeoutMs ?? 15000,
+        signal: options.signal,
+        subscribe: (receive) => {
+            window.api.receive(
+                MAIN,
+                (msg: MainReceiveValue, listenId: string) => {
+                    if (msg.channel !== id || listenId !== listenerId) return
+                    const reply = decodeIPCRequestReply<R>(msg)
+                    if (reply) receive(reply)
+                },
+                listenerId
+            )
+
+            return () => window.api.removeListener(MAIN, listenerId)
+        },
+        send: () => sendMain(id, value, listenerId, createIPCRequestMetadata("request")),
+        cancel: () => sendMain(id, undefined, listenerId, createIPCRequestMetadata("cancel"))
+    })
 }
 
 export function sendMainMultiple<T extends Main>(keys: T[]) {
     keys.forEach((id) => sendMain(id))
 }
 
-export function sendMain<ID extends Main>(id: ID, value?: MainSendValue<ID>, listenerId?: string) {
+export function sendMain<ID extends Main>(id: ID, value?: MainSendValue<ID>, listenerId?: string, ipcRequest?: MainReceiveValue["ipcRequest"]) {
     if (!Object.values(Main).includes(id)) throw new Error(`Invalid channel: ${id}`)
     if (!window.api) return
 
-    window.api.send(MAIN, { channel: id, data: value }, listenerId)
+    window.api.send(MAIN, { channel: id, data: value, ...(ipcRequest ? { ipcRequest } : {}) }, listenerId)
 }
 
 let mainGlobalReceiverRegistered = false
+const pendingFrontendRequests = new Map<string, AbortController>()
+const requestKey = (channel: string, listenerId: string) => JSON.stringify([channel, listenerId])
 export function receiveMainGlobal() {
     if (mainGlobalReceiverRegistered) return
     mainGlobalReceiverRegistered = true
 
     window.api.receive(MAIN, async (msg: MainReceiveValue | ToMainReceiveValue, listenerId?: string) => {
+        if (!msg || typeof msg !== "object") return
         const id = msg.channel
-        if (!Object.values({ ...Main, ...ToMain }).includes(id)) throw new Error(`Invalid channel: ${id}`)
-        if (!mainResponses[id]) return // console.error(`No response for channel: ${id}`)
+        const hasMetadata = Object.prototype.hasOwnProperty.call(msg, "ipcRequest")
+        const metadata = isIPCRequestMetadata(msg.ipcRequest) ? msg.ipcRequest : undefined
+        // A protocol envelope is never an application message. Replies belong to the
+        // correlated request listener; malformed or unsupported envelopes are ignored.
+        if (hasMetadata && !metadata) return
+        if (metadata?.kind === "reply") return
 
-        const data = msg.data // MainReturnPayloads[Main]
-        const response = await (mainResponses[id] as any)(data)
-        if (!response) return
+        const validChannel = Object.values({ ...Main, ...ToMain }).includes(id)
+        if (!validChannel) {
+            if (metadata) return
+            throw new Error(`Invalid channel: ${id}`)
+        }
+        if (metadata?.kind === "cancel") {
+            if (listenerId) {
+                const key = requestKey(id, listenerId)
+                const controller = pendingFrontendRequests.get(key)
+                controller?.abort()
+                if (controller) pendingFrontendRequests.delete(key)
+            }
+            return
+        }
 
-        window.api.send(MAIN, { channel: id, data: response }, listenerId)
+        const negotiated = metadata?.kind === "request"
+        if (negotiated && !listenerId) return
+        if (!mainResponses[id]) {
+            if (negotiated && listenerId) {
+                window.api.send(
+                    MAIN,
+                    {
+                        channel: id,
+                        data: undefined,
+                        ipcRequest: createIPCRequestMetadata("reply", {
+                            status: "error",
+                            error: { name: "IPCHandlerError", message: `No response handler for channel: ${id}` }
+                        })
+                    },
+                    listenerId
+                )
+            }
+            return // console.error(`No response for channel: ${id}`)
+        }
+
+        const controller = negotiated && listenerId ? new AbortController() : undefined
+        const key = listenerId ? requestKey(id, listenerId) : undefined
+        if (controller && key) pendingFrontendRequests.set(key, controller)
+
+        try {
+            const response = await (mainResponses[id] as any)(msg.data, controller?.signal)
+            if (response === undefined || controller?.signal.aborted || (negotiated && !listenerId)) return
+
+            window.api.send(
+                MAIN,
+                {
+                    channel: id,
+                    data: response,
+                    ...(negotiated ? { ipcRequest: createIPCRequestMetadata("reply", { status: "success" }) } : {})
+                },
+                listenerId
+            )
+        } catch (error) {
+            if (controller?.signal.aborted) return
+            if (negotiated && listenerId) {
+                window.api.send(
+                    MAIN,
+                    {
+                        channel: id,
+                        data: undefined,
+                        ipcRequest: createIPCRequestMetadata("reply", { status: "error", error: serializeIPCError(error) })
+                    },
+                    listenerId
+                )
+            } else {
+                console.error(error)
+            }
+        } finally {
+            if (key && controller && pendingFrontendRequests.get(key) === controller) pendingFrontendRequests.delete(key)
+        }
     })
 }
 
@@ -98,7 +178,7 @@ export function receiveMain<ID extends Main, R = Awaited<MainReturnPayloads[ID]>
     window.api.receive(
         MAIN,
         (msg: MainReceiveValue) => {
-            if (msg.channel === id) callback(msg.data as R)
+            if (msg && msg.channel === id && !Object.prototype.hasOwnProperty.call(msg, "ipcRequest")) callback(msg.data as R)
         },
         listenerId
     )
@@ -113,7 +193,7 @@ export function receiveToMain<ID extends ToMain, R = Awaited<ToMainSendPayloads[
     window.api.receive(
         MAIN,
         (msg: ToMainReceiveValue) => {
-            if (msg.channel === id) callback(msg.data as R)
+            if (msg && msg.channel === id && !Object.prototype.hasOwnProperty.call(msg, "ipcRequest")) callback(msg.data as R)
         },
         listenerId
     )

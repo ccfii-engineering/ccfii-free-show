@@ -1,6 +1,7 @@
 // plays the audio part of any given video element, and syncs the visible video to this
 
 import { get } from "svelte/store"
+import { OUTPUT } from "../../../../types/Channels"
 import { Main } from "../../../../types/IPC/Main"
 import { AudioAnalyser } from "../../../audio/audioAnalyser"
 import { fadeinAllPlayingAudio, fadeoutAllPlayingAudio } from "../../../audio/audioFading"
@@ -8,8 +9,8 @@ import { AudioInputCapture } from "../../../audio/routing/audioInputCapture"
 import { requestMain } from "../../../IPC/main"
 import { media, outputs, playerVideos, playingVideos, playingVideoState, special, transitionData } from "../../../stores"
 import { getPlaybackSnapshot, publishPlaybackReport } from "../../../outputState/playbackStore"
-import { isGpuGeneration } from "../../../outputState/playbackCommands"
 import { playFolder } from "../../../utils/shortcuts"
+import { send } from "../../../utils/request"
 import { customActionActivation } from "../../actions/actions"
 import { getVimeoData, getYouTubeData } from "../../drawer/player/playerHelper"
 import { clone } from "../../helpers/array"
@@ -17,6 +18,7 @@ import { downloadOnlineMedia, encodeFilePath, getExtension, getMediaType, locate
 import { getAllOutputs } from "../../helpers/output"
 import { checkNextAfterMedia } from "../../helpers/showActions"
 import { clearBackground } from "../../output/clear"
+import { findPlayingEntry, OutputPlaybackControl, type PlaybackSelection, resolveOutputPaused } from "./outputPlaybackControl"
 import { TimeInterpolator } from "./videoTime"
 
 type VideoOptions = {
@@ -26,9 +28,6 @@ type VideoOptions = {
     muted?: boolean
     startAt?: number
     type?: "background" | "item"
-    // sound-only mirror of a GPU-owned video (#17): never makes lifecycle decisions
-    // (clear background / next-after-media) on its own
-    syncOnly?: boolean
 }
 // online videos
 type VirtualAudioElement = {
@@ -49,7 +48,6 @@ export type VideoAudioData = {
     loop?: boolean
     fromTime?: number
     toTime?: number
-    syncOnly?: boolean
 }
 
 export type PlayingVideoState = {
@@ -66,25 +64,34 @@ export type PlayingVideoState = {
 
 export class VideoPlayer {
     private static replayGainCache: Map<string, number> = new Map()
+    private static outputPlaybackControl = new OutputPlaybackControl<VideoAudioData>({
+        getEntries: () => get(playingVideos),
+        getOutputs: () => get(outputs),
+        send: (type, message) => send(OUTPUT, [type], message)
+    })
 
     private static isStarting = new Set<string>()
     static async start(id: string, options: VideoOptions = {}, linkedOutputIds?: string[]): Promise<boolean> {
         if (!id) return false
 
+        const expectedOutputIds = [...(linkedOutputIds || [])]
+        const isItem = options.type === "item"
+        if (!isItem && expectedOutputIds.some((outputId) => !this.outputPlaybackControl.isCurrentBackground(id, outputId))) return false
+
         const ref = `${id}_${linkedOutputIds?.join(",")}`
         if (this.isStarting.has(ref)) return true
         this.isStarting.add(ref)
-
-        // stop fading out if playing again
-        if (this.isFadingOut.includes(id)) {
-            this.isFadingOut.splice(this.isFadingOut.indexOf(id), 1)
-            this.updateVolume(id)
-        }
 
         const isVideo = options.isOnline || getMediaType(getExtension(id)) === "video"
         if (!isVideo) {
             this.isStarting.delete(ref)
             return false
+        }
+
+        // stop fading out if playing again
+        if (this.isFadingOut.includes(id)) {
+            this.isFadingOut.splice(this.isFadingOut.indexOf(id), 1)
+            this.updateVolume(id)
         }
 
         let audioPath = id
@@ -110,9 +117,15 @@ export class VideoPlayer {
             if (newOutputIds.length) {
                 linkedOutputIds = newOutputIds
             } else {
+                const selected = this.outputPlaybackControl.select(id, linkedOutputIds?.[0])
+                if (!selected?.entry) {
+                    this.isStarting.delete(ref)
+                    return false
+                }
+
                 // toggle play/pause if already playing
-                if (options.paused) this.pause(id, linkedOutputIds?.[0])
-                else this.play(id, linkedOutputIds?.[0])
+                if (options.paused) this.pauseEntry(selected.entry, selected)
+                else this.playEntry(selected.entry, selected)
 
                 this.isStarting.delete(ref)
                 return true
@@ -123,6 +136,18 @@ export class VideoPlayer {
         if (!audio) {
             this.isStarting.delete(ref)
             return false
+        }
+
+        if (!isItem && linkedOutputIds?.length) {
+            linkedOutputIds = this.outputPlaybackControl.getCurrentLinkedOutputIds(id, linkedOutputIds)
+            if (!linkedOutputIds.length) {
+                if (audio instanceof HTMLAudioElement) {
+                    audio.pause()
+                    audio.src = ""
+                }
+                this.isStarting.delete(ref)
+                return false
+            }
         }
 
         const startTime = this.getStartTime(id, options.startAt)
@@ -137,8 +162,9 @@ export class VideoPlayer {
         const fromTime = globalOpts.fromTime || 0
         const toTime = this.getEndTime(id, audio.duration)
 
+        const newEntry: VideoAudioData = { path: id, audio, linkedOutputIds: linkedOutputIds || [], type: options.type || "background", softLoop, loop, fromTime, toTime }
         playingVideos.update((a) => {
-            a.push({ path: id, audio, linkedOutputIds: linkedOutputIds || [], type: options.type || "background", softLoop, loop, fromTime, toTime, syncOnly: options.syncOnly })
+            a.push(newEntry)
             return a
         })
 
@@ -146,13 +172,9 @@ export class VideoPlayer {
             this.getReplayGainMultiplier(id)
                 .then((mult) => {
                     const gain = mult || 1
-                    if (gain === 1) return
+                    if (gain === 1 || !this.outputPlaybackControl.isCurrentEntry(newEntry, expectedOutputIds)) return
 
-                    playingVideos.update((a) => {
-                        const item = a.find((v) => v.path === id)
-                        if (item) item.replayGainMultiplier = gain
-                        return a
-                    })
+                    newEntry.replayGainMultiplier = gain
                     this.updateVolume(id)
                 })
                 .catch(() => {})
@@ -169,22 +191,39 @@ export class VideoPlayer {
         const delayMs = durationMs > 0 ? durationMs / 4 + 20 : 0
 
         const startPlayback = () => {
-            if (!options.paused) this.play(id, linkedOutputIds?.[0])
+            if (!this.outputPlaybackControl.isCurrentEntry(newEntry, expectedOutputIds)) {
+                this.removeStartingEntry(newEntry)
+                return
+            }
 
-            if (audio instanceof HTMLAudioElement) this.attachToAnalyser(id, audio, linkedOutputIds || [])
+            if (!isItem && newEntry.linkedOutputIds.length) {
+                const currentLinkedOutputIds = this.outputPlaybackControl.getCurrentLinkedOutputIds(id, newEntry.linkedOutputIds)
+                if (!currentLinkedOutputIds.length) {
+                    this.removeStartingEntry(newEntry)
+                    return
+                }
+                newEntry.linkedOutputIds = currentLinkedOutputIds
+            }
+
+            const selection = this.outputPlaybackControl.selectEntry(newEntry)
+            if (!selection) return
+
+            if (!options.paused) this.playEntry(newEntry, selection)
+            else this.outputPlaybackControl.publishData(selection, { paused: options.paused })
+
+            if (audio instanceof HTMLAudioElement) this.attachToAnalyser(id, audio, newEntry.linkedOutputIds)
 
             if (!audio.muted && audio instanceof HTMLAudioElement && durationMs > 0) {
                 this.fadeIn(id, audio, durationMs)
             }
 
             this.initSyncClock()
+            const type = options.muted && options.loop ? "background" : !options.muted && !options.loop ? "foreground" : null
+            videoStarting(type)
         }
 
         if (delayMs > 0) setTimeout(startPlayback, delayMs)
         else startPlayback()
-
-        const type = options.muted && options.loop ? "background" : !options.muted && !options.loop ? "foreground" : null
-        videoStarting(type)
 
         // AudioAnalyser.attach(path, audio)
 
@@ -249,20 +288,6 @@ export class VideoPlayer {
         const audio = new Audio(encodeFilePath(audioPath))
         audio.addEventListener("ended", () => {
             const playing = this.getPlaying(originalId, outputIds || [])
-            // GPU-mirrored entries are sound-only slaves (#17): the visual owner decides
-            // lifecycle, so mirror the active video's loop instead of ending/cleaning up
-            if (playing?.syncOnly) {
-                const outputId = outputIds?.[0] || ""
-                const background = get(outputs)[outputId]?.out?.background
-                const stillActive = background && (background.path === originalId || background.id === originalId)
-                if (!stillActive || background.loop === false) return
-
-                const startTime = this.getStartTime(originalId)
-                audio.currentTime = startTime
-                if ("timeTick" in audio) (audio as any).timeTick.update(startTime)
-                if (audio.paused) audio.play().catch(() => {})
-                return
-            }
             if (playing?.loop || this.getGlobalOptions(originalId)?.loop) {
                 const startTime = this.getStartTime(originalId)
                 audio.currentTime = startTime
@@ -295,6 +320,27 @@ export class VideoPlayer {
         })
     }
 
+    private static removeStartingEntry(entry: VideoAudioData) {
+        if (!get(playingVideos).includes(entry)) return
+
+        if (entry.audio instanceof HTMLAudioElement) {
+            entry.audio.pause()
+            entry.audio.src = ""
+        } else {
+            entry.audio.paused = true
+            entry.audio.timeTick.pause()
+        }
+
+        entry.linkedOutputIds.forEach((outputId) => AudioAnalyser.detach(entry.path, outputId))
+        playingVideos.update((entries) => entries.filter((video) => video !== entry))
+        playingVideoState.update((state) => {
+            entry.linkedOutputIds.forEach((outputId) => delete state[`${entry.path}_${outputId}`])
+            return state
+        })
+
+        if (!get(playingVideos).length) AudioInputCapture.getInstance().clearMergedDbs()
+    }
+
     private static isCheckingEnding = new Set<string>()
     static async checkIfEnding(path: string, outputIds?: string[], force = false) {
         if (this.isCheckingEnding.has(path)) return
@@ -302,9 +348,6 @@ export class VideoPlayer {
 
         const playing = this.getPlaying(path, outputIds || [])
         if (!playing || (playing.audio.paused && !force)) return finish()
-        // GPU-mirrored entries never clear backgrounds or trigger next-after-media (#17)
-        if (playing.syncOnly) return finish()
-
         const audio = this.getAudio(path, outputIds ? outputIds[0] : undefined)
         if (!audio) return finish()
 
@@ -358,22 +401,33 @@ export class VideoPlayer {
     //
 
     static play(path: string, outputId?: string) {
+        this.outputPlaybackControl.execute(path, outputId, (selection) => {
+            if (selection.entry) this.playEntry(selection.entry, selection)
+            else this.outputPlaybackControl.publishData(selection, { paused: false })
+        })
+    }
+
+    private static playEntry(playing: VideoAudioData, selection: PlaybackSelection<VideoAudioData> | null = this.outputPlaybackControl.selectEntry(playing)) {
+        const path = playing.path
         if (this.isFadingOut.includes(path)) {
             const fadeIndex = this.isFadingOut.indexOf(path)
             if (fadeIndex !== -1) this.isFadingOut.splice(fadeIndex, 1)
             this.updateVolume(path)
         }
 
-        if (!this.audioExists(path, outputId ? [outputId] : undefined)) return
-
-        const audio = this.getAudio(path, outputId)
-        if (!audio) return
+        const audio = playing.audio
 
         if (audio instanceof HTMLAudioElement) {
-            audio.play()
+            audio
+                .play()
+                .then(() => {
+                    if (selection) this.outputPlaybackControl.publishData(selection, { paused: resolveOutputPaused(undefined, audio.paused) })
+                })
+                .catch(() => {})
         } else if ("timeTick" in audio) {
             audio.paused = false
             audio.timeTick.play()
+            if (selection) this.outputPlaybackControl.publishData(selection, { paused: resolveOutputPaused(undefined, audio.paused) })
         }
 
         if (get(special).muteAudioWhenVideoPlays) {
@@ -384,15 +438,16 @@ export class VideoPlayer {
     }
 
     static pause(path: string, outputId?: string) {
-        if (!this.audioExists(path, outputId ? [outputId] : undefined)) return
+        this.outputPlaybackControl.execute(path, outputId, (selection) => {
+            if (selection.entry) this.pauseEntry(selection.entry, selection)
+            else this.outputPlaybackControl.publishData(selection, { paused: true })
+        })
+    }
 
-        const playing = this.getPlaying(path, outputId ? [outputId] : undefined)
-        if (playing && (playing as any).crossfadeAudio) {
-            ;(playing as any).crossfadeAudio.pause()
-        }
+    private static pauseEntry(playing: VideoAudioData, selection: PlaybackSelection<VideoAudioData> | null = this.outputPlaybackControl.selectEntry(playing)) {
+        if ((playing as any).crossfadeAudio) (playing as any).crossfadeAudio.pause()
 
-        const audio = this.getAudio(path, outputId)
-        if (!audio) return
+        const audio = playing.audio
 
         if (audio instanceof HTMLAudioElement) {
             audio.pause()
@@ -400,6 +455,8 @@ export class VideoPlayer {
             audio.paused = true
             audio.timeTick.pause()
         }
+
+        if (selection) this.outputPlaybackControl.publishData(selection, { paused: resolveOutputPaused(true, audio.paused) })
 
         if (get(special).muteAudioWhenVideoPlays && !get(playingVideos).some((v) => !v.audio.paused)) {
             fadeinAllPlayingAudio()
@@ -419,7 +476,7 @@ export class VideoPlayer {
         setTimeout(() => this.isStopping.delete(path), 20)
 
         const audio = this.getAudio(path, outputId)
-        const playing = get(playingVideos).find((v) => v.path === path)
+        const playing = get(playingVideos).find((v) => v.path === path && (!outputId || v.linkedOutputIds.includes(outputId)))
 
         const nonActiveOutputs = getAllOutputs()
             .filter((a) => !a.enabled || !a.active)
@@ -436,7 +493,7 @@ export class VideoPlayer {
             }
         }
 
-        if (shouldStop) this.pause(path, outputId)
+        if (shouldStop && playing) this.pauseEntry(playing)
 
         const detachOutputIds = Array.from(new Set(shouldStop ? [...stopInOutputIds, ...(outputId ? [outputId] : [])] : stopInOutputIds))
         detachOutputIds.forEach((outId) => AudioAnalyser.detach(path, outId))
@@ -558,47 +615,73 @@ export class VideoPlayer {
     }
 
     static seekTo(path: string, outputId: string, time: number) {
-        this.setAudioValue(path, outputId, "currentTime", time)
+        this.outputPlaybackControl.execute(path, outputId, (selection) => {
+            if (selection.entry) {
+                selection.entry.audio.currentTime = time
+                if ("timeTick" in selection.entry.audio) selection.entry.audio.timeTick.update(time)
+                this.initSyncClock()
+            }
+
+            this.outputPlaybackControl.publishTime(selection, time)
+        })
     }
 
     static toggleLoop(path: string, outputId: string) {
-        const playing = this.getPlaying(path, outputId ? [outputId] : undefined)
-        if (!playing) return
-
-        const newLoop = !playing.loop
-        playingVideos.update((a) => {
-            const item = a.find((v) => v.path === path)
-            if (item) {
-                item.loop = newLoop
-                const fromTime = item.fromTime || 0
-                const toTime = item.toTime || item.audio.duration
-                const hasCustomBounds = fromTime > 0 || (toTime > 0 && toTime < item.audio.duration)
-                item.audio.loop = newLoop && !hasCustomBounds
-            }
-            return a
+        this.outputPlaybackControl.execute(path, outputId, (selection) => {
+            const currentlyLooping = selection.type === "item" ? !!selection.entry?.loop : selection.currentBackground?.loop === true
+            this.setLoopForSelection(selection, !currentlyLooping)
         })
-        this.initSyncClock()
+    }
+
+    static setLoop(path: string, outputId: string, loop: boolean) {
+        this.outputPlaybackControl.execute(path, outputId, (selection) => this.setLoopForSelection(selection, loop))
+    }
+
+    private static setLoopForSelection(selection: PlaybackSelection<VideoAudioData>, loop: boolean) {
+        const playing = selection.entry
+        if (playing?.loop !== loop) {
+            if (playing) {
+                playingVideos.update((entries) => {
+                    if (!entries.includes(playing)) return entries
+
+                    playing.loop = loop
+                    const fromTime = playing.fromTime || 0
+                    const toTime = playing.toTime || playing.audio.duration
+                    const hasCustomBounds = fromTime > 0 || (toTime > 0 && toTime < playing.audio.duration)
+                    playing.audio.loop = loop && !hasCustomBounds
+                    return entries
+                })
+            }
+            this.initSyncClock()
+        }
+
+        // Loop is output-specific even when several outputs share one audio mirror.
+        if (selection.type === "background" && selection.requestedOutputId) {
+            this.outputPlaybackControl.publishData(selection, { loop }, [selection.requestedOutputId])
+        }
     }
 
     static toggleMute(path: string, outputId: string) {
-        this.setAudioValue(path, outputId, "muted", !this.getAudio(path, outputId)?.muted)
+        this.outputPlaybackControl.execute(path, outputId, (selection) => {
+            const currentlyMuted = selection.type === "item" ? !!selection.entry?.audio.muted : selection.currentBackground?.muted !== false
+            this.setMuteForSelection(selection, !currentlyMuted)
+        })
     }
 
-    private static setAudioValue(path: string, outputId: string, key: string, value: any) {
-        const audio = this.getAudio(path, outputId)
-        if (!audio) return
+    static setMute(path: string, outputId: string, muted: boolean) {
+        this.outputPlaybackControl.execute(path, outputId, (selection) => this.setMuteForSelection(selection, muted))
+    }
 
-        audio[key] = value
-
-        if (key === "currentTime" && "timeTick" in audio) audio.timeTick.update(value)
-
+    private static setMuteForSelection(selection: PlaybackSelection<VideoAudioData>, muted: boolean) {
+        if (selection.entry) selection.entry.audio.muted = muted
+        this.outputPlaybackControl.publishData(selection, { muted })
         this.initSyncClock()
     }
 
     // GET
 
     static getPlaying(path: string, outputIds?: string[]): VideoAudioData | null {
-        return get(playingVideos).find((v) => v.path === path && (outputIds?.length ? outputIds.some((id) => v.linkedOutputIds.includes(id)) : true)) || null
+        return findPlayingEntry(get(playingVideos), path, outputIds)
     }
 
     static getAudio(path: string, outputId?: string) {
@@ -741,13 +824,10 @@ export class VideoPlayer {
                         isFadingOut: this.isFadingOut.includes(video.path)
                     }
 
-                    // canonical per-output playback state (#16): the legacy sync clock enriches
-                    // snapshots published by the visual owner, it never claims ownership itself.
-                    // When a GPU generation owns the output it is the authoritative clock (#17):
-                    // the audio element follows silently instead of overwriting its state.
-                    const ownedByGpu = isGpuGeneration(getPlaybackSnapshot(outputId)?.generation)
-                    if ((video.type || "background") === "background" && !ownedByGpu) {
-                        publishPlaybackReport({ outputId, sourceId: "sync-video-player", role: "sync", identity: video.path, duration: activeAudio.duration, progress: activeAudio.currentTime, paused: activeAudio.paused, loop: video.loop || false, muted: activeAudio.muted })
+                    // Keep the canonical DOM playback snapshot current between video time updates.
+                    if ((video.type || "background") === "background" && getPlaybackSnapshot(outputId)) {
+                        const outputLoop = get(outputs)[outputId]?.out?.background?.loop
+                        publishPlaybackReport({ outputId, sourceId: "sync-video-player", role: "sync", identity: video.path, duration: activeAudio.duration, progress: activeAudio.currentTime, paused: activeAudio.paused, loop: outputLoop ?? video.loop ?? false, muted: activeAudio.muted })
                     }
                 })
 

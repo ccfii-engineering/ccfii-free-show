@@ -1,4 +1,4 @@
-import type { OutputRendererStatus, OutputStateApply, OutputStateHealth, OutputStateManifest, OutputStateObservation, OutputStateReady, OutputStateRejection, OutputStateRendered, OutputStateScope, OutputStateToMainMessage, OutputStateToRendererMessage, OutputStateTopic, OutputTopicSnapshot } from "../../types/OutputState"
+import type { OutputStateApply, OutputStateHealth, OutputStateManifest, OutputStateObservation, OutputStateReady, OutputStateRejection, OutputStateRendered, OutputStateScope, OutputStateToMainMessage, OutputStateToRendererMessage, OutputStateTopic, OutputTopicSnapshot } from "../../types/OutputState"
 
 type TimerHandle = unknown
 
@@ -26,6 +26,7 @@ interface OutputStateBrokerOptions {
 interface PendingDelivery {
     snapshot: OutputTopicSnapshot
     retryCount: number
+    awaitingReplacement?: boolean
     timer?: TimerHandle
 }
 
@@ -54,8 +55,6 @@ export class OutputStateBroker {
     private readonly snapshots = new Map<string, OutputTopicSnapshot>()
     private readonly sessions = new Map<string, OutputSession>()
     private readonly lastRecreate = new Map<string, number>()
-    private readonly rendererFailures = new Map<string, number>()
-    private readonly rendererHealth = new Map<string, Pick<OutputStateHealth, "rendererState" | "backend" | "reason">>()
 
     constructor(options: OutputStateBrokerOptions) {
         this.requiredSharedTopics = options.requiredSharedTopics
@@ -134,42 +133,23 @@ export class OutputStateBroker {
         const session = this.sessions.get(authenticatedOutputId)
         if (!session || rejection.outputId !== authenticatedOutputId || rejection.sessionId !== session.sessionId) return false
 
+        const key = this.snapshotKey(rejection.topic, rejection.scope)
+        const delivery = session.pending.get(key)
+        if (!delivery || delivery.snapshot.revision !== rejection.revision || delivery.snapshot.contentHash !== rejection.contentHash) return false
+
+        if (rejection.reason === "missing_dependency") {
+            if (delivery.awaitingReplacement) return true
+
+            delivery.awaitingReplacement = true
+            delivery.retryCount = 0
+            this.clearDelivery(delivery)
+            this.reportHealth(session, { status: "syncing", topic: rejection.topic, revision: rejection.revision, reason: "missing_dependency" })
+            this.scheduleRetry(session, key, delivery)
+            this.requestLatestSnapshot(delivery.snapshot)
+            return true
+        }
+
         this.reportHealth(session, { status: "unhealthy", topic: rejection.topic, revision: rejection.revision, reason: rejection.reason })
-        return true
-    }
-
-    rendererStatus(status: OutputRendererStatus, authenticatedOutputId: string): boolean {
-        const session = this.sessions.get(authenticatedOutputId)
-        if (!session || status.outputId !== authenticatedOutputId || status.sessionId !== session.sessionId) return false
-
-        if (status.state === "gpu-active") {
-            this.rendererFailures.delete(authenticatedOutputId)
-            this.rendererHealth.set(authenticatedOutputId, { rendererState: status.state, backend: status.backend })
-            this.reportHealth(session, { status: "gpu-active", backend: status.backend })
-            return true
-        }
-
-        if (status.state !== "failed") {
-            this.rendererHealth.set(authenticatedOutputId, { rendererState: status.state, backend: status.backend, reason: status.reason })
-            this.reportHealth(session, { status: status.state, backend: status.backend, reason: status.reason })
-            return true
-        }
-
-        const previousFailure = this.rendererFailures.get(authenticatedOutputId)
-        const canRecreate = previousFailure === undefined || this.scheduler.now() - previousFailure >= RECREATE_CIRCUIT_WINDOW
-        if (canRecreate) {
-            this.rendererFailures.set(authenticatedOutputId, this.scheduler.now())
-            this.rendererHealth.set(authenticatedOutputId, { rendererState: "recovering", reason: status.reason || "gpu_initialization_failed" })
-            this.reportHealth(session, { status: "recovering", reason: status.reason || "gpu_initialization_failed" })
-            this.removeSession(authenticatedOutputId)
-            this.transport.recreateOutput(authenticatedOutputId)
-            return true
-        }
-
-        const reason = status.reason || "gpu_initialization_failed"
-        this.rendererHealth.set(authenticatedOutputId, { rendererState: "legacy-fallback", reason })
-        this.reportHealth(session, { status: "legacy-fallback", reason })
-        this.transport.sendToOutput(authenticatedOutputId, { channel: "OUTPUT_RENDERER_FALLBACK", data: { reason } })
         return true
     }
 
@@ -182,8 +162,6 @@ export class OutputStateBroker {
 
     dispose(): void {
         ;[...this.sessions.keys()].forEach((outputId) => this.removeSession(outputId))
-        this.rendererHealth.clear()
-        this.rendererFailures.clear()
     }
 
     private deliver(session: OutputSession, snapshot: OutputTopicSnapshot): void {
@@ -209,8 +187,9 @@ export class OutputStateBroker {
             }
 
             delivery.retryCount += 1
-            this.sendApply(session, delivery.snapshot)
-            this.reportHealth(session, { status: "retrying", topic: delivery.snapshot.topic, revision: delivery.snapshot.revision, retryCount: delivery.retryCount })
+            if (delivery.awaitingReplacement) this.requestLatestSnapshot(delivery.snapshot)
+            else this.sendApply(session, delivery.snapshot)
+            this.reportHealth(session, { status: "retrying", topic: delivery.snapshot.topic, revision: delivery.snapshot.revision, retryCount: delivery.retryCount, reason: delivery.awaitingReplacement ? "missing_dependency" : undefined })
             this.scheduleRetry(session, key, delivery)
         }, delay)
     }
@@ -223,7 +202,7 @@ export class OutputStateBroker {
             topic: delivery.snapshot.topic,
             revision: delivery.snapshot.revision,
             retryCount: RETRY_DELAYS.length,
-            reason: "acknowledgement_timeout"
+            reason: delivery.awaitingReplacement ? "replacement_snapshot_timeout" : "acknowledgement_timeout"
         }
 
         this.reportHealth(session, health as Pick<OutputStateHealth, "status"> & Partial<OutputStateHealth>)
@@ -239,9 +218,12 @@ export class OutputStateBroker {
         this.transport.sendToOutput(session.outputId, { channel: "OUTPUT_STATE_APPLY", data: apply })
     }
 
+    private requestLatestSnapshot(snapshot: OutputTopicSnapshot): void {
+        this.transport.sendToMain({ channel: "OUTPUT_STATE_NEEDED", data: { keys: [{ topic: snapshot.topic, scope: snapshot.scope }] } })
+    }
+
     private reportHealth(session: OutputSession, health: Pick<OutputStateHealth, "status"> & Partial<OutputStateHealth>): void {
-        const rendererHealth = this.rendererHealth.get(session.outputId)
-        this.transport.sendToMain({ channel: "OUTPUT_STATE_HEALTH", data: { outputId: session.outputId, sessionId: session.sessionId, ...rendererHealth, ...health } })
+        this.transport.sendToMain({ channel: "OUTPUT_STATE_HEALTH", data: { outputId: session.outputId, sessionId: session.sessionId, ...health } })
     }
 
     private clearDelivery(delivery: PendingDelivery): void {

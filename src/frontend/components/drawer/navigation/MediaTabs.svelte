@@ -5,7 +5,7 @@
     import { Main } from "../../../../types/IPC/Main"
     import type { FileFolder } from "../../../../types/Main"
     import { ToMain } from "../../../../types/IPC/ToMain"
-    import { destroyMain, receiveToMain, requestMain, sendMain, subscribeBatches } from "../../../IPC/main"
+    import { destroyMain, receiveToMain, requestMain, requestMainResult, sendMain, subscribeBatches } from "../../../IPC/main"
     import { drawerTabsData, labelsDisabled, media, mediaFolders, providerConnections, special } from "../../../stores"
     import { getAccess } from "../../../utils/profile"
     import { keysToID, sortObject } from "../../helpers/array"
@@ -26,19 +26,29 @@
 
     let allCount = 0
     let folderLengths: { [key: string]: number } = {}
+    let countRequest = 0
+    let countController: AbortController | null = null
     $: if (foldersList.length) getCounts()
     async function getCounts() {
+        countController?.abort()
+        const controller = new AbortController()
+        countController = controller
+        const currentRequest = ++countRequest
         const folderPaths = foldersList.map((a) => a.path || "")
 
         const requestId = uid(8)
         const accum = new Map<string, FileFolder>()
         const off = subscribeBatches<{ requestId: string; entries: FileFolder[] }>(requestId, (batch) => {
+            if (currentRequest !== countRequest || batch.requestId !== requestId) return
             for (const e of batch.entries) accum.set(e.path, e)
         })
 
-        const reply = await requestMain(Main.READ_FOLDER, { path: folderPaths, requestId, useWorker: $special.workerIndexer !== false })
+        const result = await requestMainResult(Main.READ_FOLDER, { path: folderPaths, requestId, useWorker: $special.workerIndexer !== false }, { signal: controller.signal })
         off()
-        const merged = accum.size > 0 ? Object.fromEntries(accum) : reply
+        if (countController === controller) countController = null
+        if (currentRequest !== countRequest || result.status !== "success") return
+
+        const merged = Object.fromEntries(accum)
         const data = keysToID(merged)
 
         const newFolderLengths: { [key: string]: number } = {}
@@ -97,7 +107,10 @@
         if (data.channel !== PICK_ID || !data.path) return
         addDrawerFolder(data, "media")
     })
-    onDestroy(() => destroyMain(listenerId))
+    onDestroy(() => {
+        countController?.abort()
+        destroyMain(listenerId)
+    })
 
     function updateName(e: any) {
         const { id, value } = e.detail

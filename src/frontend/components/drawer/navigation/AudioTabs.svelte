@@ -11,6 +11,7 @@
     import { addDrawerFolder } from "../../helpers/dropActions"
     import Icon from "../../helpers/Icon.svelte"
     import { countFolderMediaItems } from "../../helpers/media"
+    import { isFolderScanComplete } from "../../../utils/folderScan"
     import T from "../../helpers/T.svelte"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
     import NavigationSections from "./NavigationSections.svelte"
@@ -29,7 +30,8 @@
     $: if (foldersList.length) getCounts()
     async function getCounts() {
         const folderPaths = foldersList.map((a) => a.path || "")
-        const data = keysToID((await requestMain(Main.READ_FOLDER, { path: folderPaths })) || {})
+        const result = await requestMain(Main.READ_FOLDER, { path: folderPaths })
+        const data = keysToID(result && !isFolderScanComplete(result) ? result : {})
         const newFolderLengths: { [key: string]: number } = {}
         allCount = 0
 

@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+    </head>
+    <body>
+        <div id="grid"></div>
+        <div id="selected-preview"></div>
+        <div id="source-change"></div>
+        <div id="direct-0"></div>
+        <div id="direct-1"></div>
+        <div id="direct-2"></div>
+        <div id="direct-3"></div>
+        <script type="module">
+            import Textbox from "/src/server/remote/components/show/Textbox.svelte"
+            import { mediaCache } from "/src/server/remote/util/stores.ts"
+
+            // PowerPointHelper.getMediaPath maps a package relationship to this extracted media path.
+            const contentPaths = { "ppt/media/image1.png": "C:\\PowerPoint Imports\\Deck One\\image 1.png" }
+            const item = { type: "media", src: contentPaths["ppt/media/image1.png"], fit: "contain", style: "width: 240px; height: 135px;" }
+            const changedItemPath = "C:\\PowerPoint Imports\\Deck One\\image 2.png"
+            const thumbnail = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+
+            window.remoteThumbnailRequests = []
+            window.remoteThumbnailProvider = (channel, data) => {
+                if (channel !== "API:get_thumbnail" || ![item.src, changedItemPath].includes(data.path)) return
+                mediaCache.update((cache) => ({ ...cache, [data.path]: thumbnail }))
+            }
+
+            new Textbox({ target: document.querySelector("#grid"), props: { item } })
+            new Textbox({ target: document.querySelector("#selected-preview"), props: { item } })
+            const changeable = new Textbox({ target: document.querySelector("#source-change"), props: { item } })
+
+            const pngBytes = Uint8Array.from(atob(thumbnail.split(",")[1]), (byte) => byte.charCodeAt(0))
+            const directSources = [thumbnail, URL.createObjectURL(new Blob([pngBytes], { type: "image/png" })), "http://direct.example.test/image.png", "https://direct.example.test/image.png"]
+            directSources.forEach((src, index) => new Textbox({ target: document.querySelector(`#direct-${index}`), props: { item: { ...item, src } } }))
+
+            setTimeout(() => changeable.$set({ item: { ...item, src: changedItemPath } }), 75)
+
+            setTimeout(() => (window.remoteThumbnailReady = true), 400)
+        </script>
+    </body>
+</html>

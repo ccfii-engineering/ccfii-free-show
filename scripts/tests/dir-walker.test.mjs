@@ -47,13 +47,12 @@ test("walkFolder emits folder entries with files array", async () => {
     assert.equal(rootFolder.files.length, 11, "10 .txt files + 1 sub folder")
 })
 
-test("walkFolder skips unreadable subfolders without aborting", async () => {
+test("walkFolder reports missing requested roots", async () => {
     const root = await makeFixture()
-    const entries = []
-    await walkFolder({ paths: [root, path.join(root, "does-not-exist")], depth: 1, captureFolderContent: false, batchSize: 50 }, (batch) => {
-        entries.push(...batch)
-    })
-    assert.ok(entries.length > 0, "real root still produced entries")
+    await assert.rejects(
+        walkFolder({ paths: [root, path.join(root, "does-not-exist")], depth: 1, captureFolderContent: false, batchSize: 50 }, () => undefined),
+        { code: "ENOENT" }
+    )
 })
 
 test("walkFolder emits at least one batch even for empty folder", async () => {

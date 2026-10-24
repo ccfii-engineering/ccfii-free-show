@@ -95,7 +95,7 @@ import type { MainReturnPayloads } from "./../../types/IPC/Main"
 import { Main } from "./../../types/IPC/Main"
 import { dispatchBatch, sendMain } from "./main"
 
-type MainHandler<ID extends Main | ToMain> = (data: ID extends keyof ToMainSendPayloads ? ToMainSendPayloads[ID] : ID extends keyof MainReturnPayloads ? Awaited<MainReturnPayloads[ID]> : undefined) => void
+type MainHandler<ID extends Main | ToMain> = (data: ID extends keyof ToMainSendPayloads ? ToMainSendPayloads[ID] : ID extends keyof MainReturnPayloads ? Awaited<MainReturnPayloads[ID]> : undefined, signal?: AbortSignal) => void
 export type MainResponses = {
     [ID in Main | ToMain]?: MainHandler<ID>
 }
@@ -192,8 +192,10 @@ export const mainResponses: MainResponses = {
         alertMessage.set("<h3>Updated shows</h3><br>● Old shows: " + oldCount + "<br>● New shows: " + newCount)
         activePopup.set("alert")
     },
-    [ToMain.READ_FOLDER_BATCH]: (data) => {
+    [ToMain.READ_FOLDER_BATCH]: (data, signal) => {
+        if (signal?.aborted) return
         dispatchBatch(data)
+        return { requestId: data.requestId, batchSequence: data.batchSequence, ownerId: data.ownerId, accepted: true as const }
     },
     [ToMain.SHOWS_REFRESH_BATCH]: (data) => {
         // Stream show metadata into the live store as chunks arrive.

@@ -1,11 +1,10 @@
 // ----- FreeShow -----
 // Canonical per-output media playback state (#14/#16).
 //
-// One snapshot per Presentation Output, published by the active Render
-// Generation's visual source (GPU hidden video element or the DOM video) and
-// optionally enriched by sync publishers (the legacy VideoPlayer audio clock).
-// Outgoing sources are tombstoned so a destroyed renderer can never republish;
-// clearing media retires the current owner and drops its late reports.
+// One snapshot per Presentation Output, published by its active DOM video
+// element and optionally enriched by synchronized playback clocks. Outgoing
+// sources are tombstoned so destroyed publishers cannot republish; clearing
+// media retires the current owner and drops its late reports.
 
 export type PlaybackRole = "visual" | "sync"
 
@@ -119,9 +118,8 @@ function mergeReport(state: PlaybackStateMap, report: PlaybackReport, now: numbe
     const current = state.snapshots[report.outputId]
     if (!current) return state
 
-    // media replacement on the same publisher (#18): a visual report describing a different
-    // resource adopts that resource wholesale instead of bleeding its progress/duration into
-    // the previous media's snapshot (video A → video B on one GPU mount shares a sourceId)
+    // Media replacement on the same publisher adopts the new resource without
+    // carrying over progress or duration from the previous media.
     const replacedMedia = report.role === "visual" && !!report.identity && !!current.identity && report.identity !== current.identity
 
     const next: PlaybackSnapshot = replacedMedia

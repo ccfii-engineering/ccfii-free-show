@@ -6,7 +6,6 @@ import { AudioAnalyser } from "../audio/audioAnalyser"
 import { AudioAnalyserMerger } from "../audio/audioAnalyserMerger"
 import { setEqualizerEnabled, updateEqualizerBands } from "../audio/audioEqualizer"
 import { publishPlaybackReport } from "../outputState/playbackStore"
-import { handlePlaybackCommandMessage } from "../outputState/playbackCommands"
 import { runAction } from "../components/actions/actions"
 import { clone } from "../components/helpers/array"
 import { clearBackground } from "../components/output/clear"
@@ -208,8 +207,6 @@ const receiveOUTPUTasMAIN: any = {
             const previous = current[health.outputId]
             if (previous?.status !== health.status) {
                 if (health.status === "recovering") newToast(`Output ${health.outputId} stopped acknowledging state; recreating it once.`)
-                else if (health.status === "legacy-fallback") newToast(`Output ${health.outputId} could not start a GPU backend. Legacy fallback is active for this session.`)
-                else if (health.status === "failed") newToast(`Output ${health.outputId} GPU renderer failed: ${health.reason || "unknown error"}.`)
                 else if (health.status === "unhealthy") newToast(`Output ${health.outputId} is not synchronizing. Restart or disable this output.`)
                 else if (health.status === "render_failed") newToast(`Output ${health.outputId} could not render revision ${health.revision ?? "unknown"}.`)
                 else if (health.status === "healthy" && previous && previous.status !== "syncing") newToast(`Output ${health.outputId} synchronization recovered.`)
@@ -286,7 +283,6 @@ const receiveOUTPUTasMAIN: any = {
 let previousOutputs = ""
 export const receiveOUTPUTasOUTPUT: any = {
     OUTPUT_ACTIVE: (msg: any) => outputRuntimeActive.set({ ...get(outputRuntimeActive), ...msg }),
-    PLAYBACK_COMMAND: (msg: any) => handlePlaybackCommandMessage(msg),
     OUTPUTS: (a: any) => {
         // output.ts - only current output data is sent
         const id = Object.keys(a)[0]

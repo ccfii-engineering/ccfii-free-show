@@ -5,6 +5,7 @@
     import { clearAudio } from "../../../audio/audioFading"
     import { AudioPlayer } from "../../../audio/audioPlayer"
     import { requestMain, sendMain } from "../../../IPC/main"
+    import { isFolderScanComplete } from "../../../utils/folderScan"
     import { activePopup, activeProject, focusMode, media, outLocked, outputs, playingAudio, popupData, projects, styles } from "../../../stores"
     import { translateText } from "../../../utils/language"
     import { audioExtensions, imageExtensions, videoExtensions } from "../../../values/extensions"
@@ -31,7 +32,8 @@
     let folderFiles: TFile[] = []
     const mediaExtensions = [...videoExtensions, ...imageExtensions, ...audioExtensions]
     onMount(async () => {
-        const files = keysToID((await requestMain(Main.READ_FOLDER, { path, generateThumbnails: true })) || {})
+        const result = await requestMain(Main.READ_FOLDER, { path, generateThumbnails: true })
+        const files = keysToID(result && !isFolderScanComplete(result) ? result : {})
         folderFiles = sortByName(files.filter((a) => mediaExtensions.includes(getExtension(a.name))).map((a) => ({ path: a.path, name: a.name, type: getMediaType(getExtension(a.name)), thumbnail: (a as any).thumbnailPath })))
 
         // get total time

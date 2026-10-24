@@ -1,57 +1,106 @@
 import fs from "fs"
 import path from "path"
-import type { FileFolder } from "../../types/Main"
 import type { WalkBatchCallback, WalkOptions } from "./types"
+import type { FileFolder } from "../../types/Main"
 
 const DEFAULT_BATCH_SIZE = 200
 const STAT_CONCURRENCY = 16
 
-function statAsync(p: string): Promise<fs.Stats | null> {
-    return new Promise((resolve) => fs.stat(p, (err, stats) => resolve(err ? null : stats)))
+function createWalkAbortError() {
+    const error = new Error("Folder scan cancelled")
+    error.name = "AbortError"
+    return error
 }
 
-function readdirAsync(p: string): Promise<string[]> {
-    return new Promise((resolve) => fs.readdir(p, (err, names) => resolve(err ? [] : names)))
+function throwIfAborted(signal?: AbortSignal) {
+    if (signal?.aborted) throw createWalkAbortError()
 }
 
-class Semaphore {
-    private inflight = 0
-    private queue: (() => void)[] = []
-    private limit: number
-    constructor(limit: number) {
-        this.limit = limit
+function statAsync(filePath: string, signal?: AbortSignal): Promise<fs.Stats | null> {
+    return new Promise((resolve, reject) => {
+        fs.stat(filePath, (err, stats) => {
+            if (signal?.aborted) {
+                reject(createWalkAbortError())
+                return
+            }
+            resolve(err ? null : stats)
+        })
+    })
+}
+
+async function readdirAsync(folderPath: string, signal?: AbortSignal): Promise<string[]> {
+    throwIfAborted(signal)
+    return new Promise((resolve, reject) => {
+        fs.readdir(folderPath, (err, names) => {
+            if (signal?.aborted) reject(createWalkAbortError())
+            else if (err) reject(err)
+            else resolve(names)
+        })
+    })
+}
+
+async function statDirectoryRequiredAsync(folderPath: string, signal?: AbortSignal): Promise<fs.Stats> {
+    throwIfAborted(signal)
+    return new Promise((resolve, reject) => {
+        fs.stat(folderPath, (err, stats) => {
+            if (signal?.aborted) reject(createWalkAbortError())
+            else if (err) reject(err)
+            else if (!stats.isDirectory()) reject(new Error(`Folder scan root is not a directory: ${folderPath}`))
+            else resolve(stats)
+        })
+    })
+}
+
+async function deliverBatch(batch: FileFolder[], onBatch: WalkBatchCallback, signal?: AbortSignal) {
+    throwIfAborted(signal)
+    const delivery = Promise.resolve().then(() => onBatch(batch))
+    if (!signal) {
+        await delivery
+        return
     }
-    async acquire() {
-        if (this.inflight < this.limit) {
-            this.inflight++
-            return
-        }
-        await new Promise<void>((resolve) => this.queue.push(resolve))
-        this.inflight++
+
+    let onAbort: (() => void) | undefined
+    const aborted = new Promise<never>((_, reject) => {
+        onAbort = () => reject(createWalkAbortError())
+        signal.addEventListener("abort", onAbort, { once: true })
+    })
+    try {
+        await Promise.race([delivery, aborted])
+    } finally {
+        if (onAbort) signal.removeEventListener("abort", onAbort)
     }
-    release() {
-        this.inflight--
-        const next = this.queue.shift()
-        if (next) next()
-    }
+    throwIfAborted(signal)
 }
 
 export async function walkFolder(opts: WalkOptions, onBatch: WalkBatchCallback): Promise<void> {
     const batchSize = opts.batchSize ?? DEFAULT_BATCH_SIZE
-    const sem = new Semaphore(STAT_CONCURRENCY)
+    const signal = opts.signal
     const visited = new Set<string>()
     let buffer: FileFolder[] = []
+    let flushing: Promise<void> | null = null
 
-    const flush = async (force = false) => {
-        if (!buffer.length) return
-        if (!force && buffer.length < batchSize) return
-        const out = buffer
-        buffer = []
-        onBatch(out)
-        await new Promise<void>((r) => setImmediate(r))
+    const flush = async (force = false): Promise<void> => {
+        if (flushing) {
+            await flushing
+            await flush(force)
+            return
+        }
+        if (!buffer.length || (!force && buffer.length < batchSize)) return
+
+        const batch = buffer.splice(0, Math.min(batchSize, buffer.length))
+        const current = deliverBatch(batch, onBatch, signal)
+        flushing = current
+        try {
+            await current
+        } finally {
+            if (flushing === current) flushing = null
+        }
+
+        if (buffer.length >= batchSize || (force && buffer.length)) await flush(force)
     }
 
     const walk = async (folderPath: string, currentDepth: number) => {
+        throwIfAborted(signal)
         if (visited.has(folderPath)) return
         visited.add(folderPath)
 
@@ -61,46 +110,55 @@ export async function walkFolder(opts: WalkOptions, onBatch: WalkBatchCallback):
         if (captureMode ? false : exceededDepth) {
             let shallowFiles: string[] = []
             if (currentDepth === 1) {
-                const shallowNames = await readdirAsync(folderPath)
-                shallowFiles = shallowNames.map((n) => path.join(folderPath, n))
+                const shallowNames = await readdirAsync(folderPath, signal)
+                shallowFiles = shallowNames.map((name) => path.join(folderPath, name))
             }
             buffer.push({ isFolder: true, path: folderPath, name: path.basename(folderPath), files: shallowFiles })
             await flush()
             return
         }
 
-        const names = await readdirAsync(folderPath)
-        const filePaths = names.map((n) => path.join(folderPath, n))
+        const names = await readdirAsync(folderPath, signal)
+        const filePaths = names.map((name) => path.join(folderPath, name))
+        const childDirectories: (string | undefined)[] = new Array(filePaths.length)
+        let nextIndex = 0
 
-        const childPromises: Promise<void>[] = []
-        for (const filePath of filePaths) {
-            await sem.acquire()
-            childPromises.push(
-                (async () => {
-                    try {
-                        const stats = await statAsync(filePath)
-                        if (!stats) return
-                        if (stats.isDirectory()) {
-                            await walk(filePath, currentDepth + 1)
-                        } else {
-                            buffer.push({ isFolder: false, path: filePath, name: path.basename(filePath), stats })
-                            if (buffer.length >= batchSize) await flush()
-                        }
-                    } finally {
-                        sem.release()
-                    }
-                })()
-            )
+        const statNext = async () => {
+            while (true) {
+                throwIfAborted(signal)
+                const index = nextIndex++
+                if (index >= filePaths.length) return
+
+                const filePath = filePaths[index]
+                const stats = await statAsync(filePath, signal)
+                throwIfAborted(signal)
+                if (!stats) continue
+
+                if (stats.isDirectory()) {
+                    childDirectories[index] = filePath
+                    continue
+                }
+
+                buffer.push({ isFolder: false, path: filePath, name: path.basename(filePath), stats })
+                if (buffer.length >= batchSize) await flush()
+            }
         }
-        await Promise.all(childPromises)
+
+        const statWorkerCount = Math.min(STAT_CONCURRENCY, filePaths.length)
+        await Promise.all(Array.from({ length: statWorkerCount }, () => statNext()))
+
+        for (const childPath of childDirectories) {
+            throwIfAborted(signal)
+            if (childPath) await walk(childPath, currentDepth + 1)
+        }
 
         buffer.push({ isFolder: true, path: folderPath, name: path.basename(folderPath), files: filePaths })
         if (buffer.length >= batchSize) await flush()
     }
 
     for (const root of opts.paths) {
-        const stats = await statAsync(root)
-        if (!stats?.isDirectory()) continue
+        throwIfAborted(signal)
+        await statDirectoryRequiredAsync(root, signal)
         await walk(root, 0)
     }
 

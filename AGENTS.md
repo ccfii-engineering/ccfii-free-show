@@ -92,3 +92,7 @@ All configs live under `config/`:
 - `prefer-const`, `no-var`, `eqeqeq` (smart)
 - Svelte A11y warnings are suppressed in the Vite config
 - `@typescript-eslint/no-explicit-any` is off — `any` is used liberally in the codebase
+
+## Code Navigation
+
+For symbol lookups, cross-layer control/output flows, or navigation setup, start with [`docs/agents/code-navigation.md`](docs/agents/code-navigation.md).

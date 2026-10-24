@@ -125,13 +125,9 @@ This is "FreeShow - CCFII Edition" — a theme-level rebrand, not a full replace
 ### Theme Migration
 When changing default theme colors, update the migration check in `src/frontend/utils/updateSettings.ts` (around line 149). The app persists theme settings — without a migration, existing users keep old colors even after the code changes. Match on old color values to trigger a reset to `defaultThemes.default`.
 
-### WebGPU Output Architecture
+### Presentation Output
 
-`WebGPUOutput.svelte` is a thin ~175-line wrapper around the regular `Output.svelte`. It owns a Pixi application and layer manager and provides a `pixiBackgroundBridge` via Svelte context. `Background.svelte` checks the context and, for supported media types (media/video/image), delegates to the bridge and renders nothing to the DOM. Unsupported live types (screen/ndi/blackmagic/camera/player) fall through to DOM rendering. All other features (effects, PDF, PPT, draw, attribution, animation, cropping, mirror/preview, styleIdOverride, overlays, colorbars, slideFilter, ignoreLayer, backgroundColor fallbacks) are handled by Output.svelte directly — no duplication.
-
-**Toggle**: `special.useWebGPUOutput` (global, default true for CCFII) or `output.useWebGPU` (per-output override). Stage outputs always use DOM. Rollback is Settings → Outputs → "Use GPU-accelerated output rendering" toggle off — no restart required.
-
-**Animation parity**: slide background animations (Ken-Burns, scale, rotate) work on the GPU path via `backgroundAnimation.ts` which parses the CSS transform strings emitted by `src/frontend/components/output/animation.ts` and lerps Pixi sprite transforms. Tests in `scripts/tests/pixi-background-animation.test.mjs`.
+`MainOutput.svelte` mounts the standard DOM `Output.svelte`. The custom Pixi/WebGPU renderer, its settings, and renderer-specific playback integrations have been removed; normal Electron GPU acceleration remains. The accepted direction and rationale are recorded in [ADR 0003](docs/adr/0003-retire-custom-gpu-output-renderer.md). Use [`docs/agents/code-navigation.md`](docs/agents/code-navigation.md) for current IPC, output-state, playback-control, and media-scan flows; use [`docs/testing/foundation-validation.md`](docs/testing/foundation-validation.md) and [`docs/testing/output-acceptance.md`](docs/testing/output-acceptance.md) for validation evidence and qualification boundaries.
 
 ## Performance Notes
 
@@ -144,33 +140,6 @@ The app has a known reactive-storm sensitivity due to Svelte 3 + large global st
 
 Full audit at `docs/superpowers/audits/2026-04-09-performance-audit.md` with prioritized remediations.
 
-## Using Serena (MCP)
+## Code Navigation
 
-This project is registered with Serena. **Prefer Serena's semantic tools over generic file reads/greps** — this codebase is large (Electron + Svelte + multiple server apps + converters for many presentation formats) and blind file reads waste context fast.
-
-### Always start a session with
-1. `mcp__serena__check_onboarding_performed` — verify Serena is active for `ccfii-free-show`.
-2. `mcp__serena__list_memories` + `mcp__serena__read_memory` — load the relevant memory files before exploring. Key memories: `project_overview`, `codebase_structure`, `suggested_commands`, `code_style_conventions`, `task_completion_checklist`, `ccfii_fork_notes`.
-
-### Preferred tool mapping
-Use Serena's symbolic tools as the default; fall back to `Read`/`Grep`/`Glob` only when symbolic access isn't possible (non-code files, config, markdown).
-
-| Task | Use |
-|---|---|
-| Understand a file's shape before reading it | `mcp__serena__get_symbols_overview` |
-| Find a class/function/method by name | `mcp__serena__find_symbol` (with `name_path`, `include_body` only when needed) |
-| Find all callers/usages of a symbol | `mcp__serena__find_referencing_symbols` |
-| Fuzzy search for a pattern across the repo | `mcp__serena__search_for_pattern` |
-| Locate a file by name | `mcp__serena__find_file` |
-| Edit a function/class body wholesale | `mcp__serena__replace_symbol_body` |
-| Insert code near an existing symbol | `mcp__serena__insert_before_symbol` / `insert_after_symbol` |
-| Rename a symbol across the project | `mcp__serena__rename_symbol` |
-| Delete a symbol safely | `mcp__serena__safe_delete_symbol` |
-
-**Do not** read entire files (e.g. `App.svelte`, large converters, `stores.ts`) just to find one function — use `get_symbols_overview` then `find_symbol` with a targeted `name_path`. Only read symbol bodies when you actually need to edit or fully understand them.
-
-### Writing memories
-When you learn something durable about the codebase (non-obvious patterns, gotchas, cross-cutting conventions), save it with `mcp__serena__write_memory` so future sessions benefit. Update existing memories rather than creating duplicates. Memories live in `.serena/memories/` and persist across conversations for this project.
-
-### Scoping searches
-Always pass `relative_path` to Serena tools when you know the area (e.g. `src/electron/output`, `src/frontend/converters`) — this keeps the token cost of symbolic operations bounded.
+Start with [`docs/agents/code-navigation.md`](docs/agents/code-navigation.md) for current IPC, Presentation Output, video controls/observations, media scans, Serena/Graphify, and graph-refresh guidance. The repo's Serena config is `.serena/project.yml`; its selected memories are `project_overview` and `code_navigation`. On Serena, read `initial_instructions`, then load relevant memories with `list_memories` and `read_memory`.

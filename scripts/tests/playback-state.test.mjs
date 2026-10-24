@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { applyPlaybackReport, clearOutputPlayback, emptyPlaybackState, normalizePlaybackReport } from "../../src/frontend/outputState/playbackState.ts"
 
-const visualReport = (overrides = {}) => normalizePlaybackReport({ outputId: "default", sourceId: "gpu-a", role: "visual", identity: "/media/a.webm", duration: 10, progress: 1, paused: false, loop: true, muted: true, ...overrides })
+const visualReport = (overrides = {}) => normalizePlaybackReport({ outputId: "default", sourceId: "dom-a", role: "visual", identity: "/media/a.webm", duration: 10, progress: 1, paused: false, loop: true, muted: true, ...overrides })
 
 test("normalizes and rejects malformed reports", () => {
     assert.equal(normalizePlaybackReport(null), null)
@@ -21,16 +21,16 @@ test("normalizes and rejects malformed reports", () => {
 test("first visual source claims ownership and creates the snapshot", () => {
     const state = applyPlaybackReport(emptyPlaybackState(), visualReport())
     const snapshot = state.snapshots.default
-    assert.equal(snapshot.generation, "gpu-a")
+    assert.equal(snapshot.generation, "dom-a")
     assert.equal(snapshot.duration, 10)
     assert.equal(snapshot.progress, 1)
-    assert.equal(state.activeVisual.default, "gpu-a")
+    assert.equal(state.activeVisual.default, "dom-a")
 })
 
 test("a newer visual source supersedes the previous owner and its late reports are rejected", () => {
     let state = applyPlaybackReport(emptyPlaybackState(), visualReport())
-    state = applyPlaybackReport(state, visualReport({ sourceId: "gpu-b", identity: "/media/b.webm", progress: 2 }))
-    assert.equal(state.activeVisual.default, "gpu-b")
+    state = applyPlaybackReport(state, visualReport({ sourceId: "dom-b", identity: "/media/b.webm", progress: 2 }))
+    assert.equal(state.activeVisual.default, "dom-b")
     assert.equal(state.snapshots.default.identity, "/media/b.webm")
     assert.equal(state.snapshots.default.progress, 2)
 
@@ -43,8 +43,8 @@ test("a newer visual source supersedes the previous owner and its late reports a
 test("sync publishers merge fields but never take visual ownership", () => {
     let state = applyPlaybackReport(emptyPlaybackState(), visualReport({ progress: 3 }))
     state = applyPlaybackReport(state, visualReport({ sourceId: "sync-1", role: "sync", progress: 4, duration: 12 }))
-    assert.equal(state.activeVisual.default, "gpu-a")
-    assert.equal(state.snapshots.default.generation, "gpu-a")
+    assert.equal(state.activeVisual.default, "dom-a")
+    assert.equal(state.snapshots.default.generation, "dom-a")
     assert.equal(state.snapshots.default.progress, 4)
     assert.equal(state.snapshots.default.duration, 12)
 })
@@ -76,14 +76,14 @@ test("clearing removes stale duration and progress and stops late publisher repo
 test("a cleared output accepts a brand new renderer session again", () => {
     let state = applyPlaybackReport(emptyPlaybackState(), visualReport())
     state = clearOutputPlayback(state, "default")
-    state = applyPlaybackReport(state, visualReport({ sourceId: "gpu-c", identity: "/media/c.webm", progress: 0.5 }))
-    assert.equal(state.snapshots.default.generation, "gpu-c")
+    state = applyPlaybackReport(state, visualReport({ sourceId: "dom-c", identity: "/media/c.webm", progress: 0.5 }))
+    assert.equal(state.snapshots.default.generation, "dom-c")
     assert.equal(state.snapshots.default.progress, 0.5)
 })
 
 test("two outputs never overwrite one another's snapshots", () => {
     let state = applyPlaybackReport(emptyPlaybackState(), visualReport())
-    state = applyPlaybackReport(state, visualReport({ outputId: "second", sourceId: "gpu-x", identity: "/media/x.webm", progress: 5 }))
+    state = applyPlaybackReport(state, visualReport({ outputId: "second", sourceId: "dom-x", identity: "/media/x.webm", progress: 5 }))
 
     state = applyPlaybackReport(state, visualReport({ outputId: "second", progress: 6 }))
     assert.equal(state.snapshots.default.progress, 1)

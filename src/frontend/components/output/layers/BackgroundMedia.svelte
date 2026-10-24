@@ -10,7 +10,6 @@
     import type { OutBackground, Transition } from "../../../../types/Show"
     import { AudioAnalyser } from "../../../audio/audioAnalyser"
     import { audioChannelsData, currentWindow, media, outputs, playerVideos, playingVideos, special, videosData, videosTime, volume } from "../../../stores"
-    import { isGpuGeneration } from "../../../outputState/playbackCommands"
     import type { PlaybackSnapshot } from "../../../outputState/playbackState"
     import { sendPlaybackReport, subscribePlaybackState } from "../../../outputState/playbackStore"
     import { destroy, receive, send } from "../../../utils/request"
@@ -18,12 +17,13 @@
     import NdiStream from "../../drawer/live/NDIStream.svelte"
     import { getMediaStyle } from "../../helpers/media"
     import { getPreviewVideoSyncUpdate } from "../videoPreviewSync"
+    import { mergeOutputVideoData, readOutputVideoTime } from "../../media/video/outputPlaybackControl"
     import Player from "../../system/Player.svelte"
     import Camera from "../Camera.svelte"
     import OutputTransition from "../transitions/OutputTransition.svelte"
     import Window from "../Window.svelte"
     import Media from "./Media.svelte"
-    import { isVideoTimeReset } from "../webgpu/videoControlState"
+    import { isVideoTimeReset } from "../videoTime"
 
     export let outputId = ""
 
@@ -47,7 +47,7 @@
 
     // VIDEO
 
-    let videoData = { duration: 0, paused: true, muted: true, loop: styleBackground }
+    let videoData: { duration: number; paused: boolean; muted: boolean; loop: boolean } = { duration: 0, paused: false, muted: true, loop: styleBackground }
     let videoTime = 0
 
     // let videoDuration = 0
@@ -67,7 +67,7 @@
     // draw
 
     let previewPlaybackUnsubscriber: Unsubscriber | null = null
-    let gpuOwnsPreviewPlayback = false
+    let canonicalPreviewPlaybackActive = false
     $: configurePreviewPlaybackSync(mirror, styleBackground, outputId, id)
 
     function configurePreviewPlaybackSync(mirror: boolean, styleBackground: boolean, outputId: string, identity: string) {
@@ -76,8 +76,8 @@
 
         previewPlaybackUnsubscriber = subscribePlaybackState((state) => {
             const snapshot = state.snapshots[outputId]
-            gpuOwnsPreviewPlayback = !!snapshot && isGpuGeneration(snapshot.generation)
-            if (!gpuOwnsPreviewPlayback || snapshot?.identity !== identity) return
+            canonicalPreviewPlaybackActive = !!snapshot && snapshot.identity === identity
+            if (!canonicalPreviewPlaybackActive || !snapshot) return
 
             applyPreviewPlaybackSnapshot(snapshot)
         })
@@ -101,21 +101,20 @@
     function stopPreviewPlaybackSync() {
         previewPlaybackUnsubscriber?.()
         previewPlaybackUnsubscriber = null
-        gpuOwnsPreviewPlayback = false
+        canonicalPreviewPlaybackActive = false
     }
 
     onDestroy(stopPreviewPlaybackSync)
 
-    // Without the second if, legacy preview videos don't actually play but just skip ahead
-    // when kept in sync with the setTimeout(). GPU previews use the canonical snapshot above.
-    $: if (mirror && !styleBackground && !gpuOwnsPreviewPlayback && $videosData[outputId]?.paused) videoData.paused = true
-    $: if (mirror && !styleBackground && !gpuOwnsPreviewPlayback && $videosData[outputId]?.paused === false) videoData.paused = false
+    // Without the second if, preview videos don't actually play but just skip ahead when kept in sync with the setTimeout().
+    $: if (mirror && !styleBackground && !canonicalPreviewPlaybackActive && $videosData[outputId]?.paused) videoData.paused = true
+    $: if (mirror && !styleBackground && !canonicalPreviewPlaybackActive && $videosData[outputId]?.paused === false) videoData.paused = false
 
-    $: if (mirror && !styleBackground && !gpuOwnsPreviewPlayback && $videosTime[outputId] !== undefined) setPreviewVideoTime()
+    $: if (mirror && !styleBackground && !canonicalPreviewPlaybackActive && $videosTime[outputId] !== undefined) setPreviewVideoTime()
     function setPreviewVideoTime() {
         // timeout in case video is going to fade out
         setTimeout(() => {
-            if (gpuOwnsPreviewPlayback) return
+            if (canonicalPreviewPlaybackActive) return
 
             const update = getPreviewVideoSyncUpdate({
                 fadingOut,
@@ -155,7 +154,7 @@
         const wrapped = isVideoTimeReset(time, lastReportedTime)
         lastReportedTime = time
 
-        // canonical per-output playback state (#16) — wraps bypass the throttle like GPU reports do
+        // Loop wraps bypass the time-update throttle.
         sendPlaybackReport({ outputId, sourceId: playbackSourceId, role: "visual", identity: id, duration: videoData?.duration || 0, progress: time, paused: videoData?.paused ?? true, loop: videoData?.loop ?? false, muted: videoData?.muted ?? true, ...(wrapped ? { event: "wrap" } : {}) })
 
         send(OUTPUT, ["MAIN_TIME"], { [outputId]: time })
@@ -169,16 +168,20 @@
 
     const videoReceiver = {
         TIME: (data: any) => {
-            let outputData = data[outputId]
-            if (!outputData || fadingOut) return
+            const outputData = data?.[outputId]
+            const time = readOutputVideoTime(outputData, id)
+            if (time === undefined || fadingOut) return
 
-            videoTime = outputData
+            videoTime = time
         },
         DATA: (data: any) => {
-            let outputData = data[outputId]
+            const outputData = data?.[outputId]
             if (!outputData || fadingOut) return
 
-            videoData = { ...outputData, duration: videoData.duration || 0 }
+            const updatedVideoData = mergeOutputVideoData(videoData, outputData, id)
+            if (!updatedVideoData) return
+
+            videoData = { ...updatedVideoData, duration: videoData.duration || 0 }
         }
     }
 
@@ -289,7 +292,7 @@
 
 <OutputTransition {transition} inTransition={transition.in} outTransition={transition.out} on:outrostart={() => (fadingOut = true)}>
     {#if type === "media"}
-        <Media path={id} {data} {animationStyle} bind:video bind:videoData bind:videoTime {mirror} {mediaStyle} on:loaded on:ended={videoEnded} />
+        <Media {outputId} path={id} {data} {animationStyle} bind:video bind:videoData bind:videoTime {mirror} {mediaStyle} on:loaded on:ended={videoEnded} />
     {:else if type === "screen"}
         <Window {id} class="media" style="width: 100%;height: 100%;" on:loaded />
     {:else if type === "ndi"}

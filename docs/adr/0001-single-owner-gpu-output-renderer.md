@@ -1,8 +1,10 @@
 ---
-status: accepted
+status: superseded
 ---
 
 # Use one GPU-first owner for each presentation output
+
+Superseded by ADR-0003. This record is retained as historical context for the retired custom GPU output renderer.
 
 Each Presentation Output has one Output Coordinator that owns the complete visible frame. The GPU Output Renderer is the default across physical and distribution targets; it may use WebGPU or WebGL as its graphics backend. The Legacy Output Renderer may replace the complete renderer only after bounded recovery fails, and it must never be mixed into the same visible frame. This prevents independently retained render generations, makes failure behavior observable, and preserves an emergency path while GPU coverage is completed.
 

@@ -99,7 +99,6 @@ import {
 } from "./../stores"
 import { checkForUpdates } from "./checkForUpdates"
 import { isMainWindow, startAutosave } from "./common"
-import { withLaunchGpuVideoLifecycleQualified } from "./launchFlags"
 import { setLanguage } from "./language"
 import { startRemoteController } from "./remoteController"
 import { send } from "./request"
@@ -154,12 +153,6 @@ export function updateSettings(data: any) {
     if (disabled.stage === undefined) disabled.stage = false
     const customPorts: { [key: string]: number } = data.ports || { remote: 5510, stage: 5511 }
     sendMain(Main.START, { ports: customPorts, max: data.maxConnections === undefined ? 10 : data.maxConnections, disabled, data: get(serverData) })
-
-    // WebGPU output renderer — default on for CCFII fork. User can toggle off in Settings → Advanced
-    // if any specific output misbehaves, via a per-output flag or globally via special.useWebGPUOutput.
-    if (get(special).useWebGPUOutput === undefined) {
-        special.update((a) => ({ ...a, useWebGPUOutput: true }))
-    }
 
     // Background indexer worker — default on. Toggle off if the worker misbehaves.
     if (get(special).workerIndexer === undefined) {
@@ -319,6 +312,7 @@ const updateList: { [key in SaveListSettings | SaveListSyncedSettings]: any } = 
     outputs: (v: any) => {
         Object.keys(v).forEach((id: string) => {
             delete v[id].out
+            delete v[id].useWebGPU
             if (v[id].webrtcData?.streaming) v[id].webrtcData.streaming = false
             if (v[id].rtmpData?.streaming) v[id].rtmpData.streaming = false
         })
@@ -444,7 +438,9 @@ const updateList: { [key in SaveListSettings | SaveListSyncedSettings]: any } = 
         }
         if (Object.keys(deletedDefaultsValue).length) deletedDefaults.set(deletedDefaultsValue)
 
-        special.set(withLaunchGpuVideoLifecycleQualified(v))
+        delete v.useWebGPUOutput
+        delete v.gpuVideoLifecycleQualified
+        special.set(v)
     },
     timeline: (v: any) => timeline.set(v),
     timecode: (v: any) => timecode.set(v),

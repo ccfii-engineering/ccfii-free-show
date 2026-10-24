@@ -7,7 +7,7 @@ import { detectNewFiles, doesPathExist } from "./files"
 import { initSpotify } from "./spotify"
 
 export function parseCommandLineArgs() {
-    const result: { profile?: string; gpuVideoLifecycleQualified?: boolean } = {}
+    const result: { profile?: string } = {}
     if (!isProd) return result
 
     const args = process.argv.slice(1)
@@ -15,8 +15,6 @@ export function parseCommandLineArgs() {
         // support --profile=Name & -p=Name
         if (arg.startsWith("--profile=")) result.profile = arg.substring("--profile=".length)
         else if (arg.startsWith("-p=")) result.profile = arg.substring("-p=".length)
-        // explicit GPU video lifecycle qualification gate for tests/development (#15)
-        else if (arg.startsWith("--gpu-video-lifecycle-qualified")) result.gpuVideoLifecycleQualified = true
     }
 
     setAutoProfile(result.profile || "")

@@ -18,6 +18,9 @@ import type { StageLayouts } from "../Stage"
 import type { Event } from "./../Calendar"
 import type { History } from "./../History"
 import type { SaveData, SaveListSyncedSettings } from "./../Save"
+import type { IPCRequestMetadata } from "./Request"
+
+export type FolderScanComplete = { status: "complete"; entryCount: number }
 
 export const MAIN = "MAIN"
 
@@ -350,7 +353,7 @@ export interface MainReturnPayloads {
     [Main.GET_MEDIA_FOLDER_PATH]: string
     [Main.READ_BIBLES_FOLDER]: { path: string; name: string }[]
     [Main.FILE_INFO]: { path: string; stat: Stats; extension: string; folder: boolean } | null
-    [Main.READ_FOLDER]: Promise<{ [key: string]: FileFolder }>
+    [Main.READ_FOLDER]: Promise<{ [key: string]: FileFolder } | FolderScanComplete>
     [Main.READ_FILE]: { content: string }
     // SYNC
     [Main.CAN_SYNC]: Promise<boolean>
@@ -395,9 +398,10 @@ export type MainReceiveData<ID extends Main> = ID extends keyof MainSendPayloads
 export type MainReceiveValue<ID extends Main = Main> = {
     channel: ID
     data: MainReceiveData<ID>
+    ipcRequest?: IPCRequestMetadata
 }
 
-type MainHandler<ID extends Main> = (data: ID extends keyof MainSendPayloads ? MainSendPayloads[ID] : undefined, e: Electron.IpcMainEvent) => ID extends keyof MainReturnPayloads ? MainReturnPayloads[ID] : void
+type MainHandler<ID extends Main> = (data: ID extends keyof MainSendPayloads ? MainSendPayloads[ID] : undefined, e: Electron.IpcMainEvent, signal?: AbortSignal) => ID extends keyof MainReturnPayloads ? MainReturnPayloads[ID] : void
 export type MainResponses = {
     [ID in Main]: MainHandler<ID>
 }

@@ -25,7 +25,6 @@ test.beforeEach(async ({ context }) => {
 test("Launch electron app", async () => {
     const tmpSettingFolder = tmp.dirSync({ unsafeCleanup: true })
     seedWindowConfig(tmpSettingFolder.name)
-    const gpuRendererErrors: string[] = []
     const electronApp = await electron.launch({
         args: launchArgs(tmpSettingFolder.name),
         env: { ...process.env, NODE_ENV: "production" }
@@ -34,12 +33,10 @@ test("Launch electron app", async () => {
         page.on("console", (message) => {
             const text = message.text()
             console.log(`[renderer:${message.type()}] ${text}`)
-            if (message.type() === "error" && /WebGPUOutput|GPUTextureUsage|GPU backend/i.test(text)) gpuRendererErrors.push(text)
         })
         page.on("pageerror", (error) => {
             const text = error.stack || error.message
             console.log(`[renderer:error] ${text}`)
-            if (/WebGPUOutput|GPUTextureUsage|GPU backend/i.test(text)) gpuRendererErrors.push(text)
         })
         page.on("requestfailed", (request) => console.log(`[renderer:requestfailed] ${redactUrlQuery(request.url())} — ${request.failure()?.errorText || "unknown"}`))
     }
@@ -159,8 +156,8 @@ test("Launch electron app", async () => {
         await window.keyboard.press("Control+s")
         await delay(5_000)
 
-        // Regression fixture for the duplicated Presentation Output: the real Electron output
-        // must mount one coordinator and one qualified GPU canvas, including after rapid input.
+        // The real Presentation Output must mount through its ordinary DOM renderer, including
+        // after rapid input, Clear All, and Restore.
         const outputButton = window.locator("#output_window_button")
         await expect(outputButton).toBeEnabled({ timeout: 5 * timeoutMs })
         await outputButton.click({ timeout: timeoutMs })
@@ -179,28 +176,26 @@ test("Launch electron app", async () => {
 
         const coordinator = outputWindow.locator("[data-output-coordinator]")
         await expect(coordinator).toHaveCount(1)
-        await expect(coordinator).toHaveAttribute("data-renderer-mode", "gpu")
-        const gpuCanvas = outputWindow.locator("canvas[data-gpu-backend]")
-        await expect(gpuCanvas).toHaveCount(1, { timeout: 10 * timeoutMs })
-        await expect(gpuCanvas).toHaveAttribute("data-gpu-backend", /webgpu|webgl/)
-
+        const ordinaryOutput = outputWindow.locator(".zoomed")
+        await expect(ordinaryOutput).toHaveCount(1, { timeout: 10 * timeoutMs })
         await window.keyboard.press("ArrowRight")
         await window.keyboard.press("ArrowRight")
         await window.keyboard.press("ArrowLeft")
         await delay(1_000)
+        await expect(ordinaryOutput).toContainText(/test line [1-4]/, { timeout: 10 * timeoutMs })
+
         await expect(coordinator).toHaveCount(1)
-        await expect(gpuCanvas).toHaveCount(1)
+        await expect(ordinaryOutput).toHaveCount(1)
 
         const clearAll = window.locator(".clearAll")
         if ((await clearAll.count()) > 0 && (await clearAll.first().isEnabled())) {
             await clearAll.first().click()
             await expect(coordinator).toHaveCount(1)
-            await expect(gpuCanvas).toHaveCount(1)
+            await expect(ordinaryOutput).toHaveCount(1)
             await window.getByText("Restore output").first().click({ timeout: timeoutMs })
             await expect(coordinator).toHaveCount(1)
-            await expect(gpuCanvas).toHaveCount(1)
+            await expect(ordinaryOutput).toHaveCount(1)
         }
-        expect(gpuRendererErrors).toEqual([])
     } catch (ex) {
         console.log("Taking screenshot")
         console.log((await window.locator("body").innerText()).slice(0, 2000))

@@ -24,11 +24,11 @@ import { playNextGroup, selectProjectShow, updateOut } from "../helpers/showActi
 import { _show } from "../helpers/shows"
 import { VideoPlayer } from "../media/video/videoPlayer"
 import { getPlaybackSnapshot } from "../../outputState/playbackStore"
-import { isGpuGeneration, sendPlaybackCommand } from "../../outputState/playbackCommands"
 import { resolveScriptureReference } from "../drawer/bible/scripture"
 import { clearBackground, clearSlide } from "../output/clear"
 import { getPlainEditorText } from "../show/getTextEditor"
 import { getSlideGroups } from "../show/tools/groups"
+import { getOutputMediaLoop, toggleMediaLoop as toggleMediaLoopCommand } from "./mediaLoopCommand"
 import type { API_add_to_project, API_create_project, API_draw_zoom, API_edit_timer, API_group, API_id_index, API_id_value, API_layout, API_media, API_output_lock, API_rearrange, API_scripture, API_seek, API_slide_index, API_toggle_specific, API_variable } from "./api"
 
 export function selectShowById(id: string) {
@@ -694,15 +694,6 @@ export function videoSeekTo(data: API_seek) {
     const path = bg?.path || bg?.id
     if (!path) return
 
-    // route to the renderer that owns the active output (#17); mirror to the
-    // legacy audio engine so sound and visible position stay aligned
-    const snapshot = getPlaybackSnapshot(outputId)
-    if (snapshot && isGpuGeneration(snapshot.generation)) {
-        sendPlaybackCommand(outputId, { type: "seek", time: data.seconds })
-        VideoPlayer.seekTo(path, outputId, data.seconds)
-        return
-    }
-
     VideoPlayer.seekTo(path, outputId, data.seconds)
 }
 
@@ -715,8 +706,12 @@ export function toggleMediaLoop() {
     const currentBg = get(outputs)[activeOutput.id]?.out?.background
     if (!currentBg) return
 
-    const isLooping = currentBg.loop !== false
-    setOutput("background", { ...currentBg, loop: !isLooping })
+    toggleMediaLoopCommand({
+        outputId: activeOutput.id,
+        background: currentBg,
+        setBackground: (background) => setOutput("background", background, false, activeOutput.id),
+        setOutputLoop: (path, outputId, loop) => VideoPlayer.setLoop(path, outputId, loop)
+    })
 }
 
 export function getMediaLoopState(): boolean {
@@ -724,7 +719,7 @@ export function getMediaLoopState(): boolean {
     if (!activeOutput) return true
 
     const currentBg = get(outputs)[activeOutput.id]?.out?.background
-    return currentBg?.loop !== false
+    return getOutputMediaLoop(currentBg)
 }
 
 export function toggleMediaMute() {
@@ -737,7 +732,11 @@ export function toggleMediaMute() {
     if (!currentBg) return
 
     const isMuted = currentBg.muted !== false
-    setOutput("background", { ...currentBg, muted: !isMuted })
+    const muted = !isMuted
+    setOutput("background", { ...currentBg, muted }, false, activeOutput.id)
+
+    const path = currentBg.path || currentBg.id
+    if (path) VideoPlayer.setMute(path, activeOutput.id, muted)
 }
 
 // AUDIO

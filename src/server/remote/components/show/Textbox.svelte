@@ -3,9 +3,21 @@
     import autosize, { AutosizeTypes } from "../../../common/util/autosize"
     import { createVirtualBreaks } from "../../../common/util/show"
     import { getStyles } from "../../../common/util/style"
+    import { send } from "../../util/socket"
     import { mediaCache } from "../../util/stores"
 
     export let item: Item
+
+    const requestedThumbnails = new Set<string>()
+    const isDirectMediaPath = (path: string) => /^(data|blob|https?):/i.test(path)
+
+    $: {
+        const path = item?.type === "media" ? item.src || "" : ""
+        if (path && !isDirectMediaPath(path) && !$mediaCache[path] && !requestedThumbnails.has(path)) {
+            requestedThumbnails.add(path)
+            send("API:get_thumbnail", { path })
+        }
+    }
 
     $: lineGap = item?.specialStyle?.lineGap
     $: lineRadius = item?.specialStyle?.lineRadius || 0

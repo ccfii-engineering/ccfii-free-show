@@ -32,6 +32,7 @@ import { _show } from "./shows"
 import { getStyles } from "./style"
 import { getFirstOutputIdWithAudableBackground } from "./video"
 import { nextPresentationMode } from "../output/presentationState"
+import { makeOutputVideoData, makeOutputVideoTime, matchesOutputBackground } from "../media/video/outputPlaybackControl"
 
 export function toggleOutputs(outputIds: string[] | null = null, options: { force?: boolean; autoStartup?: boolean; state?: boolean } = {}) {
     if (outputIds === null) outputIds = getActiveOutputs(get(outputs), false)
@@ -249,7 +250,7 @@ function changeOutputBackground(data, { output, id, mute, videoOutputId }) {
     data.muted = data.muted || false
     if (mute) data.muted = true
 
-    const videoData = { muted: data.muted, loop: data.loop || false }
+    const identity = data.path || data.id || ""
 
     if (id === videoOutputId) {
         const muteAudio = get(special).muteAudioWhenVideoPlays
@@ -263,9 +264,12 @@ function changeOutputBackground(data, { output, id, mute, videoOutputId }) {
 
     // wait for video receiver to change
     setTimeout(() => {
-        // data is sent directly in output as well ??
-        send(OUTPUT, ["DATA"], { [id]: videoData })
-        if (data.startAt !== undefined) send(OUTPUT, ["TIME"], { [id]: data.startAt || 0 })
+        const currentBackground = get(outputs)[id]?.out?.background
+        if (!matchesOutputBackground(identity, currentBackground)) return
+
+        const currentVideoData = makeOutputVideoData(identity, { muted: currentBackground?.muted ?? false, loop: currentBackground?.loop || false })
+        send(OUTPUT, ["DATA"], { [id]: currentVideoData })
+        if (currentBackground?.startAt !== undefined) send(OUTPUT, ["TIME"], { [id]: makeOutputVideoTime(identity, currentBackground.startAt || 0) })
     }, 600)
 
     return data

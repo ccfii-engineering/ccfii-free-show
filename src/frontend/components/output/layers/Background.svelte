@@ -1,12 +1,9 @@
 <svelte:options immutable={true} />
 
 <script lang="ts">
-    import { onDestroy } from "svelte"
     import type { Styles } from "../../../../types/Settings"
     import type { OutBackground, Transition } from "../../../../types/Show"
     import { clone } from "../../helpers/array"
-    import { resolveGPUBackgroundStyle } from "../gpu/GPUBackgroundStyle"
-    import { getPixiBackgroundBridge, isPixiSupported } from "../webgpu/pixiBackgroundBridge"
     import BackgroundMedia from "./BackgroundMedia.svelte"
 
     export let data: OutBackground
@@ -20,20 +17,6 @@
     export let animationStyle = ""
     export let mirror = false
     export let styleBackground = false
-
-    // --- Pixi delegation ---------------------------------------------------------------------
-    // When a parent has provided a pixiBackgroundBridge (i.e. we're rendered inside WebGPUOutput)
-    // AND the file-backed media type is GPU-compatible, we hand data off to the bridge and render
-    // nothing. Live/native surfaces (screen, NDI, Blackmagic, camera, player) remain explicit DOM
-    // surfaces owned by the same output coordinator.
-    const pixiBridge = getPixiBackgroundBridge()
-    const pixiSlot: "style" | "slide" = styleBackground ? "style" : "slide"
-    $: pixiData = data ? resolveGPUBackgroundStyle(data, currentStyle) : data
-    $: pixiDelegated = !!(pixiBridge && isPixiSupported(data?.type) && pixiBridge.update(pixiSlot, pixiData, transition))
-    $: if (pixiBridge && pixiDelegated && animationStyle !== undefined) pixiBridge.setAnimation(pixiSlot, animationStyle)
-    onDestroy(() => {
-        if (pixiBridge) pixiBridge.clear(pixiSlot)
-    })
 
     $: duration = transition.duration ?? 800
     $: style = `height: 100%;zoom: ${1 / ratio};transition: filter ${duration}ms, backdrop-filter ${duration}ms;${slideFilter}`
@@ -157,20 +140,18 @@
     }
 </script>
 
-{#if !pixiDelegated}
-    <div class="media" {style}>
-        {#if background1}
-            <div class="media" class:hidden={loading && !firstActive}>
-                <BackgroundMedia data={background1Data} fadingOut={firstFadingOut} {outputId} transition={transition1} {currentStyle} animationStyle={animation1} {duration} {mirror} {styleBackground} on:loaded={() => loaded(true)} />
-            </div>
-        {/if}
-        {#if background2}
-            <div class="media" class:hidden={loading && firstActive}>
-                <BackgroundMedia data={background2Data} fadingOut={!firstFadingOut} {outputId} transition={transition2} {currentStyle} animationStyle={animation2} {duration} {mirror} {styleBackground} on:loaded={() => loaded(false)} />
-            </div>
-        {/if}
-    </div>
-{/if}
+<div class="media" {style}>
+    {#if background1}
+        <div class="media" class:hidden={loading && !firstActive}>
+            <BackgroundMedia data={background1Data} fadingOut={firstFadingOut} {outputId} transition={transition1} {currentStyle} animationStyle={animation1} {duration} {mirror} {styleBackground} on:loaded={() => loaded(true)} />
+        </div>
+    {/if}
+    {#if background2}
+        <div class="media" class:hidden={loading && firstActive}>
+            <BackgroundMedia data={background2Data} fadingOut={!firstFadingOut} {outputId} transition={transition2} {currentStyle} animationStyle={animation2} {duration} {mirror} {styleBackground} on:loaded={() => loaded(false)} />
+        </div>
+    {/if}
+</div>
 
 <style>
     .hidden {

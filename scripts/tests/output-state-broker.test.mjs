@@ -5,8 +5,11 @@ import { OutputStateBroker } from "../../src/electron/output/OutputStateBroker.t
 import { createOutputTopicSnapshot, isValidOutputTopicSnapshot, outputStateKey } from "../../src/common/outputState/snapshot.ts"
 
 const stylesRevision1 = createOutputTopicSnapshot("styles", { kind: "shared" }, 1, { default: { name: "Default" } })
+const stylesRevision2 = createOutputTopicSnapshot("styles", { kind: "shared" }, 2, { default: { name: "Updated" } })
 const outputOneRevision1 = createOutputTopicSnapshot("output", { kind: "output", outputId: "one" }, 1, { enabled: true, active: true, name: "One", color: "#fff", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, screen: null, out: {} })
 const outputOneRevision2 = createOutputTopicSnapshot("output", { kind: "output", outputId: "one" }, 2, { enabled: true, active: true, name: "One", color: "#fff", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, screen: null, out: { slide: { id: "show", index: 0 } } })
+const dependentOutputRevision1 = createOutputTopicSnapshot("output", { kind: "output", outputId: "one" }, 1, { enabled: true, active: true, name: "One", color: "#fff", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, screen: null, out: {} }, { "styles:shared": 1 })
+const dependentOutputRevision2 = createOutputTopicSnapshot("output", { kind: "output", outputId: "one" }, 2, { enabled: true, active: true, name: "One", color: "#fff", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, screen: null, out: { slide: { id: "show", index: 0 } } }, { "styles:shared": 2 })
 
 test("ready receives a manifest and every latest required topic", () => {
     const harness = createBrokerHarness()
@@ -103,60 +106,50 @@ test("a render failure is observed without recreating a responsive renderer", ()
     assert.deepEqual(harness.recreated, [])
 })
 
-test("first renderer initialization failure recreates the output once", () => {
+test("only a current matching missing-dependency rejection requests fresh state", () => {
     const harness = createBrokerHarness()
+    harness.broker.publish(stylesRevision1)
+    harness.broker.publish(dependentOutputRevision1)
     harness.ready("session-a")
+    harness.broker.publish(dependentOutputRevision2)
+    const oldRejection = harness.broker.rejected({ ...observation(dependentOutputRevision1, "session-a"), reason: "missing_dependency" }, "one")
+    const wrongHash = harness.broker.rejected({ ...observation(dependentOutputRevision2, "session-a"), contentHash: "wrong", reason: "missing_dependency" }, "one")
+    const oldSession = harness.broker.rejected({ ...observation(dependentOutputRevision2, "old-session"), reason: "missing_dependency" }, "one")
 
-    const accepted = harness.broker.rendererStatus({ outputId: "one", sessionId: "session-a", state: "failed", reason: "gpu_initialization_failed" }, "one")
+    assert.equal(oldRejection, false)
+    assert.equal(wrongHash, false)
+    assert.equal(oldSession, false)
+    assert.equal(harness.sentMain.filter((message) => message.channel === "OUTPUT_STATE_NEEDED").length, 0)
 
-    assert.equal(accepted, true)
-    assert.deepEqual(harness.recreated, ["one"])
-    assert.equal(harness.latestHealth().status, "recovering")
+    assert.equal(harness.broker.rejected({ ...observation(dependentOutputRevision2, "session-a"), reason: "missing_dependency" }, "one"), true)
+    assert.equal(harness.sentMain.filter((message) => message.channel === "OUTPUT_STATE_NEEDED").length, 1)
+    assert.deepEqual(harness.sentMain.filter((message) => message.channel === "OUTPUT_STATE_NEEDED")[0].data, { keys: [{ topic: "output", scope: { kind: "output", outputId: "one" } }] })
 })
 
-test("repeated renderer initialization failure activates atomic session fallback", () => {
+test("missing dependencies request a replacement without retrying the obsolete snapshot", () => {
     const harness = createBrokerHarness()
+    harness.broker.publish(stylesRevision1)
+    harness.broker.publish(dependentOutputRevision1)
     harness.ready("session-a")
-    harness.broker.rendererStatus({ outputId: "one", sessionId: "session-a", state: "failed", reason: "gpu_initialization_failed" }, "one")
-    harness.ready("session-b")
 
-    harness.broker.rendererStatus({ outputId: "one", sessionId: "session-b", state: "failed", reason: "gpu_initialization_failed" }, "one")
+    assert.equal(harness.broker.rejected({ ...observation(dependentOutputRevision1, "session-a"), reason: "missing_dependency" }, "one"), true)
+    assert.equal(harness.latestHealth().status, "syncing")
+    harness.clock.advanceBy(500)
 
-    assert.deepEqual(harness.recreated, ["one"])
-    assert.equal(harness.latestHealth().status, "legacy-fallback")
-    assert.deepEqual(harness.sentTo("one").at(-1), { channel: "OUTPUT_RENDERER_FALLBACK", data: { reason: "gpu_initialization_failed" } })
-})
+    const outputRevisionsBeforeReplacement = harness
+        .sentTo("one")
+        .filter((message) => message.channel === "OUTPUT_STATE_APPLY" && message.data.snapshot.topic === "output")
+        .map((message) => message.data.snapshot.revision)
+    assert.deepEqual(outputRevisionsBeforeReplacement, [1])
 
-test("active GPU renderer reports its backend and clears recovery history", () => {
-    const harness = createBrokerHarness()
-    harness.ready("session-a")
-    harness.broker.rendererStatus({ outputId: "one", sessionId: "session-a", state: "gpu-active", backend: "webgpu" }, "one")
+    harness.broker.publish(stylesRevision2)
+    harness.broker.publish(dependentOutputRevision2)
 
-    assert.equal(harness.latestHealth().status, "gpu-active")
-    assert.equal(harness.latestHealth().backend, "webgpu")
-})
-
-test("GPU renderer identity survives later synchronization health updates", () => {
-    const harness = createBrokerHarness()
-    harness.broker.publish(outputOneRevision1)
-    harness.ready("session-a")
-    harness.broker.rendererStatus({ outputId: "one", sessionId: "session-a", state: "gpu-active", backend: "webgl" }, "one")
-
-    harness.broker.applied(observation(outputOneRevision1, "session-a"), "one")
-
-    assert.equal(harness.latestHealth().status, "healthy")
-    assert.equal(harness.latestHealth().rendererState, "gpu-active")
-    assert.equal(harness.latestHealth().backend, "webgl")
-})
-
-test("stale renderer status cannot alter a recreated session", () => {
-    const harness = createBrokerHarness()
-    harness.ready("session-current")
-
-    const accepted = harness.broker.rendererStatus({ outputId: "one", sessionId: "session-stale", state: "failed", reason: "late_failure" }, "one")
-
-    assert.equal(accepted, false)
-    assert.deepEqual(harness.recreated, [])
+    const outputRevisionsAfterReplacement = harness
+        .sentTo("one")
+        .filter((message) => message.channel === "OUTPUT_STATE_APPLY" && message.data.snapshot.topic === "output")
+        .map((message) => message.data.snapshot.revision)
+    assert.deepEqual(outputRevisionsAfterReplacement, [1, 2])
 })
 
 function observation(snapshot, sessionId) {

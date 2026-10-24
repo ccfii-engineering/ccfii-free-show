@@ -11,6 +11,10 @@
 
 *.env
 
+# Generated code-navigation indexes and isolated tool runtimes
+/graphify-out/
+/.cache/code-navigation/
+
 .DS_Store
 
 test-output/
@@ -21,5 +25,11 @@ test-results/
 *.iml
 *.ipr
 *.iws
-.serena
+# Version Serena project configuration and selected Markdown memories only.
+.serena/*
+!.serena/project.yml
+!.serena/memories/
+.serena/memories/*
+!.serena/memories/**/*.md
+scripts/navigation/**/__pycache__/
 .worktrees/

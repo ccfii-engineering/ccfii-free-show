@@ -78,7 +78,6 @@ export function custom(node: any, { type = "fade", duration = 500, easing = "sin
 }
 
 // rAF-driven transitions — always work regardless of OS animation settings
-// Used by WebGPU output to bypass CSS @keyframes which break on Windows with animations disabled
 export function customTick(node: HTMLElement, { type = "fade", duration = 500, easing = "sine", delay = 0, custom: customData = {} }: any) {
     const easingFn = easings.find((a) => a.value === easing)?.function || linear
 

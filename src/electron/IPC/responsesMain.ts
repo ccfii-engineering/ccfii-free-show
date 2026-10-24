@@ -7,12 +7,13 @@ import { getMainWindow, isProd, mainWindow, maximizeMain, setGlobalMenu } from "
 import type { MainResponses } from "../../types/IPC/Main"
 import { Main } from "../../types/IPC/Main"
 import { ToMain } from "../../types/IPC/ToMain"
-import type { ErrorLog, LyricSearchResult, OS } from "../../types/Main"
+import type { ErrorLog, FileFolder, LyricSearchResult, OS } from "../../types/Main"
 import { getAudioMetadata } from "../audio/audio"
 import { openNowPlaying, setPlayingState, unsetPlayingAudio } from "../audio/nowPlaying"
 import { CaptureHelper } from "../capture/CaptureHelper"
 import { canSync, getSyncTeams, hasDataChanged, hasTeamData, markAsNewSync, restoreCloudBackup, syncData } from "../cloud/syncManager"
 import { ContentProviderRegistry } from "../contentProviders"
+import { matchesFolderBatchAck } from "../indexer/folderBatchAck"
 import { ChurchAppsChat } from "../contentProviders/churchApps/ChurchAppsChat"
 import { deleteBackup, getBackups, restoreFiles } from "../data/backup"
 import { getLocalIPs } from "../data/bonjour"
@@ -38,7 +39,7 @@ import { deleteShows, deleteShowsNotIndexed, getAllShows, getEmptyShows, refresh
 import { correctSpelling } from "../utils/spellcheck"
 import { executeSpotifyCommand, getSpotifyState } from "../utils/spotify"
 import checkForUpdates from "../utils/updater"
-import { sendToMain } from "./main"
+import { requestToMainResult, sendToMain } from "./main"
 
 // no need to await Promise returns here
 export const mainResponses: MainResponses = {
@@ -168,12 +169,23 @@ export const mainResponses: MainResponses = {
     [Main.MEDIA_FOLDER_COPY]: (data) => addToMediaFolder(data.paths),
     [Main.READ_BIBLES_FOLDER]: () => readBiblesFolder(),
     [Main.FILE_INFO]: (data) => getFileInfo(data),
-    [Main.READ_FOLDER]: async (data) => {
+    [Main.READ_FOLDER]: async (data, e, signal) => {
         const requestId = data.requestId
-        return readFolderContent(data, (batch) => {
-            if (!requestId) return
-            sendToMain(ToMain.READ_FOLDER_BATCH, { requestId, entries: batch })
-        })
+        const onBatch = requestId
+            ? async (entries: FileFolder[], batchSequence: number) => {
+                  if (signal?.aborted) throw new Error("Folder scan cancelled")
+                  const ownerId = e.sender.id
+                  if (mainWindow?.webContents?.id !== ownerId) throw new Error("Folder scan sender is no longer active")
+
+                  const ack = await requestToMainResult(ToMain.READ_FOLDER_BATCH, { requestId, batchSequence, ownerId, entries }, { signal })
+                  if (ack.status !== "success") throw new Error(ack.status === "error" ? ack.error.message : "Folder batch acknowledgement did not complete")
+                  if (!matchesFolderBatchAck({ requestId, batchSequence, ownerId }, ack.data)) {
+                      throw new Error("Folder batch acknowledgement did not match the active scan")
+                  }
+              }
+            : undefined
+
+        return readFolderContent(data, onBatch, signal)
     },
     [Main.READ_FILE]: (data) => ({ content: readFile(data.path) }),
     [Main.OPEN_FOLDER]: (data) => selectFolder(data),

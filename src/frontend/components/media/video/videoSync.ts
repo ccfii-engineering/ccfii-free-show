@@ -1,4 +1,5 @@
 import { playingVideoState } from "../../../stores"
+import { shouldHoldVideoSeekCooldown } from "./videoSyncCooldown"
 import type { PlayingVideoState } from "./videoPlayer"
 
 export function videoSync(path: string, outputId: string, callback: (state: PlayingVideoState) => void) {
@@ -86,7 +87,7 @@ export function syncVideoToAudio(vid: HTMLVideoElement | null, targetTime: numbe
     const lastSeek = lastSeekTimestamps.get(vid) || 0
     const inSeekCooldown = now - lastSeek < 1500 // 1.5s cooldown after a hard seek
 
-    if (inSeekCooldown && !isExplicitSeek) {
+    if (shouldHoldVideoSeekCooldown(inSeekCooldown, isExplicitSeek, vid.paused, absDiff)) {
         // While cooling down after a seek, rely exclusively on smooth playbackRate adjustment
         if (!vid.paused && absDiff > 0.03) {
             const nudgeAmount = Math.max(-0.25 * rate, Math.min(0.25 * rate, -diff * 1.5 * rate))

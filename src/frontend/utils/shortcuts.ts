@@ -5,8 +5,6 @@ import type { ShowType } from "../../types/Show"
 import type { DrawerTabIds, TopViews } from "../../types/Tabs"
 import { clearAudio } from "../audio/audioFading"
 import { AudioPlayer } from "../audio/audioPlayer"
-import { isGpuGeneration, sendPlaybackCommand } from "../outputState/playbackCommands"
-import { getPlaybackSnapshot } from "../outputState/playbackStore"
 import { menuClick } from "../components/context/menuClick"
 import { createScriptureShow } from "../components/drawer/bible/scripture"
 import { addItem } from "../components/edit/scripts/itemHelpers"
@@ -495,15 +493,6 @@ export async function togglePlayingMedia(e: Event | null = null, back = false, a
         if (alreadyPlaying) {
             // play / pause video
             const outputId = currentOutput?.id || ""
-
-            // route to the renderer that owns the active output (#17); mirror to the
-            // legacy audio engine so sound and visible position stay aligned
-            const snapshot = getPlaybackSnapshot(outputId)
-            if (snapshot && isGpuGeneration(snapshot.generation) && backgroundType !== "player") {
-                sendPlaybackCommand(outputId, { type: snapshot.paused ? "resume" : "pause" })
-                VideoPlayer.start(currentlyPlaying, { paused: !snapshot.paused, syncOnly: true }, [outputId])
-                return
-            }
 
             const key = `${currentlyPlaying}_${outputId}`
             const videoData = get(playingVideoState)[key] || {}

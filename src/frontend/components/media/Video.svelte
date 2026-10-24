@@ -3,6 +3,7 @@
     import type { MediaStyle } from "../../../types/Main"
     import { currentWindow, media } from "../../stores"
     import { enableSubtitle, encodeFilePath, isVideoSupported } from "../helpers/media"
+    import { getVideoSourceKey, VideoPlayFailureGuard, type VideoSourceToken } from "./video/playFailureGuard"
     import { SoftLoopSync } from "./video/softLoop"
     import { clampPlaybackRate, syncVideoToAudio, videoSync } from "./video/videoSync"
 
@@ -17,6 +18,13 @@
     export let mediaStyle: MediaStyle = {}
     export let animationStyle = ""
     export let mirror = false
+
+    const playFailureGuard = new VideoPlayFailureGuard()
+    let sourceKey = ""
+    let sourceToken: VideoSourceToken = playFailureGuard.token()
+    let elementSourceToken: VideoSourceToken | null = null
+    $: sourceKey = getVideoSourceKey(path, syncPath)
+    $: sourceToken = playFailureGuard.updateSource(sourceKey)
 
     let dispatch = createEventDispatcher()
 
@@ -34,8 +42,15 @@
         unsubscribeSync?.()
         const targetPath = syncPath || path
         if (targetPath && outputId) {
+            const syncSourceToken = sourceToken
             let lastSyncedTime: number | null = null
             unsubscribeSync = videoSync(targetPath, outputId, (data) => {
+                if (!playFailureGuard.isCurrent(syncSourceToken)) return
+                if (!playFailureGuard.canAttempt(syncSourceToken)) {
+                    clearFailedPlayback()
+                    return
+                }
+
                 const isSoftLoop = !!(data.softLoop && data.softLoop > 0)
                 syncVideoToAudio(video, data.currentTime, lastSyncedTime, isSoftLoop, targetPlaybackRate, data.isFadingOut)
                 if (data.currentTime !== undefined) lastSyncedTime = data.currentTime
@@ -56,6 +71,7 @@
         const w = container.clientWidth
         const h = container.clientHeight
         containerAspect = w && h ? w / h : null
+        elementSourceToken = sourceToken
     })
 
     let hasLoaded = false
@@ -68,17 +84,21 @@
     // ensure that video state matches the store state
     let playPromise: Promise<void> | null = null
     $: if (video) {
-        if (!videoData.paused && video.paused) {
-            playPromise = video.play()
-            playPromise
+        if (!videoData.paused && video.paused && playFailureGuard.canAttempt(sourceToken)) {
+            const attemptToken = sourceToken
+            const attempt = video.play()
+            playPromise = attempt
+            attempt
                 .catch((err) => {
-                    // Ignore AbortErrors caused by quick pause/play toggles during transitions
-                    if (err.name !== "AbortError") {
-                        console.warn("[Video.svelte] Play failed:", err)
-                    }
+                    // Ignore AbortErrors caused by quick pause/play toggles during transitions.
+                    // A stale rejection must not fail a replacement source.
+                    if (!playFailureGuard.markFailed(attemptToken, err?.name)) return
+
+                    console.warn("[Video.svelte] Play failed:", err)
+                    clearFailedPlayback()
                 })
                 .finally(() => {
-                    playPromise = null
+                    if (playPromise === attempt) playPromise = null
                 })
         } else if (videoData.paused && !video.paused) {
             if (playPromise) {
@@ -92,6 +112,26 @@
                 video.pause()
             }
         }
+    }
+
+    function videoLoading() {
+        elementSourceToken = sourceToken
+    }
+    function clearFailedPlayback() {
+        videoData = { ...videoData, duration: 0, paused: true }
+        videoTime = 0
+    }
+    function videoError(event: Event) {
+        const token = elementSourceToken
+        if (!token || !playFailureGuard.isCurrent(token)) return
+
+        if (playFailureGuard.markFailed(token, "MediaError")) {
+            console.warn("[Video.svelte] Media source failed:", event)
+            clearFailedPlayback()
+        }
+
+        // Forward one error per source generation so Media's existing retry limit can act.
+        if (playFailureGuard.handleNativeError(token)) dispatch("error", event)
     }
 
     // Pingback after 30 playing seconds on videos where tracking is required
@@ -125,6 +165,7 @@
     }
 
     onDestroy(() => {
+        playFailureGuard.invalidate()
         unsubscribeSync?.()
         if (pingbackInterval) clearInterval(pingbackInterval)
 
@@ -145,6 +186,8 @@
     })
 
     function playing() {
+        if (!elementSourceToken || !playFailureGuard.isCurrent(elementSourceToken)) return
+        if (!mirror && videoData.paused !== false) videoData = { ...videoData, paused: false }
         if (!hasLoaded || mirror) return
         hasLoaded = false
 
@@ -155,6 +198,11 @@
         // go to custom start time
         videoTime = customStart
         startAt = 0
+    }
+
+    function paused() {
+        if (!elementSourceToken || !playFailureGuard.isCurrent(elementSourceToken) || mirror) return
+        if (videoData.paused === false) videoData = { ...videoData, paused: true }
     }
 
     $: targetPlaybackRate = Number(mediaStyle.speed) || 1
@@ -222,7 +270,7 @@
     {#if mediaStyle.fit === "blur" && !perfectFit}
         <video class="media" style={mediaStyleBlurString} src={encodeFilePath(path)} bind:this={blurVideo} muted loop={videoData.loop} />
     {/if}
-    <video class="media" style={mediaStyleString} bind:this={video} on:loadedmetadata={loaded} on:playing={playing} on:error bind:currentTime={videoTime} muted src={encodeFilePath(path)} loop={videoData.loop}>
+    <video class="media" style={mediaStyleString} bind:this={video} on:loadstart={videoLoading} on:loadedmetadata={loaded} on:playing={playing} on:pause={paused} on:error={videoError} bind:currentTime={videoTime} muted src={encodeFilePath(path)} loop={videoData.loop}>
         {#each tracks as track}
             <track label={track.name} srclang={track.lang} kind="subtitles" src="data:text/vtt;charset=utf-8,{encodeURI(track.vtt)}" />
         {/each}

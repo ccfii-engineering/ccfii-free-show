@@ -11,6 +11,7 @@ import { uid } from "uid"
 import upath from "upath"
 import { OUTPUT } from "../../types/Channels"
 import { Main } from "../../types/IPC/Main"
+import type { FolderScanComplete } from "../../types/IPC/Main"
 import { ToMain } from "../../types/IPC/ToMain"
 import type { FileFolder, MainFilePaths, Subtitle } from "../../types/Main"
 import type { Project } from "../../types/Projects"
@@ -18,6 +19,7 @@ import type { Item, Show, TrimmedShows } from "../../types/Show"
 import { imageExtensions, mimeTypes, videoExtensions } from "../data/media"
 import { _store, appDataPath, config, getStore, setStore, setStoreValue } from "../data/store"
 import { createThumbnail, doesMediaExist, filePathHashCode } from "../data/thumbnails"
+import { createAbortError, FolderScanScheduler } from "../indexer/FolderScanScheduler"
 import { indexerService } from "../indexer/IndexerService"
 import { sendMain, sendToMain } from "../IPC/main"
 import { OutputHelper } from "../output/OutputHelper"
@@ -413,148 +415,236 @@ function getMediaFolderPath(name: Parameters<typeof app.getPath>[0]): string {
 // READ_FOLDER
 const READ_FOLDER_BATCH_SIZE = 200
 const READ_FOLDER_STAT_CONCURRENCY = 16
+const READ_FOLDER_MAX_ACTIVE_SCANS = 2
+const READ_FOLDER_MAX_QUEUED_SCANS = 2
+const folderScanScheduler = new FolderScanScheduler(READ_FOLDER_MAX_ACTIVE_SCANS, READ_FOLDER_MAX_QUEUED_SCANS)
 
-class ReadFolderSemaphore {
-    private inflight = 0
-    private queue: (() => void)[] = []
-    private limit: number
-    constructor(limit: number) {
-        this.limit = limit
-    }
-    async acquire() {
-        if (this.inflight < this.limit) {
-            this.inflight++
-            return
-        }
-        await new Promise<void>((resolve) => this.queue.push(resolve))
-        this.inflight++
-    }
-    release() {
-        this.inflight--
-        const next = this.queue.shift()
-        if (next) next()
-    }
+type ReadFolderContentData = {
+    path: string | string[]
+    depth?: number
+    generateThumbnails?: boolean
+    captureFolderContent?: boolean
+    useWorker?: boolean
+    requestId?: string
 }
 
-export async function readFolderContent(data: { path: string | string[]; depth?: number; generateThumbnails?: boolean; captureFolderContent?: boolean; useWorker?: boolean }, onBatch?: (batch: FileFolder[]) => void) {
+type FolderBatchHandler = (batch: FileFolder[], batchSequence: number) => Promise<void> | void
+
+function throwIfFolderScanAborted(signal?: AbortSignal) {
+    if (signal?.aborted) throw createAbortError()
+}
+
+function getFolderStatsRequiredAsync(folderPath: string, signal?: AbortSignal): Promise<Stats> {
+    throwIfFolderScanAborted(signal)
+    return new Promise((resolve, reject) => {
+        fs.stat(folderPath, (err, stats) => {
+            if (signal?.aborted) reject(createAbortError())
+            else if (err) reject(err)
+            else if (!stats.isDirectory()) reject(new Error(`Folder scan root is not a directory: ${folderPath}`))
+            else resolve(stats)
+        })
+    })
+}
+
+function readFolderNamesStrict(folderPath: string, signal?: AbortSignal): Promise<string[]> {
+    throwIfFolderScanAborted(signal)
+    return new Promise((resolve, reject) => {
+        fs.readdir(folderPath, (err, names) => {
+            if (signal?.aborted) reject(createAbortError())
+            else if (err) reject(err)
+            else resolve(names)
+        })
+    })
+}
+
+async function waitForFolderBatch(handler: FolderBatchHandler, batch: FileFolder[], batchSequence: number, signal?: AbortSignal) {
+    throwIfFolderScanAborted(signal)
+    const delivery = Promise.resolve().then(() => handler(batch, batchSequence))
+    if (!signal) return delivery
+
+    let onAbort: (() => void) | undefined
+    const aborted = new Promise<never>((_, reject) => {
+        onAbort = () => reject(createAbortError())
+        signal.addEventListener("abort", onAbort, { once: true })
+    })
+    try {
+        await Promise.race([delivery, aborted])
+    } finally {
+        if (onAbort) signal.removeEventListener("abort", onAbort)
+    }
+    throwIfFolderScanAborted(signal)
+}
+
+export function readFolderContent(data: ReadFolderContentData, onBatch?: FolderBatchHandler, signal?: AbortSignal): Promise<Record<string, FileFolder> | FolderScanComplete> {
+    return folderScanScheduler.run(() => readFolderContentNow(data, onBatch, signal), signal)
+}
+
+async function readFolderContentNow(data: ReadFolderContentData, onBatch?: FolderBatchHandler, signal?: AbortSignal): Promise<Record<string, FileFolder> | FolderScanComplete> {
     const folderContent = new Map<string, FileFolder>()
     const pendingBatch: FileFolder[] = []
-    const sem = new ReadFolderSemaphore(READ_FOLDER_STAT_CONCURRENCY)
+    const paths = Array.isArray(data.path) ? data.path : [data.path]
+    const depth = data.depth ?? 0
+    const streamOnly = !!data.requestId && !!onBatch
+    const keepFinalResult = !streamOnly
+    let emittedEntries = 0
+    let nextBatchSequence = 0
+    let batchDelivery: Promise<void> | null = null
 
-    if (!Array.isArray(data.path)) data.path = [data.path]
-    if (data.depth === undefined) data.depth = 0
-
-    const recordEntry = (entry: FileFolder) => {
-        folderContent.set(entry.path, entry)
-        if (onBatch) pendingBatch.push(entry)
+    const deliverBatch = async (batch: FileFolder[], sequence?: number) => {
+        const batchSequence = sequence ?? nextBatchSequence + 1
+        nextBatchSequence = batchSequence
+        emittedEntries += batch.length
+        if (onBatch) await waitForFolderBatch(onBatch, batch, batchSequence, signal)
     }
 
-    const flushBatch = async (force = false) => {
-        if (!onBatch || pendingBatch.length === 0) return
-        if (!force && pendingBatch.length < READ_FOLDER_BATCH_SIZE) return
-        const out = pendingBatch.splice(0, pendingBatch.length)
-        onBatch(out)
-        await new Promise<void>((r) => setImmediate(r))
+    const flushBatch = async (force = false): Promise<void> => {
+        if (batchDelivery) {
+            await batchDelivery
+            await flushBatch(force)
+            return
+        }
+        if (!onBatch || !pendingBatch.length || (!force && pendingBatch.length < READ_FOLDER_BATCH_SIZE)) return
+
+        const batch = pendingBatch.splice(0, Math.min(READ_FOLDER_BATCH_SIZE, pendingBatch.length))
+        const delivery = deliverBatch(batch)
+        batchDelivery = delivery
+        try {
+            await delivery
+        } finally {
+            if (batchDelivery === delivery) batchDelivery = null
+        }
+
+        if (pendingBatch.length >= READ_FOLDER_BATCH_SIZE || (force && pendingBatch.length)) await flushBatch(force)
     }
 
-    // Phase 2: route through utility process for the common case (no captureFolderContent).
-    // Capture-mode walks have nuanced filtering that lives in the in-process recursion below,
-    // so we keep them on main for now.
+    const finish = (): Record<string, FileFolder> | FolderScanComplete => {
+        if (streamOnly) return { status: "complete", entryCount: emittedEntries }
+        return Object.fromEntries(folderContent)
+    }
+
+    const enrichWorkerBatch = (entries: FileFolder[]) =>
+        entries.map((entry) => {
+            if (entry.isFolder) return entry
+            let thumbnailPath = ""
+            if (data.generateThumbnails && isMedia(path.extname(entry.name).substring(1))) {
+                try {
+                    thumbnailPath = createThumbnail(entry.path)
+                } catch (err) {
+                    console.error("Thumbnail creation failed:", err)
+                }
+            }
+            return { ...entry, thumbnailPath }
+        })
+
+    // Normal scans run in the utility process; capture mode keeps its main-process thumbnail selection.
     if (data.useWorker !== false && !data.captureFolderContent) {
         try {
-            await indexerService.readFolder({ paths: data.path, depth: data.depth, captureFolderContent: false, generateThumbnails: !!data.generateThumbnails }, (entries) => {
-                const enriched = entries.map((entry) => {
-                    if (entry.isFolder) return entry
-                    const ext = path.extname(entry.name).substring(1)
-                    let thumbnailPath = ""
-                    if (data.generateThumbnails && isMedia(ext)) {
-                        try {
-                            thumbnailPath = createThumbnail(entry.path)
-                        } catch (err) {
-                            console.error("Thumbnail creation failed:", err)
-                        }
-                    }
-                    return { ...entry, thumbnailPath }
-                })
-                for (const entry of enriched) folderContent.set(entry.path, entry)
-                if (onBatch) {
-                    onBatch(enriched)
-                }
-            })
-            return Object.fromEntries(folderContent)
+            await indexerService.readFolder(
+                { paths, depth, captureFolderContent: false, generateThumbnails: !!data.generateThumbnails },
+                async (entries, batchSequence) => {
+                    throwIfFolderScanAborted(signal)
+                    const enriched = enrichWorkerBatch(entries)
+                    if (keepFinalResult) for (const entry of enriched) folderContent.set(entry.path, entry)
+                    if (onBatch) await deliverBatch(enriched, batchSequence)
+                    else emittedEntries += enriched.length
+                },
+                signal
+            )
+            return finish()
         } catch (err) {
-            console.error("[indexer] worker readFolder failed, falling back to in-process walk:", err)
-            // fall through to in-process walk below
+            if (signal?.aborted) throw createAbortError()
+            if (emittedEntries > 0) throw err
+            console.error("[indexer] worker readFolder failed before streaming a batch; falling back to in-process walk:", err)
+            // A pre-batch worker failure can retry safely. Once a batch was delivered, do not replay it.
         }
     }
 
-    await Promise.all(
-        data.path.map(async (folderPath) => {
-            const stats = await getFileStatsAsync(folderPath)
-            if (!stats?.isDirectory()) return
+    const visited = new Set<string>()
+    const recordEntry = async (entry: FileFolder) => {
+        if (keepFinalResult) folderContent.set(entry.path, entry)
+        if (onBatch) {
+            pendingBatch.push(entry)
+            await flushBatch()
+        }
+    }
 
-            await getFolderContentRecursive(folderPath)
-        })
-    )
+    const statChildren = async (filePaths: string[], currentDepth: number, captureThumbnailPaths: string[]) => {
+        const currentPaths = data.captureFolderContent && currentDepth > depth ? captureThumbnailPaths : filePaths
+        const childDirectories: (string | undefined)[] = new Array(currentPaths.length)
+        let nextIndex = 0
 
-    async function getFolderContentRecursive(folderPath: string, currentDepth = 0) {
-        const exceededDepth = currentDepth > data.depth!
-        if ((data.captureFolderContent && currentDepth < 2 ? false : exceededDepth) || folderContent.has(folderPath)) {
+        const statNext = async () => {
+            while (true) {
+                throwIfFolderScanAborted(signal)
+                const index = nextIndex++
+                if (index >= currentPaths.length) return
+
+                const filePath = currentPaths[index]
+                const stats = await getFileStatsAsync(filePath)
+                throwIfFolderScanAborted(signal)
+                if (!stats) continue
+
+                if (stats.isDirectory()) {
+                    childDirectories[index] = filePath
+                    continue
+                }
+
+                let thumbnailPath = ""
+                const shouldCapture = captureThumbnailPaths.includes(filePath) || (data.generateThumbnails && currentDepth === 0 && isMedia(path.extname(filePath).substring(1)))
+                if (shouldCapture) {
+                    try {
+                        thumbnailPath = createThumbnail(filePath)
+                    } catch (err) {
+                        console.error("Thumbnail creation failed:", err)
+                    }
+                }
+
+                await recordEntry({ isFolder: false, path: filePath, name: path.basename(filePath), thumbnailPath, stats })
+            }
+        }
+
+        const workerCount = Math.min(READ_FOLDER_STAT_CONCURRENCY, currentPaths.length)
+        await Promise.all(Array.from({ length: workerCount }, () => statNext()))
+        return childDirectories
+    }
+
+    const walkInProcess = async (folderPath: string, currentDepth = 0): Promise<void> => {
+        throwIfFolderScanAborted(signal)
+        if (visited.has(folderPath)) return
+        visited.add(folderPath)
+
+        const exceededDepth = currentDepth > depth
+        if (data.captureFolderContent && currentDepth < 2 ? false : exceededDepth) {
             let shallowFiles: string[] = []
             if (currentDepth === 1) {
-                const shallowList = await readFolderAsync(folderPath)
+                const shallowList = await readFolderNamesStrict(folderPath, signal)
                 shallowFiles = shallowList.map((name) => path.join(folderPath, name))
             }
-
-            recordEntry({ isFolder: true, path: folderPath, name: path.basename(folderPath), files: shallowFiles })
-            await flushBatch()
+            await recordEntry({ isFolder: true, path: folderPath, name: path.basename(folderPath), files: shallowFiles })
             return
         }
 
-        const fileList = await readFolderAsync(folderPath)
-        const filePaths: string[] = fileList.map((name) => path.join(folderPath, name))
-
+        const fileList = await readFolderNamesStrict(folderPath, signal)
+        const filePaths = fileList.map((name) => path.join(folderPath, name))
         const captureThumbnailPaths = data.captureFolderContent && currentDepth === 1 ? getFirstMediaFiles(filePaths, 4) : []
-        const currentPaths = data.captureFolderContent && exceededDepth ? captureThumbnailPaths : filePaths
+        const childDirectories = await statChildren(filePaths, currentDepth, captureThumbnailPaths)
 
-        const childPromises: Promise<void>[] = []
-        for (const filePath of currentPaths) {
-            await sem.acquire()
-            childPromises.push(
-                (async () => {
-                    try {
-                        const stats = await getFileStatsAsync(filePath)
-                        if (!stats) return
-
-                        if (stats.isDirectory()) {
-                            await getFolderContentRecursive(filePath, currentDepth + 1)
-                        } else {
-                            let thumbnailPath = ""
-                            if (captureThumbnailPaths.includes(filePath) || (data.generateThumbnails && currentDepth === 0 && isMedia(path.extname(filePath).substring(1)))) {
-                                try {
-                                    thumbnailPath = createThumbnail(filePath)
-                                } catch (err) {
-                                    console.error("Thumbnail creation failed:", err)
-                                }
-                            }
-
-                            recordEntry({ isFolder: false, path: filePath, name: path.basename(filePath), thumbnailPath, stats })
-                            await flushBatch()
-                        }
-                    } finally {
-                        sem.release()
-                    }
-                })()
-            )
+        for (const childPath of childDirectories) {
+            throwIfFolderScanAborted(signal)
+            if (childPath) await walkInProcess(childPath, currentDepth + 1)
         }
-        await Promise.all(childPromises)
 
-        recordEntry({ isFolder: true, path: folderPath, name: path.basename(folderPath), files: filePaths })
-        await flushBatch()
+        await recordEntry({ isFolder: true, path: folderPath, name: path.basename(folderPath), files: filePaths })
+    }
+
+    for (const folderPath of paths) {
+        throwIfFolderScanAborted(signal)
+        await getFolderStatsRequiredAsync(folderPath, signal)
+        await walkInProcess(folderPath)
     }
 
     await flushBatch(true)
-    return Object.fromEntries(folderContent)
+    return finish()
 }
 
 function isMedia(extension: string) {

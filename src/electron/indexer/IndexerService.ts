@@ -4,13 +4,21 @@ import { uid } from "uid"
 import type { FileFolder } from "../../types/Main"
 import type { TrimmedShows } from "../../types/Show"
 import { getThumbnailFolderPath } from "../data/thumbnails"
+import { createAbortError } from "./FolderScanScheduler"
 import type { WorkerInit, WorkerRequest, WorkerResponse } from "./protocol"
 
 type ReadFolderJob = {
     type: "READ_FOLDER"
-    onBatch: (entries: FileFolder[]) => void
+    requestId: string
+    onBatch: (entries: FileFolder[], batchSequence: number) => Promise<void> | void
     resolve: () => void
     reject: (err: Error) => void
+    signal?: AbortSignal
+    cleanupSignal: () => void
+    batchSequence: number
+    started: boolean
+    cancelled: boolean
+    terminalError?: Error
 }
 type ParseShowsJob = {
     type: "PARSE_SHOWS"
@@ -66,8 +74,11 @@ class IndexerService {
         if (msg.type === "ERROR") {
             const job = msg.requestId ? this.jobs.get(msg.requestId) : null
             if (job) {
-                job.reject(new Error(msg.message))
-                this.jobs.delete(msg.requestId!)
+                if (job.type === "READ_FOLDER") this.finishReadFolder(job, job.terminalError || new Error(msg.message))
+                else {
+                    job.reject(new Error(msg.message))
+                    this.jobs.delete(msg.requestId!)
+                }
             } else {
                 console.error("[indexer-service] worker error:", msg.message)
             }
@@ -75,14 +86,21 @@ class IndexerService {
         }
         if (msg.type === "READ_FOLDER_BATCH") {
             const job = this.jobs.get(msg.requestId)
-            if (job?.type === "READ_FOLDER") job.onBatch(msg.entries)
+            if (job?.type !== "READ_FOLDER") return
+            if (job.cancelled || msg.batchSequence !== job.batchSequence + 1) {
+                this.cancelReadFolder(job, job.terminalError || new Error("Unexpected folder batch sequence"))
+                return
+            }
+
+            job.batchSequence = msg.batchSequence
+            void this.deliverBatch(job, msg.entries, msg.batchSequence)
             return
         }
-        if (msg.type === "READ_FOLDER_DONE") {
+        if (msg.type === "READ_FOLDER_DONE" || msg.type === "READ_FOLDER_CANCELLED") {
             const job = this.jobs.get(msg.requestId)
             if (job?.type === "READ_FOLDER") {
-                job.resolve()
-                this.jobs.delete(msg.requestId)
+                const error = job.terminalError || (msg.type === "READ_FOLDER_CANCELLED" ? createAbortError() : undefined)
+                this.finishReadFolder(job, error)
             }
             return
         }
@@ -97,26 +115,73 @@ class IndexerService {
                 job.resolve()
                 this.jobs.delete(msg.requestId)
             }
-            return
         }
     }
 
-    private failAll(err: Error) {
-        for (const [, job] of this.jobs) job.reject(err)
-        this.jobs.clear()
+    private async deliverBatch(job: ReadFolderJob, entries: FileFolder[], batchSequence: number) {
+        try {
+            if (job.cancelled) return
+            await job.onBatch(entries, batchSequence)
+            if (job.cancelled || this.jobs.get(job.requestId) !== job) return
+            this.worker?.postMessage({ type: "READ_FOLDER_BATCH_ACK", requestId: job.requestId, batchSequence })
+        } catch (error) {
+            this.cancelReadFolder(job, error instanceof Error ? error : new Error(String(error)))
+        }
+    }
+
+    private cancelReadFolder(job: ReadFolderJob, error: Error) {
+        if (!job.terminalError) job.terminalError = error
+        if (job.cancelled) return
+        job.cancelled = true
+        if (!job.started) {
+            this.finishReadFolder(job, job.terminalError)
+            return
+        }
+        this.worker?.postMessage({ type: "CANCEL_READ_FOLDER", requestId: job.requestId })
+    }
+
+    private finishReadFolder(job: ReadFolderJob, error?: Error) {
+        if (this.jobs.get(job.requestId) !== job) return
+        this.jobs.delete(job.requestId)
+        job.cleanupSignal()
+        if (error) job.reject(error)
+        else job.resolve()
     }
 
     private async send(req: WorkerRequest) {
         if (!this.worker) this.start()
         await this.ready
+        if (req.type === "READ_FOLDER") {
+            const job = this.jobs.get(req.requestId)
+            if (job?.type !== "READ_FOLDER" || job.cancelled || job.signal?.aborted) {
+                if (job?.type === "READ_FOLDER") this.cancelReadFolder(job, createAbortError())
+                return
+            }
+            job.started = true
+        }
         this.worker?.postMessage(req)
     }
 
-    async readFolder(args: { paths: string[]; depth: number; captureFolderContent: boolean; generateThumbnails: boolean }, onBatch: (entries: FileFolder[]) => void): Promise<void> {
+    async readFolder(args: { paths: string[]; depth: number; captureFolderContent: boolean; generateThumbnails: boolean }, onBatch: (entries: FileFolder[], batchSequence: number) => Promise<void> | void, signal?: AbortSignal): Promise<void> {
+        if (signal?.aborted) return Promise.reject(createAbortError())
         const requestId = uid(8)
         return new Promise((resolve, reject) => {
-            this.jobs.set(requestId, { type: "READ_FOLDER", onBatch, resolve, reject })
-            void this.send({ type: "READ_FOLDER", requestId, ...args })
+            const onAbort = () => this.cancelReadFolder(job, createAbortError())
+            const job: ReadFolderJob = {
+                type: "READ_FOLDER",
+                requestId,
+                onBatch,
+                resolve,
+                reject,
+                signal,
+                cleanupSignal: () => signal?.removeEventListener("abort", onAbort),
+                batchSequence: 0,
+                started: false,
+                cancelled: false
+            }
+            this.jobs.set(requestId, job)
+            signal?.addEventListener("abort", onAbort, { once: true })
+            void this.send({ type: "READ_FOLDER", requestId, ...args }).catch((error) => this.finishReadFolder(job, error instanceof Error ? error : new Error(String(error))))
         })
     }
 
@@ -124,8 +189,18 @@ class IndexerService {
         const requestId = uid(8)
         return new Promise((resolve, reject) => {
             this.jobs.set(requestId, { type: "PARSE_SHOWS", onBatch, resolve, reject })
-            void this.send({ type: "PARSE_SHOWS", requestId, folderPath, chunkSize })
+            void this.send({ type: "PARSE_SHOWS", requestId, folderPath, chunkSize }).catch(reject)
         })
+    }
+
+    private failAll(err: Error) {
+        for (const [, job] of this.jobs) {
+            if (job.type === "READ_FOLDER") {
+                job.cleanupSignal()
+                job.reject(err)
+            } else job.reject(err)
+        }
+        this.jobs.clear()
     }
 
     stop() {

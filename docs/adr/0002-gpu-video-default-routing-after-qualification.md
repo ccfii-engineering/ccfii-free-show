@@ -4,7 +4,7 @@ Date: 2026-08-22
 
 ## Status
 
-Accepted
+Superseded by ADR-0003. Retained as historical context for the former GPU video routing implementation.
 
 ## Context
 
@@ -29,13 +29,13 @@ failure recovery (#18).
    canvas says nothing about media behavior, so the suite asserts the media contract explicitly
    and fails routing eligibility independently of backend health.
 3. Safe fallbacks remain in force and are part of qualification:
-   - `useWebGPUOutput === false` or per-output `useWebGPU === false` → legacy renderer.
-   - Session-level GPU failure → atomic legacy fallback (existing circuit breaker).
-   - Bounded/custom loop semantics (`startAt`, `softLoop`) → legacy renderer; never silently
-     reinterpreted on GPU.
-   - Player backgrounds (live streams) → legacy path.
-   - Unsupported/undecodable sources → one bounded failure outcome per source, no phantom
-     state, no retry storm.
+    - `useWebGPUOutput === false` or per-output `useWebGPU === false` → legacy renderer.
+    - Session-level GPU failure → atomic legacy fallback (existing circuit breaker).
+    - Bounded/custom loop semantics (`startAt`, `softLoop`) → legacy renderer; never silently
+      reinterpreted on GPU.
+    - Player backgrounds (live streams) → legacy path.
+    - Unsupported/undecodable sources → one bounded failure outcome per source, no phantom
+      state, no retry storm.
 4. An explicit `gpuVideoLifecycleQualified: false` opt-out keeps video backgrounds on the
    legacy renderer for operators who need the old behavior.
 

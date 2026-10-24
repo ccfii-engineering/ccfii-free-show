@@ -1,0 +1,12 @@
+{
+    "mcpServers": {
+        "serena": {
+            "command": "bash",
+            "args": ["scripts/navigation/serena-mcp.sh"]
+        },
+        "graphify": {
+            "command": "bash",
+            "args": ["scripts/navigation/graphify-mcp.sh"]
+        }
+    }
+}

@@ -3,6 +3,7 @@ import type { RtmpStatus } from "../Output"
 import type { ContentProviderId } from "../../electron/contentProviders/base/types"
 import type { FileFolder } from "../Main"
 import type { TrimmedShows } from "../Show"
+import type { IPCRequestMetadata } from "./Request"
 
 export enum ToMain {
     ALERT = "ALERT",
@@ -73,13 +74,14 @@ export interface ToMainSendPayloads {
     [ToMain.OPEN_FILE2]: { channel: string; id: string; files: string[]; content: { [key: string]: string } }
     [ToMain.RECEIVE_MIDI2]: { id: string; values: any; type: "noteon" | "noteoff" | "control" }
     // Indexer streaming
-    [ToMain.READ_FOLDER_BATCH]: { requestId: string; entries: FileFolder[] }
+    [ToMain.READ_FOLDER_BATCH]: { requestId: string; batchSequence: number; ownerId: number; entries: FileFolder[] }
     [ToMain.SHOWS_REFRESH_BATCH]: { trimmed: TrimmedShows }
 }
 
 export interface ToMainReturnPayloads {
     [ToMain.API]: Promise<any>
     [ToMain.GET_DYNAMIC_VALUES]: Promise<{ [key: string]: string }>
+    [ToMain.READ_FOLDER_BATCH]: { requestId: string; batchSequence: number; ownerId: number; accepted: true }
 }
 
 ///////////
@@ -92,4 +94,5 @@ export type ToMainReceiveData<ID extends ToMain> = ID extends keyof ToMainSendPa
 export type ToMainReceiveValue<ID extends ToMain = ToMain> = {
     channel: ID
     data: ToMainReceiveData<ID>
+    ipcRequest?: IPCRequestMetadata
 }

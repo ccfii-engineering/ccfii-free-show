@@ -5,18 +5,13 @@
     import type { Resolution } from "../types/Settings"
     import { getResolution } from "./components/helpers/output"
     import Output from "./components/output/Output.svelte"
-    import WebGPUOutput from "./components/output/webgpu/WebGPUOutput.svelte"
-    import { shouldUseGPUOutput } from "./components/output/webgpu/useWebGPUDecision"
     import { getStyleResolution } from "./components/slide/getStyleResolution"
     import StageLayout from "./components/stage/StageLayout.svelte"
     import { currentWindow, livePrepare, outputs, special, styles } from "./stores"
     import { hideDisplay } from "./utils/common"
-    import { destroy, receive, send } from "./utils/request"
+    import { send } from "./utils/request"
 
     $: outputId = Object.keys($outputs)[0]
-    $: currentOutput = $outputs[outputId] || {}
-    let sessionFallback = false
-    $: useGPUOutput = shouldUseGPUOutput({ special: $special, output: currentOutput, sessionFallback })
 
     // get output resolution
     let width = 0
@@ -39,29 +34,18 @@
     let loaded = false
     let loadedTimer: ReturnType<typeof setTimeout> | null = null
     onMount(() => {
-        receive(
-            OUTPUT,
-            {
-                OUTPUT_RENDERER_FALLBACK: () => {
-                    sessionFallback = true
-                }
-            },
-            "output-renderer-fallback"
-        )
         loadedTimer = setTimeout(() => {
             loaded = true
         }, 2000)
     })
     onDestroy(() => {
         if (loadedTimer) clearTimeout(loadedTimer)
-        destroy(OUTPUT, "output-renderer-fallback")
     })
 </script>
 
 <div
     class="fill context #output_window"
     data-output-coordinator={outputId}
-    data-renderer-mode={useGPUOutput ? "gpu" : "legacy-fallback"}
     style="flex-direction: {getStyleResolution(resolution, width, height, 'fit').includes('width') && !Object.values($outputs)[0]?.stageOutput ? 'row' : 'column'};"
     class:hideCursor={$special.hideCursor}
     on:mousemove={mousemoveOutput}
@@ -81,13 +65,7 @@
     {#if $outputs[outputId]?.stageOutput}
         <StageLayout {outputId} stageId={$outputs[outputId].stageOutput} edit={false} />
     {:else if loaded}
-        {#key useGPUOutput ? "gpu" : "legacy-fallback"}
-            {#if useGPUOutput}
-                <WebGPUOutput {outputId} style={getStyleResolution(resolution, width, height, "fit")} />
-            {:else}
-                <Output {outputId} style={getStyleResolution(resolution, width, height, "fit")} />
-            {/if}
-        {/key}
+        <Output {outputId} style={getStyleResolution(resolution, width, height, "fit")} />
     {/if}
 
     <!-- black overlay for live preparation/changes -->

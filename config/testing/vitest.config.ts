@@ -7,7 +7,7 @@ import { defineConfig } from "vitest/config"
 export default defineConfig({
     root: fileURLToPath(new URL("../../", import.meta.url)),
     test: {
-        include: ["src/**/*.test.ts"],
+        include: ["src/**/*.test.ts", "scripts/tests/video-player*.test.ts"],
         environment: "node"
     }
 })

@@ -3,7 +3,6 @@
     import type { Unsubscriber } from "svelte/store"
     import type { Output } from "../../../../types/Output"
     import type { MediaType, ShowType } from "../../../../types/Show"
-    import { isGpuGeneration, sendPlaybackCommand } from "../../../outputState/playbackCommands"
     import { getPlaybackSnapshot, subscribePlaybackState } from "../../../outputState/playbackStore"
     import { activeFocus, activeShow, focusMode, outLocked, playerVideos } from "../../../stores"
     import { triggerClickOnEnterSpace } from "../../../utils/clickable"
@@ -62,20 +61,20 @@
         updateVideoState({ currentTime: 0, duration: 0, paused: true, loop: background?.loop ?? false, muted: background?.muted ?? false })
         if (!path || (type !== "video" && type !== "player")) return
 
-        let gpuOwnsPlayback = false
+        let canonicalPlaybackActive = false
         if (type === "video") {
             canonicalUnsubscriber = subscribePlaybackState((state) => {
                 const snapshot = state.snapshots[outputId]
                 const identityMatches = snapshot?.identity === path
-                gpuOwnsPlayback = !!snapshot && identityMatches && isGpuGeneration(snapshot.generation)
-                if (!gpuOwnsPlayback) return
+                canonicalPlaybackActive = !!snapshot && identityMatches
+                if (!canonicalPlaybackActive || !snapshot) return
 
                 updateVideoState({ currentTime: snapshot.progress, duration: snapshot.duration, paused: snapshot.paused, loop: snapshot.loop, muted: snapshot.muted })
             })
         }
 
         legacyUnsubscriber = videoSync(path, outputId, (data) => {
-            if (gpuOwnsPlayback) return
+            if (canonicalPlaybackActive) return
             updateVideoState(data)
         })
     }
@@ -107,11 +106,8 @@
 
         const muted = !videoData.muted
         videoData.muted = muted
-        if (background && getActiveGpuSnapshot()) {
-            sendPlaybackCommand(outputId, { type: muted ? "mute" : "unmute" })
-            setOutput("background", { ...background, muted }, false, outputId)
-        }
-        VideoPlayer.toggleMute(path, outputId)
+        if (background && getActiveSnapshot()) setOutput("background", { ...background, muted }, false, outputId)
+        VideoPlayer.setMute(path, outputId, muted)
     }
 
     function toggleLoop() {
@@ -119,8 +115,8 @@
 
         const loop = !videoData.loop
         videoData.loop = loop
-        if (background && getActiveGpuSnapshot()) setOutput("background", { ...background, loop }, false, outputId)
-        VideoPlayer.toggleLoop(path, outputId)
+        if (background && getActiveSnapshot()) setOutput("background", { ...background, loop }, false, outputId)
+        VideoPlayer.setLoop(path, outputId, loop)
     }
 
     function openPreview() {
@@ -142,28 +138,24 @@
 
     function pausePlayback() {
         if (!path) return
-        if (getActiveGpuSnapshot()) sendPlaybackCommand(outputId, { type: "pause" })
         VideoPlayer.pause(path, outputId)
     }
 
     function resumePlayback() {
         if (!path) return
-        if (getActiveGpuSnapshot()) sendPlaybackCommand(outputId, { type: "resume" })
         VideoPlayer.play(path, outputId)
     }
 
     function seekPlayback(time: number) {
         if (!path) return
-        if (getActiveGpuSnapshot()) sendPlaybackCommand(outputId, { type: "seek", time })
         VideoPlayer.seekTo(path, outputId, time)
     }
 
-    function getActiveGpuSnapshot() {
+    function getActiveSnapshot() {
         if (!path || type !== "video") return null
 
         const snapshot = getPlaybackSnapshot(outputId)
-        if (!snapshot || !isGpuGeneration(snapshot.generation)) return null
-        if (snapshot.identity !== path) return null
+        if (!snapshot || snapshot.identity !== path) return null
         return snapshot
     }
 

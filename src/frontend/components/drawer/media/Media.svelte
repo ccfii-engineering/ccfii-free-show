@@ -1,9 +1,10 @@
 <script lang="ts">
+    import { onDestroy } from "svelte"
     import { uid } from "uid"
     import type { ContentProviderId } from "../../../../electron/contentProviders/base/types"
     import { Main } from "../../../../types/IPC/Main"
     import type { ClickEvent, FileFolder } from "../../../../types/Main"
-    import { requestMain, subscribeBatches } from "../../../IPC/main"
+    import { requestMain, requestMainResult, subscribeBatches } from "../../../IPC/main"
     import { activeDrawerTab, activeEdit, activeFocus, activeMediaTagFilter, activePopup, activeShow, audioFolders, drawerTabsData, focusMode, labelsDisabled, media, mediaFolders, mediaOptions, outLocked, outputs, popupData, providerConnections, selectAllMedia, selected, sorted, special } from "../../../stores"
     import Icon from "../../helpers/Icon.svelte"
     import T from "../../helpers/T.svelte"
@@ -31,6 +32,7 @@
     import MediaGrid from "./MediaGrid.svelte"
     import { loadFromPixabay } from "./pixabay"
     import { loadFromUnsplash } from "./unsplash"
+    import { classifyFolderBatch, getFolderScanViewOutcome, type FolderScanViewOutcome } from "./scanOutcome"
 
     export let active: string | null
     export let searchValue = ""
@@ -104,6 +106,7 @@
     let prevTab = ""
     $: if (active || path) updateContent()
     async function updateContent() {
+        if (active === "favourites" || active === "online" || active === "screens" || active === "cameras") cancelCurrentFolderScan()
         if (prevActive === "online" && active !== "online") activeView = "all"
         if (active !== "online") prevTab = ""
 
@@ -165,8 +168,73 @@
 
     let requesting = 0
     let currentDepth = 0
+    let scanState: "idle" | "running" | FolderScanViewOutcome["state"] = "idle"
+    let scanEntryCount = 0
+    let scanDetail = ""
+    let scanStatusText = ""
+    let activeScanController: AbortController | null = null
+    let activeBatchUnsubscribe: (() => void) | null = null
+    let scanRenderFrame: number | null = null
+
+    function cancelVisibleScanFrame() {
+        if (scanRenderFrame !== null) {
+            cancelAnimationFrame(scanRenderFrame)
+            scanRenderFrame = null
+        }
+    }
+
+    function detachActiveFolderScan() {
+        activeScanController?.abort()
+        activeScanController = null
+        activeBatchUnsubscribe?.()
+        activeBatchUnsubscribe = null
+        cancelVisibleScanFrame()
+    }
+
+    function cancelCurrentFolderScan() {
+        if (!activeScanController && !activeBatchUnsubscribe) return
+        detachActiveFolderScan()
+        requesting++
+        scanState = "cancelled"
+        scanDetail = ""
+    }
+
+    function getParentDirectory(filePath: string) {
+        const separator = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"))
+        if (separator < 0) return ""
+        return separator === 0 ? filePath.slice(0, 1) : filePath.slice(0, separator)
+    }
+
+    function publishScannedEntries(currentPath: string | string[], entries: Map<string, FileFolder>) {
+        const allEntries = [...entries.values()]
+        const relevantEntries = allEntries.filter((entry) => (entry.isFolder ? entry.files.length > 0 : isMediaExtension(getExtension(entry.name))))
+        allRelevantFiles = relevantEntries
+
+        if (!Array.isArray(currentPath) && active !== "all" && active !== "favourites" && !entries.has(currentPath)) {
+            const directChildPaths = allEntries.filter((entry) => getParentDirectory(entry.path) === currentPath).map((entry) => entry.path)
+            if (directChildPaths.length) {
+                allRelevantFiles = [{ isFolder: true, path: currentPath, name: getFileName(currentPath), files: directChildPaths }, ...relevantEntries]
+            }
+        }
+
+        openFolder(active === "all" ? "all" : Array.isArray(currentPath) ? "all" : currentPath)
+    }
+
+    function scheduleScannedEntries(currentRequest: number, currentPath: string | string[], entries: Map<string, FileFolder>) {
+        if (scanRenderFrame !== null) return
+        scanRenderFrame = requestAnimationFrame(() => {
+            scanRenderFrame = null
+            if (requesting !== currentRequest) return
+            publishScannedEntries(currentPath, entries)
+        })
+    }
+
     async function requestFiles(path: string | string[], depth: number = 0, captureFolderContent: boolean = false) {
         if (!path) return
+
+        detachActiveFolderScan()
+        const controller = new AbortController()
+        activeScanController = controller
 
         currentDepth = depth
 
@@ -181,16 +249,55 @@
         const currentRequest = requesting
         const requestId = uid(8)
         const accum = new Map<string, FileFolder>()
-        const off = subscribeBatches<{ requestId: string; entries: FileFolder[] }>(requestId, (batch) => {
-            if (requesting !== currentRequest) return
-            for (const e of batch.entries) accum.set(e.path, e)
-        })
+        let lastBatchSequence = 0
+        scanState = "running"
+        scanEntryCount = 0
+        scanDetail = ""
+        allRelevantFiles = []
+        foldersList = []
+        filesList = []
+        filteredFiles = []
+        searchedFiles = []
 
-        const reply = await requestMain(Main.READ_FOLDER, { path, depth, captureFolderContent, requestId, useWorker: $special.workerIndexer !== false })
+        const off = subscribeBatches<{ requestId: string; batchSequence: number; ownerId: number; entries: FileFolder[] }>(requestId, (batch) => {
+            if (requesting !== currentRequest) return
+            const delivery = classifyFolderBatch(requestId, lastBatchSequence, batch)
+            if (delivery === "stale") return
+            if (delivery === "out-of-order") {
+                scanDetail = "The folder scan received out-of-order batches."
+                controller.abort()
+                return
+            }
+            lastBatchSequence = batch.batchSequence
+            for (const e of batch.entries) accum.set(e.path, e)
+            scanEntryCount = accum.size
+            scheduleScannedEntries(currentRequest, path, accum)
+        })
+        activeBatchUnsubscribe = off
+
+        const result = await requestMainResult(Main.READ_FOLDER, { path, depth, captureFolderContent, requestId, useWorker: $special.workerIndexer !== false }, { signal: controller.signal })
         off()
+        if (activeBatchUnsubscribe === off) activeBatchUnsubscribe = null
         if (requesting !== currentRequest) return
 
-        const data = accum.size > 0 ? Object.fromEntries(accum) : reply
+        cancelVisibleScanFrame()
+        publishScannedEntries(path, accum)
+
+        const outcome = getFolderScanViewOutcome(result, accum.size)
+        scanState = outcome.state
+        scanEntryCount = outcome.entryCount
+        scanDetail = outcome.detail || ""
+
+        if (outcome.state === "complete" && outcome.entryCount !== accum.size) {
+            scanState = accum.size ? "partial" : "failed"
+            scanDetail = `Received ${accum.size} of ${outcome.entryCount} folder entries.`
+        }
+        if (scanState !== "complete") {
+            controller.abort()
+        }
+        if (activeScanController === controller) activeScanController = null
+
+        const data = Object.fromEntries(accum)
 
         // check if there's any audio files that the user might want to find
         if (!Array.isArray(path)) {
@@ -224,6 +331,8 @@
 
         openFolder(active === "all" ? "all" : (path as string))
     }
+
+    onDestroy(() => detachActiveFolderScan())
 
     function openFolder(path: string) {
         if (path === "all" || path === "favourites") {
@@ -445,10 +554,11 @@
     }
 
     $: pathString = path.replace(rootPath, "").replace(folderName, "").replaceAll("\\", "/").split("/").filter(Boolean).join("/")
+    $: scanStatusText = scanState === "running" ? `Loading folder… ${scanEntryCount} entries found` : scanState === "complete" ? `Loaded full folder listing: ${scanEntryCount} entries` : scanState === "partial" ? `Showing partial folder listing: ${scanEntryCount} entries${scanDetail ? `. ${scanDetail}` : ""}` : scanState === "failed" ? `Could not load folder${scanDetail ? `: ${scanDetail}` : "."}` : scanState === "cancelled" ? "Folder scan cancelled" : ""
 
     function handleDisconnect() {
         requestMain(Main.PROVIDER_DISCONNECT, { providerId: "canva" }, (result) => {
-            if (result.success) {
+            if (result?.success) {
                 providerConnections.update((c) => {
                     c.canva = false
                     return c
@@ -462,6 +572,12 @@
 <!-- TODO: pexels images ? -->
 
 <svelte:window on:keydown={keydown} on:mouseup={mousepress} />
+
+{#if scanState !== "idle" && active !== null && !specialTabs.includes(active) && !isProviderSection}
+    <div role={scanState === "failed" || scanState === "partial" ? "alert" : "status"} aria-live="polite" style="padding: 0.5rem 1rem; opacity: 0.7; font-size: 0.85rem;">
+        {scanStatusText}
+    </div>
+{/if}
 
 <!-- TABS -->
 
