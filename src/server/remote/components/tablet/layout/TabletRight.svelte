@@ -12,6 +12,7 @@
     import Icon from "../../../../common/components/Icon.svelte"
     import Textbox from "../../show/Textbox.svelte"
     import Zoomed from "../../show/Zoomed.svelte"
+    import { htmlToPlainText } from "../../../../common/util/plainText"
 
     $: outNumber = $outSlide ?? -1
     let transition: any = { type: "fade", duration: 500 }
@@ -19,6 +20,8 @@
     $: layout = $outShow ? GetLayout($outShow, $outLayout) : null
     $: totalSlides = layout ? layout.length : 0
     $: outShowName = $outShow?.name || translate("remote.no_show_selected", $dictionary) || "—"
+    $: currentSlideId = layout?.[outNumber]?.id
+    $: notes = currentSlideId ? htmlToPlainText($outShow?.slides?.[currentSlideId]?.notes || "") : ""
 
     // Resolution for overlay scaling
     const resolution = { width: 1920, height: 1080 }
@@ -130,6 +133,13 @@
                     </div>
                 {/if}
             </div>
+        {/if}
+
+        {#if $outShow && !$isCleared.slide}
+            <section class="notes" aria-label="Slide notes">
+                <h3>Notes</h3>
+                <p>{notes || "No notes for this slide."}</p>
+            </section>
         {/if}
 
         {#if hasBackground}
@@ -306,6 +316,33 @@
 
     .media-wrapper {
         padding: 8px;
+    }
+
+    .notes {
+        margin: 8px;
+        padding: 10px 12px;
+        border: 1px solid var(--primary-lighter);
+        border-radius: 8px;
+        color: var(--text);
+        background: var(--primary-darkest);
+    }
+
+    .notes h3 {
+        margin: 0 0 5px;
+        color: var(--accent);
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .notes p {
+        max-height: 6em;
+        overflow: auto;
+        margin: 0;
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+        font-size: 0.82rem;
+        line-height: 1.35;
     }
 
     .current-show-label .label-text {

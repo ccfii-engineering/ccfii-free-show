@@ -6,6 +6,7 @@
     import { GetLayout, getNextSlide, nextSlide } from "../../util/output"
     import { send } from "../../util/socket"
     import { _set, dictionary, outLayout, outputMode, outShow, outSlide } from "../../util/stores"
+    import { htmlToPlainText } from "../../../common/util/plainText"
     import Clear from "../show/Clear.svelte"
     import Slide from "../show/Slide.svelte"
     import Lyrics from "./Lyrics.svelte"
@@ -18,6 +19,8 @@
     $: _set("layout", layout)
 
     $: totalSlides = layout ? layout.length : 0
+    $: currentSlideId = layout?.[slideNum]?.id
+    $: notes = currentSlideId ? htmlToPlainText($outShow?.slides?.[currentSlideId]?.notes || "") : ""
 
     // click on content
     function click(e: any) {
@@ -44,6 +47,13 @@
                     <div style="display: flex;align-items: center;justify-content: center;flex: 1;opacity: 0.5;">{translate("remote.end", $dictionary)}</div>
                 {/if}
             </div>
+        {/if}
+
+        {#if notes}
+            <section class="notes" aria-label="Slide notes">
+                <h3>Notes</h3>
+                <p>{notes}</p>
+            </section>
         {/if}
 
         <div class="slide-progress-text">{slideNum + 1}/{totalSlides}</div>
@@ -99,6 +109,31 @@
         font-variant-numeric: tabular-nums;
         letter-spacing: 0.3px;
         color: white;
+    }
+
+    .notes {
+        flex: 0 0 auto;
+        max-height: 20%;
+        overflow: auto;
+        padding: 8px 12px;
+        color: var(--text);
+        background: var(--primary-darker);
+    }
+
+    .notes h3 {
+        margin: 0 0 4px;
+        color: var(--accent);
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .notes p {
+        margin: 0;
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+        font-size: 0.8rem;
+        line-height: 1.35;
     }
 
     .slide-progress-text {

@@ -41,7 +41,7 @@ function makePdfFixture(pageCount = 2) {
     return Buffer.from(pdf, "ascii")
 }
 
-test("PowerPoint import defaults to rendered, keeps editable advanced, offers PDF fallback, and cancels progress", async () => {
+test("PowerPoint import defaults to safe .pptx images, keeps editable advanced, and preserves PDF imports", async () => {
     test.setTimeout(120_000)
 
     const indexPath = path.join(process.cwd(), "public", "index.html")
@@ -72,10 +72,10 @@ test("PowerPoint import defaults to rendered, keeps editable advanced, offers PD
             if (!originalReceiver) throw new Error("Could not locate the Electron MAIN receiver for the test interceptor")
             const state: any = {
                 calls: [] as { message: any; listenerId?: string }[],
-                responseMode: "unavailable" as "unavailable" | "hold",
                 existingHandlers,
                 originalReceiver,
                 holdPageRequest: false,
+                importRequests: [] as any[],
                 initialListenerCount: existingHandlers.length
             }
             ;(globalThis as any).__powerpointImportTest = state
@@ -84,12 +84,12 @@ test("PowerPoint import defaults to rendered, keeps editable advanced, offers PD
             const interceptor = (event: Electron.IpcMainEvent, message: any, listenerId?: string) => {
                 if (message?.channel === "IMPORT") {
                     state.calls.push({ message, listenerId })
-                    if (message.ipcRequest?.kind === "request" && state.responseMode === "unavailable") {
+                    if (message.ipcRequest?.kind === "request") {
                         event.sender.send(
                             "MAIN",
                             {
                                 channel: "IMPORT",
-                                data: { status: "renderer-unavailable", jobId: "test-import", message: "LibreOffice is missing" },
+                                data: { status: "error", jobId: "test-import", message: "This .pptx file could not be rendered" },
                                 ipcRequest: { protocol: "freeshow-ipc-request", version: 1, kind: "reply", status: "success" }
                             },
                             listenerId
@@ -132,6 +132,7 @@ test("PowerPoint import defaults to rendered, keeps editable advanced, offers PD
             await mainWindow.keyboard.press("Control+i")
             await expect(mainWindow.getByText("PDF", { exact: true }).last()).toBeVisible({ timeout: 15_000 })
             await expect(mainWindow.getByText("PowerPoint", { exact: true }).last()).toBeVisible()
+            await expect(mainWindow.getByText("Clipboard", { exact: true }).last()).toBeVisible()
         }
 
         await openImport()
@@ -154,11 +155,14 @@ test("PowerPoint import defaults to rendered, keeps editable advanced, offers PD
         const popupBack = mainWindow.locator('button[data-title="Back"]')
         if (await popupBack.count()) await popupBack.click()
         await openImport()
-        await mainWindow.getByText("PowerPoint", { exact: true }).last().click()
-        await expect(mainWindow.getByText("Export PDF from PowerPoint, then import that PDF into FreeShow now?", { exact: false })).toBeVisible()
-        await mainWindow.getByText("Yes", { exact: true }).last().click()
-
-        await expect.poll(async () => electronApp?.evaluate(() => (globalThis as any).__powerpointImportTest.calls.some(({ message }: any) => message.data?.mode === "rendered") && (globalThis as any).__powerpointImportTest.calls.some(({ message }: any) => message.data?.channel === "pdf"))).toBe(true)
+        await powerpointOptions.evaluate((button) => (button as HTMLButtonElement).click())
+        await expect(mainWindow.getByText("Preserve appearance", { exact: true })).toBeVisible()
+        await mainWindow.getByText("Preserve appearance", { exact: true }).evaluate((element) => (element as HTMLElement).click())
+        const failurePopup = mainWindow.locator(".popup").filter({ hasText: "PowerPoint import failed" }).last()
+        await expect(failurePopup).toBeVisible()
+        await expect(failurePopup).toContainText("This .pptx file could not be rendered")
+        await expect.poll(async () => electronApp?.evaluate(() => (globalThis as any).__powerpointImportTest.calls.some(({ message }: any) => message.data?.mode === "rendered"))).toBe(true)
+        await mainWindow.keyboard.press("Enter")
 
         const cancelFixturePath = path.join(dataFolder.name, "cancel-import-fixture.pdf")
         const fixturePath = path.join(dataFolder.name, "manual-import-fixture.pdf")
@@ -184,6 +188,14 @@ test("PowerPoint import defaults to rendered, keeps editable advanced, offers PD
             state.listenerCountAfterRestore = ipcMain.listeners("MAIN").length
             state.ipcMessages = []
             ipcMain.on("MAIN", (_event, message: any, listenerId?: string) => {
+                if (message?.channel === "IMPORT" && message.ipcRequest?.kind === "request") {
+                    state.importRequests.push({
+                        channel: message.data?.channel,
+                        mode: message.data?.mode,
+                        extensions: message.data?.format?.extensions,
+                        listenerId
+                    })
+                }
                 if (["PDF_TO_IMAGE", "PDF_RENDER_OPEN", "PDF_RENDER_PAGE", "PDF_RENDER_CLOSE"].includes(message?.channel)) {
                     state.ipcMessages.push({
                         channel: message.channel,
@@ -260,6 +272,56 @@ test("PowerPoint import defaults to rendered, keeps editable advanced, offers PD
         expect(reimportedShow.source.sourcePath).not.toBe(imageShow.source.sourcePath)
         expect(reimportedShow.images).toHaveLength(2)
         expect(reimportedShow.images.every((filePath: string) => existsSync(filePath))).toBe(true)
+
+        const powerpointPath = path.join(process.cwd(), "scripts/tests/fixtures/powerpoint-renderer-rich.pptx")
+        await electronApp.evaluate(({ dialog }, selectedPath) => {
+            dialog.showOpenDialogSync = () => [selectedPath]
+            dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selectedPath] })
+        }, powerpointPath)
+        await mainWindow.evaluate(() => {
+            ;(window as any).__observedPdfProgress = []
+        })
+        await openImport()
+        await mainWindow.getByText("PowerPoint", { exact: true }).last().click()
+        await mainWindow.waitForFunction(() => (window as any).__observedImageShows?.length > 2, { timeout: 60_000 })
+
+        const powerpointShow = await mainWindow.evaluate(() => (window as any).__observedImageShows[2])
+        const renderedImportRequests = await electronApp.evaluate(() => (globalThis as any).__powerpointImportTest.importRequests)
+        expect(
+            renderedImportRequests.some((request: any) => request.channel === "powerpoint" && request.mode === "rendered" && request.extensions?.join(",") === "pptx"),
+            `Expected the rendered PowerPoint request to allow only .pptx files; received ${JSON.stringify(renderedImportRequests)}`
+        ).toBe(true)
+        expect(powerpointShow.source.kind).toBe("powerpoint")
+        expect(powerpointShow.source.renderer).toBe("web-ppt (static PNG)")
+        expect(powerpointShow.source.pdfPath).toBeUndefined()
+        expect(powerpointShow.source.rendererVersion).toContain("@web-ppt/core 0.4.5")
+        expect(powerpointShow.source.rendererVersion).toContain("Electron")
+        expect(powerpointShow.source.rendererVersion).toContain("Chromium")
+        expect(powerpointShow.source.pagePaths).toHaveLength(1)
+        expect(path.isAbsolute(powerpointShow.source.sourcePath)).toBe(false)
+        expect(path.isAbsolute(powerpointShow.source.pagePaths[0])).toBe(false)
+        const managedPowerpointSource = path.resolve(dataFolder.name, powerpointShow.source.sourcePath)
+        expect(managedPowerpointSource.startsWith(path.resolve(dataFolder.name) + path.sep)).toBe(true)
+        expect(readFileSync(managedPowerpointSource)).toEqual(readFileSync(powerpointPath))
+        expect(powerpointShow.images).toHaveLength(1)
+        expect(powerpointShow.images.every((filePath: string) => existsSync(filePath))).toBe(true)
+        expect(powerpointShow.images[0]).toBe(path.resolve(dataFolder.name, powerpointShow.source.pagePaths[0]))
+        const powerpointPng = readFileSync(powerpointShow.images[0])
+        expect(powerpointPng.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+        const pngWidth = powerpointPng.readUInt32BE(16)
+        const pngHeight = powerpointPng.readUInt32BE(20)
+        expect(pngWidth).toBeGreaterThan(0)
+        expect(pngHeight).toBeGreaterThan(0)
+        expect(pngWidth).toBeLessThanOrEqual(powerpointShow.source.resolution.maxWidth)
+        expect(pngHeight).toBeLessThanOrEqual(powerpointShow.source.resolution.maxHeight)
+
+        const powerpointManifestPath = path.join(dataFolder.name, path.dirname(powerpointShow.source.pagePaths[0]), "manifest.json")
+        const powerpointManifest = JSON.parse(readFileSync(powerpointManifestPath, "utf8"))
+        expect(powerpointManifest.source.cacheKey).toBe(powerpointShow.source.cacheKey)
+        expect(powerpointManifest.source.sourceHash).toBe(powerpointShow.source.sourceHash)
+        expect(powerpointManifest.source.pdfPath).toBeUndefined()
+
+        await expect.poll(async () => mainWindow.evaluate(() => (window as any).__observedPdfProgress?.some((item: any) => item.filePath.endsWith("powerpoint-renderer-rich.pptx") && item.status === "complete"))).toBe(true)
     } catch (error) {
         if (electronApp) {
             const trace = await electronApp
@@ -268,6 +330,7 @@ test("PowerPoint import defaults to rendered, keeps editable advanced, offers PD
                     return {
                         calls: state?.calls?.map(({ message }: any) => ({ channel: message.channel, dataChannel: message.data?.channel, mode: message.data?.mode, kind: message.ipcRequest?.kind })),
                         ipcMessages: state?.ipcMessages,
+                        importRequests: state?.importRequests,
                         initialListenerCount: state?.initialListenerCount,
                         listenerCountAfterRestore: state?.listenerCountAfterRestore,
                         currentListeners: ipcMain.listeners("MAIN").map((listener) => listener.toString().slice(0, 140))

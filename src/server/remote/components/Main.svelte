@@ -20,6 +20,7 @@
     import ShowContent from "./pages/ShowContent.svelte"
     import Shows from "./pages/Shows.svelte"
     import Slide from "./pages/Slide.svelte"
+    import MediaLibrary from "./MediaLibrary.svelte"
 
     // Tablet mode component (lazy-loaded for performance)
     let TabletMode: any = null
@@ -30,6 +31,7 @@
     let tabs: TabsObj = {}
     $: tabs = {
         shows: { name: translate("remote.shows", $dictionary), icon: "search" }, // shows
+        media: { name: translate("tabs.media", $dictionary), icon: "media" },
         scripture: { name: translate("tabs.scripture", $dictionary), icon: "scripture" },
         project: { name: translate("remote.project", $dictionary), icon: "project" },
         show: { name: translate("remote.show", $dictionary), icon: "show" },
@@ -38,6 +40,7 @@
     }
     $: tabsDisabled = {
         shows: $shows.length,
+        media: true,
         scripture: Object.keys($scriptures).length,
         project: $projects.length || $activeProject,
         show: $activeShow || ($active?.type || "show") !== "show",
@@ -140,6 +143,8 @@
         <div class="content">
             {#if tab === "shows"}
                 <Shows />
+            {:else if tab === "media"}
+                <MediaLibrary />
             {:else if tab === "scripture"}
                 <Scripture />
             {:else if tab === "project"}

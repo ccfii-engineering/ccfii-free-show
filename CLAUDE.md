@@ -67,7 +67,7 @@ npm run format:prettier   # Auto-format src and scripts
 
 ### IPC Communication
 
-All cross-process communication flows through typed IPC channels defined in `src/types/Channels.ts`. Channel constants: `MAIN`, `OUTPUT`, `STARTUP`, `EXPORT`, `REMOTE`, `STAGE`, `CONTROLLER`, `OUTPUT_STREAM`, `CLOUD`, `NDI`, `BLACKMAGIC`, `AUDIO`, `API_DATA`.
+Most cross-process communication flows through typed channels defined in `src/types/Channels.ts`. The isolated PowerPoint render job uses its private typed bridge in `src/types/PowerPointRenderer.ts`; see [`docs/agents/code-navigation.md`](docs/agents/code-navigation.md) for that route. Channel constants: `MAIN`, `OUTPUT`, `STARTUP`, `EXPORT`, `REMOTE`, `STAGE`, `CONTROLLER`, `OUTPUT_STREAM`, `CLOUD`, `NDI`, `BLACKMAGIC`, `AUDIO`, `API_DATA`.
 
 - `src/types/IPC/` — Message type definitions (`Main.ts` enumerates main-channel message IDs, `ToMain.ts` for reverse direction)
 - `src/electron/IPC/main.ts` + `responsesMain.ts` — Electron-side handlers
@@ -142,4 +142,4 @@ Full audit at `docs/superpowers/audits/2026-04-09-performance-audit.md` with pri
 
 ## Code Navigation
 
-Start with [`docs/agents/code-navigation.md`](docs/agents/code-navigation.md) for current IPC, Presentation Output, video controls/observations, media scans, Serena/Graphify, and graph-refresh guidance. The repo's Serena config is `.serena/project.yml`; its selected memories are `project_overview` and `code_navigation`. On Serena, read `initial_instructions`, then load relevant memories with `list_memories` and `read_memory`.
+Start with [`docs/agents/code-navigation.md`](docs/agents/code-navigation.md) for current IPC, Presentation Output, video controls/observations, media scans, PowerPoint imports, Serena/Graphify, and graph-refresh guidance. The repo's Serena config is `.serena/project.yml`; its selected memories are `project_overview` and `code_navigation`. On Serena, read `initial_instructions`, then load relevant memories with `list_memories` and `read_memory`.

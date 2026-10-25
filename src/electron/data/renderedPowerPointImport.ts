@@ -1,28 +1,32 @@
 import { createHash } from "crypto"
 import { spawn } from "child_process"
+import type { WebContents } from "electron"
 import fs from "fs"
 import path from "path"
-import { pathToFileURL } from "url"
 import { uid } from "uid"
 import type { PowerPointImportMode, PowerPointImportOutcome } from "../../types/IPC/Main"
 import { ToMain } from "../../types/IPC/ToMain"
 import type { ImportSource } from "../../types/Show"
 import { requestToMainResult, sendToMain } from "../IPC/main"
-import { getSofficePath } from "../output/ppt/soffice"
+import { closePowerPointRenderer, openPowerPointRenderer, renderPowerPointPage } from "./powerpointRenderer"
+import { POWERPOINT_ARCHIVE_LIMITS, preflightPowerPointArchive } from "./powerpointArchivePreflight"
 import { getDataFolderRoot, sanitizeFileName } from "../utils/files"
 
 export const POWERPOINT_RENDER_RESOLUTION = { maxWidth: 1920, maxHeight: 1080, maxPixels: 1920 * 1080 } as const
 
 type RenderPage = { png: ArrayBuffer; width: number; height: number }
-type OpenPdf = { pageCount: number; rendererVersion: string }
+type OpenDocument = { pageCount: number; rendererVersion: string }
 
 export interface RenderImportDependencies {
     dataRoot: string
     createJobId: () => string
-    convert?: (sourcePath: string, pdfPath: string, jobFolder: string, signal?: AbortSignal) => Promise<string>
-    openPdf: (jobId: string, pdfPath: string, signal?: AbortSignal) => Promise<OpenPdf>
+    preflightPowerPoint: (sourcePath: string, signal?: AbortSignal) => Promise<{ pageCount: number }>
+    openPowerPoint: (jobId: string, sourcePath: string, signal?: AbortSignal) => Promise<OpenDocument>
+    openPdf: (jobId: string, pdfPath: string, signal?: AbortSignal) => Promise<OpenDocument>
     renderPage: (jobId: string, pageIndex: number, resolution: ImportSource["resolution"], signal?: AbortSignal) => Promise<RenderPage>
+    renderPowerPointPage: (jobId: string, pageIndex: number, resolution: ImportSource["resolution"], signal?: AbortSignal) => Promise<RenderPage>
     closePdf: (jobId: string) => Promise<void>
+    closePowerPoint: (jobId: string) => Promise<void>
     progress: (data: { filePath: string; name: string; progress: number; total: number; status: "importing" | "complete" | "error"; message?: string; jobId: string }) => void
     createShow: (data: { images: string[]; name: string; source: ImportSource }) => void
 }
@@ -90,19 +94,26 @@ export function buildImportCacheKey(sourceHash: string, rendererVersion: string,
         .digest("hex")
 }
 
-function rendererVersionFor(kind: ImportSource["kind"], converterVersion: string | undefined, pdfJsVersion: string) {
-    return kind === "powerpoint" ? `${converterVersion}; PDF.js ${pdfJsVersion}` : `PDF.js ${pdfJsVersion}`
+function rendererVersionFor(kind: ImportSource["kind"], rendererVersion: string) {
+    return kind === "powerpoint" ? rendererVersion : `PDF.js ${rendererVersion}`
 }
 
 function appFacingName(filePath: string) {
     return sanitizeFileName(path.basename(filePath, path.extname(filePath))) || "Presentation"
 }
 
-function createProductionDependencies(): RenderImportDependencies {
+function createProductionDependencies(uiWebContents?: WebContents): RenderImportDependencies {
     return {
         dataRoot: getDataFolderRoot(),
         createJobId: () => uid(20),
-        convert: convertPowerPoint,
+        preflightPowerPoint: preflightPowerPointArchive,
+        openPowerPoint: async (jobId, sourcePath, signal) => {
+            const result = await openPowerPointRenderer({ jobId, sourcePath, signal, uiWebContents })
+            return {
+                pageCount: result.pageCount,
+                rendererVersion: `${result.rendererVersion}; Electron ${process.versions.electron}; Chromium ${process.versions.chrome}`
+            }
+        },
         openPdf: async (jobId, pdfPath, signal) => {
             const result = await requestToMainResult(ToMain.PDF_RENDER_OPEN, { jobId, pdfPath }, { signal, timeoutMs: 5 * 60 * 1000 })
             return requireIPCData(result, "Could not open the converted PDF for rendering")
@@ -111,9 +122,16 @@ function createProductionDependencies(): RenderImportDependencies {
             const result = await requestToMainResult(ToMain.PDF_RENDER_PAGE, { jobId, pageIndex, ...resolution, format: "png" }, { signal, timeoutMs: 5 * 60 * 1000 })
             return requireIPCData(result, `Could not render PDF page ${pageIndex + 1}`)
         },
+        renderPowerPointPage: async (jobId, pageIndex, resolution, signal) => {
+            if (signal?.aborted) throw abortError()
+            return renderPowerPointPage(jobId, pageIndex, resolution)
+        },
         closePdf: async (jobId) => {
             // Cleanup gets its own timeout and no already-aborted outer signal.
             await requestToMainResult(ToMain.PDF_RENDER_CLOSE, { jobId }, { timeoutMs: 15_000 })
+        },
+        closePowerPoint: async (jobId) => {
+            await closePowerPointRenderer(jobId)
         },
         progress: (data) => sendToMain(ToMain.PDF_IMPORT_PROGRESS, data),
         createShow: (data) => sendToMain(ToMain.IMAGES_TO_SHOW, data)
@@ -372,33 +390,6 @@ export function runOwnedCommand(command: string, args: string[], signal?: AbortS
     })
 }
 
-async function convertPowerPoint(sourcePath: string, pdfPath: string, jobFolder: string, signal?: AbortSignal) {
-    const command = getSofficePath()
-    let versionOutput: string
-    try {
-        versionOutput = (await runOwnedCommand(command, ["--version"], signal, 15_000)).stdout
-    } catch (error: any) {
-        if (error?.code === "ENOENT") throw new RendererUnavailableError("LibreOffice was not found")
-        throw error
-    }
-    if (!versionOutput) throw new Error("LibreOffice did not report its version")
-
-    const profilePath = path.join(jobFolder, "libreoffice-profile")
-    await fs.promises.mkdir(profilePath, { recursive: true })
-    const args = ["--headless", "--nologo", "--nodefault", "--nolockcheck", "--nofirststartwizard", `-env:UserInstallation=${pathToFileURL(profilePath).href}`, "--convert-to", "pdf", "--outdir", jobFolder, sourcePath]
-    await runOwnedCommand(command, args, signal)
-    await fs.promises.rm(profilePath, { recursive: true, force: true }).catch(() => {})
-    if (!(await fileExists(pdfPath))) throw new Error("LibreOffice completed without creating a PDF")
-    return versionOutput
-}
-
-class RendererUnavailableError extends Error {
-    constructor(message: string) {
-        super(message)
-        this.name = "RendererUnavailableError"
-    }
-}
-
 async function fileExists(filePath: string) {
     try {
         const stat = await fs.promises.stat(filePath)
@@ -408,19 +399,20 @@ async function fileExists(filePath: string) {
     }
 }
 
-async function renderPdfIntoJob(options: { kind: ImportSource["kind"]; sourcePath: string; pdfPath: string; jobId: string; jobFolder: string; sourceHash: string; converterVersion?: string; name: string; progressFilePath?: string; resolution?: ImportSource["resolution"]; createShow?: boolean; signal?: AbortSignal; dependencies: RenderImportDependencies }): Promise<{ source: ImportSource; images: string[]; pageCount: number }> {
-    const { kind, sourcePath, pdfPath, jobId, jobFolder, sourceHash, converterVersion, name, signal, dependencies } = options
+async function renderDocumentIntoJob(options: { kind: ImportSource["kind"]; sourcePath: string; pdfPath?: string; jobId: string; jobFolder: string; sourceHash: string; name: string; progressFilePath?: string; resolution?: ImportSource["resolution"]; createShow?: boolean; signal?: AbortSignal; dependencies: RenderImportDependencies }): Promise<{ source: ImportSource; images: string[]; pageCount: number }> {
+    const { kind, sourcePath, pdfPath, jobId, jobFolder, sourceHash, name, signal, dependencies } = options
     const progressFilePath = options.progressFilePath || sourcePath
     let closeAttempted = false
 
     try {
         throwIfAborted(signal)
         closeAttempted = true
-        const opened = await dependencies.openPdf(jobId, pdfPath, signal)
-        if (!Number.isInteger(opened.pageCount) || opened.pageCount < 1) throw new Error("The PDF contains no pages")
+        if (kind === "pdf" && !pdfPath) throw new Error("A PDF path is required to render a PDF import")
+        const opened = kind === "powerpoint" ? await dependencies.openPowerPoint(jobId, sourcePath, signal) : await dependencies.openPdf(jobId, pdfPath!, signal)
+        if (!Number.isInteger(opened.pageCount) || opened.pageCount < 1) throw new Error(kind === "powerpoint" ? "The .pptx file does not contain any slides" : "The PDF contains no pages")
 
         const resolution = options.resolution || POWERPOINT_RENDER_RESOLUTION
-        const rendererVersion = rendererVersionFor(kind, converterVersion, opened.rendererVersion)
+        const rendererVersion = rendererVersionFor(kind, opened.rendererVersion)
         const cacheKey = buildImportCacheKey(sourceHash, rendererVersion, resolution)
         const images: string[] = []
         const pagePaths: string[] = []
@@ -428,7 +420,7 @@ async function renderPdfIntoJob(options: { kind: ImportSource["kind"]; sourcePat
         dependencies.progress({ filePath: progressFilePath, name, progress: 10, total: 100, status: "importing", jobId })
         for (let pageIndex = 0; pageIndex < opened.pageCount; pageIndex++) {
             throwIfAborted(signal)
-            const page = await dependencies.renderPage(jobId, pageIndex, resolution, signal)
+            const page = kind === "powerpoint" ? await dependencies.renderPowerPointPage(jobId, pageIndex, resolution, signal) : await dependencies.renderPage(jobId, pageIndex, resolution, signal)
             const imagePath = path.join(jobFolder, `page-${String(pageIndex + 1).padStart(4, "0")}.png`)
             await fs.promises.writeFile(imagePath, Buffer.from(page.png))
             images.push(imagePath)
@@ -440,9 +432,9 @@ async function renderPdfIntoJob(options: { kind: ImportSource["kind"]; sourcePat
         const source: ImportSource = {
             kind,
             sourcePath: toManagedRef(dependencies.dataRoot, sourcePath),
-            pdfPath: toManagedRef(dependencies.dataRoot, pdfPath),
+            ...(kind === "pdf" ? { pdfPath: toManagedRef(dependencies.dataRoot, pdfPath!) } : {}),
             sourceHash,
-            renderer: kind === "powerpoint" ? "LibreOffice + PDF.js" : "PDF.js",
+            renderer: kind === "powerpoint" ? "web-ppt (static PNG)" : "PDF.js",
             rendererVersion,
             resolution,
             format: "png",
@@ -462,7 +454,8 @@ async function renderPdfIntoJob(options: { kind: ImportSource["kind"]; sourcePat
         if (closeAttempted) {
             try {
                 // This request is independent of the canceled render request so PDF.js can release its document.
-                await dependencies.closePdf(jobId)
+                if (kind === "powerpoint") await dependencies.closePowerPoint(jobId)
+                else await dependencies.closePdf(jobId)
             } catch {
                 // Best-effort cleanup must not mask the import result.
             }
@@ -483,42 +476,43 @@ export async function runRenderedImportJob(sourcePath: string, kind: ImportSourc
         await fs.promises.mkdir(jobFolder, { recursive: false })
         ownsJobFolder = true
 
-        const extension = path.extname(sourcePath) || (kind === "powerpoint" ? ".pptx" : ".pdf")
+        const extension = path.extname(sourcePath) || (kind === "pdf" ? ".pdf" : "")
+        if (kind === "powerpoint" && extension.toLowerCase() !== ".pptx") {
+            throw new Error("Image import supports .pptx files only. Save this presentation as .pptx, then import it. Legacy .ppt and macro-enabled .pptm files are not supported in this mode.")
+        }
+        if (kind === "powerpoint") {
+            const sourceStat = await fs.promises.stat(sourcePath)
+            if (!sourceStat.isFile()) throw new Error("The PowerPoint source is not a regular file")
+            if (sourceStat.size > POWERPOINT_ARCHIVE_LIMITS.maxSourceBytes) throw new Error("This .pptx file is larger than the 100 MiB import limit")
+        }
         const sourceCopy = path.join(jobFolder, `source${extension.toLowerCase()}`)
         await fs.promises.copyFile(sourcePath, sourceCopy)
         const sourceHash = await hashFile(sourceCopy)
-        let pdfPath = sourceCopy
-        let converterVersion: string | undefined
-
-        if (kind === "powerpoint") {
-            if (!dependencies.convert) throw new RendererUnavailableError("LibreOffice is not available")
-            pdfPath = path.join(jobFolder, "source.pdf")
-            converterVersion = await dependencies.convert(sourceCopy, pdfPath, jobFolder, signal)
-        }
+        if (kind === "powerpoint") await dependencies.preflightPowerPoint(sourceCopy, signal)
 
         throwIfAborted(signal)
         dependencies.progress({ filePath: sourcePath, name, progress: kind === "powerpoint" ? 5 : 0, total: 100, status: "importing", jobId })
-        const rendered = await renderPdfIntoJob({ kind, sourcePath: sourceCopy, pdfPath, jobId, jobFolder, sourceHash, converterVersion, name, progressFilePath: sourcePath, signal, dependencies })
+        const rendered = await renderDocumentIntoJob({ kind, sourcePath: sourceCopy, pdfPath: kind === "pdf" ? sourceCopy : undefined, jobId, jobFolder, sourceHash, name, progressFilePath: sourcePath, signal, dependencies })
         ownsJobFolder = false
         return { status: "complete", jobId, showName: name, pages: rendered.pageCount, source: rendered.source, images: rendered.images }
     } catch (error: any) {
         if (ownsJobFolder) await fs.promises.rm(jobFolder, { recursive: true, force: true }).catch(() => {})
         const cancelled = isAbortError(error, signal)
-        const rendererUnavailable = error instanceof RendererUnavailableError || error?.name === "RendererUnavailableError" || error?.code === "ENOENT"
-        const message = cancelled ? "PowerPoint/PDF import cancelled" : rendererUnavailable ? "LibreOffice is unavailable. Export the presentation as PDF in PowerPoint, then import the PDF." : error?.message || "The presentation could not be rendered"
+        const message = cancelled ? "PowerPoint/PDF import cancelled" : error?.message || "The presentation could not be rendered"
         dependencies.progress({ filePath: sourcePath, name, progress: 0, total: 100, status: "error", message, jobId })
-        return cancelled ? { status: "cancelled", jobId, message } : { status: rendererUnavailable ? "renderer-unavailable" : "error", jobId, message }
+        return cancelled ? { status: "cancelled", jobId, message } : { status: "error", jobId, message }
     }
 }
 
-export async function importPowerPointFiles(files: string[], signal?: AbortSignal): Promise<PowerPointImportOutcome | undefined> {
+export async function importPowerPointFiles(files: string[], signal?: AbortSignal, uiWebContents?: WebContents): Promise<PowerPointImportOutcome | undefined> {
     if (!files.length) return
 
     return runWithRendererLock(signal, async () => {
         let last: ManagedImportResult | undefined
+        const dependencies = createProductionDependencies(uiWebContents)
         for (const filePath of files) {
             throwIfAborted(signal)
-            last = await runRenderedImportJob(filePath, "powerpoint", signal)
+            last = await runRenderedImportJob(filePath, "powerpoint", signal, dependencies)
             if (last.status !== "complete") return last
         }
         if (!last || last.status !== "complete") return
@@ -557,8 +551,15 @@ export async function findReusableRenderedPages(source: ImportSource, dataRoot =
 export async function rerenderImportedSource(source: ImportSource, signal?: AbortSignal, dependencies = createProductionDependencies()): Promise<{ source: ImportSource; images: string[] }> {
     return runWithRendererLock(signal, async () => {
         const sourcePath = resolveManagedImportPath(dependencies.dataRoot, source.sourcePath)
-        const pdfPath = resolveManagedImportPath(dependencies.dataRoot, source.pdfPath)
-        if (!(await fileExists(sourcePath)) || !(await fileExists(pdfPath))) throw new Error("The managed PowerPoint/PDF source is missing")
+        if (!(await fileExists(sourcePath))) throw new Error("The managed presentation source is missing")
+        let pdfPath: string | undefined
+        if (source.kind === "pdf") {
+            if (!source.pdfPath) throw new Error("The managed PDF source path is missing")
+            pdfPath = resolveManagedImportPath(dependencies.dataRoot, source.pdfPath)
+            if (!(await fileExists(pdfPath))) throw new Error("The managed PDF source is missing")
+        } else {
+            await dependencies.preflightPowerPoint(sourcePath, signal)
+        }
         const sourceHash = await hashFile(sourcePath)
         if (sourceHash !== source.sourceHash) throw new Error("The managed source no longer matches its import metadata")
 
@@ -567,22 +568,15 @@ export async function rerenderImportedSource(source: ImportSource, signal?: Abor
         await fs.promises.mkdir(path.dirname(jobFolder), { recursive: true })
         await fs.promises.mkdir(jobFolder, { recursive: false })
         try {
-            let currentPdfPath = pdfPath
-            let converterVersion: string | undefined
-            if (source.kind === "powerpoint") {
-                if (!dependencies.convert) throw new RendererUnavailableError("LibreOffice is not available")
-                currentPdfPath = path.join(jobFolder, "source.pdf")
-                converterVersion = await dependencies.convert(sourcePath, currentPdfPath, jobFolder, signal)
-            }
-
             let cachedPages: string[] | null = null
             try {
-                const opened = await dependencies.openPdf(jobId, currentPdfPath, signal)
-                const rendererVersion = rendererVersionFor(source.kind, converterVersion, opened.rendererVersion)
+                const opened = source.kind === "powerpoint" ? await dependencies.openPowerPoint(jobId, sourcePath, signal) : await dependencies.openPdf(jobId, pdfPath!, signal)
+                const rendererVersion = rendererVersionFor(source.kind, opened.rendererVersion)
                 const cacheKey = buildImportCacheKey(sourceHash, rendererVersion, source.resolution)
                 if (cacheKey === source.cacheKey) cachedPages = await findReusableRenderedPages(source, dependencies.dataRoot)
             } finally {
-                await dependencies.closePdf(jobId).catch(() => {})
+                if (source.kind === "powerpoint") await dependencies.closePowerPoint(jobId).catch(() => {})
+                else await dependencies.closePdf(jobId).catch(() => {})
             }
 
             if (cachedPages) {
@@ -590,14 +584,13 @@ export async function rerenderImportedSource(source: ImportSource, signal?: Abor
                 return { source, images: cachedPages }
             }
 
-            const result = await renderPdfIntoJob({
+            const result = await renderDocumentIntoJob({
                 kind: source.kind,
                 sourcePath,
-                pdfPath: currentPdfPath,
+                pdfPath,
                 jobId,
                 jobFolder,
                 sourceHash,
-                converterVersion,
                 name: appFacingName(sourcePath),
                 progressFilePath: sourcePath,
                 resolution: source.resolution,

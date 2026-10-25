@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/electron/main"
-import type { BrowserWindow, DesktopCapturerSource } from "electron"
+import type { BrowserWindow, DesktopCapturerSource, WebContents } from "electron"
 import { app, desktopCapturer, screen, shell, systemPreferences } from "electron"
 import os from "os"
 import path from "path"
@@ -26,10 +26,11 @@ import { captureSlide, doesMediaExist, getThumbnail, getThumbnailFolderPath, pdf
 import { OutputHelper } from "../output/OutputHelper"
 import { libreConvert } from "../output/ppt/libreConverter"
 import { getPresentationApplications, presentationControl, startSlideshow } from "../output/ppt/presentation"
-import { closeServers, startServers, updateServerData } from "../servers"
+import { closeServers, isServerConnectionActive, startServers, updateServerData } from "../servers"
 import { processAudioData, timecodeStart, timecodeStop, updateTimecodeValue } from "../timecode/timecode"
 import { apiReturnData, emitOSC, startWebSocketAndRest, stopApiListener } from "../utils/api"
 import { closeMain } from "../utils/close"
+import { RemoteMediaBrowser } from "../utils/remoteMedia"
 import { detectEncoders, setRtmpEncoderSetting } from "../streaming/encoderDetection"
 import { downloadFfmpeg, resolveFfmpegPath } from "../streaming/ffmpegManager"
 import { addToMediaFolder, bundleMediaFiles, getDataFolderPath, getDataFolderRoot, getFileInfo, getMediaCodec, getMediaSyncFolderPath, getMediaTracks, getPaths, getSimularPaths, loadFile, loadShows, locateMediaFile, openInSystem, readExifData, readFile, readFolder, readFolderContent, selectFiles, selectFilesDialog, selectFolder, setMediaSyncFolderPath, writeFile } from "../utils/files"
@@ -41,6 +42,17 @@ import { correctSpelling } from "../utils/spellcheck"
 import { executeSpotifyCommand, getSpotifyState } from "../utils/spotify"
 import checkForUpdates from "../utils/updater"
 import { requestToMainResult, sendToMain } from "./main"
+
+const remoteMediaBrowser = new RemoteMediaBrowser({
+    getRoots: () =>
+        Object.entries(getStore("SETTINGS")?.mediaFolders || {}).map(([id, root]: [string, any]) => ({
+            id,
+            name: root?.name || id,
+            path: root?.path || ""
+        })),
+    isConnectionActive: (connectionId, server) => isServerConnectionActive(server, connectionId),
+    makeThumbnail: async (input) => (await getThumbnail({ input, size: 250 })).output
+})
 
 // no need to await Promise returns here
 export const mainResponses: MainResponses = {
@@ -80,8 +92,8 @@ export const mainResponses: MainResponses = {
     [Main.SAVE]: (a) => save(a),
     [Main.BACKUPS]: () => getBackups(),
     [Main.DELETE_BACKUP]: (data) => deleteBackup(data),
-    [Main.IMPORT]: (data, _event, signal) => startImport(data, signal),
-    [Main.IMPORT_FILES]: (data, _event, signal) => importFiles(data, signal),
+    [Main.IMPORT]: (data, event, signal) => startImport(data, signal, event.sender),
+    [Main.IMPORT_FILES]: (data, event, signal) => importFiles(data, signal, event.sender),
     [Main.BIBLE]: (data) => loadScripture(data),
     [Main.SHOW]: (data) => loadShow(data),
     // MAIN
@@ -188,6 +200,14 @@ export const mainResponses: MainResponses = {
 
         return readFolderContent(data, onBatch, signal)
     },
+    [Main.REMOTE_MEDIA_PAGE]: (data, _e, signal) => remoteMediaBrowser.page(data, signal),
+    [Main.REMOTE_MEDIA_RESOLVE]: (data) => remoteMediaBrowser.resolve(data.connectionId, data.path, data.kind),
+    [Main.REMOTE_MEDIA_THUMBNAIL]: (data) => remoteMediaBrowser.thumbnail(data.connectionId, data.path),
+    [Main.REMOTE_MEDIA_CLOSE]: (data) => remoteMediaBrowser.close(data.connectionId),
+    [Main.CONTROLLER_PRESENTER_THUMBNAIL]: async (data) => {
+        const result = await remoteMediaBrowser.snapshotThumbnail(data.connectionId, data.path)
+        return { revision: data.revision, assetId: data.assetId, thumbnail: result.thumbnail }
+    },
     [Main.READ_FILE]: (data) => ({ content: readFile(data.path) }),
     [Main.OPEN_FOLDER]: (data) => selectFolder(data),
     [Main.OPEN_FILE]: (data) => selectFiles(data),
@@ -292,7 +312,7 @@ export const mainResponses: MainResponses = {
 /// ///////
 
 // IMPORT
-export async function startImport(data: { channel: string; format: { name: string; extensions: string[] }; settings?: any; mode?: "rendered" | "editable" }, signal?: AbortSignal) {
+export async function startImport(data: { channel: string; format: { name: string; extensions: string[] }; settings?: any; mode?: "rendered" | "editable" }, signal?: AbortSignal, uiWebContents?: WebContents) {
     const files: string[] = selectFilesDialog("", data.format)
 
     const needsFileAndNoFileSelected = data.format.extensions && !files.length
@@ -302,7 +322,7 @@ export async function startImport(data: { channel: string; format: { name: strin
     }
 
     if (shouldUseRenderedPowerPointImport(data.channel, data.mode)) {
-        const result = await importPowerPointFiles(files, signal)
+        const result = await importPowerPointFiles(files, signal, uiWebContents)
         if (!signal && result && result.status !== "complete") sendToMain(ToMain.TOAST, result.message)
         return result
     }
@@ -311,10 +331,10 @@ export async function startImport(data: { channel: string; format: { name: strin
     return undefined
 }
 
-export async function importFiles(data: { id: string; paths: string[]; mode?: "rendered" | "editable" }, signal?: AbortSignal) {
+export async function importFiles(data: { id: string; paths: string[]; mode?: "rendered" | "editable" }, signal?: AbortSignal, uiWebContents?: WebContents) {
     if (shouldUseRenderedPowerPointImport(data.id, data.mode)) {
         if (!data.paths.length) return { status: "cancelled" as const, message: "No PowerPoint file was selected" }
-        const result = await importPowerPointFiles(data.paths, signal)
+        const result = await importPowerPointFiles(data.paths, signal, uiWebContents)
         if (!signal && result && result.status !== "complete") sendToMain(ToMain.TOAST, result.message)
         return result
     }

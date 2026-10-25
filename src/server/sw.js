@@ -14,7 +14,7 @@
 var urlsToPrefetch = ["/", "styles.css", "client.js", "icon.png", "ccfii-icon.png", "ccfii-logo.png", "index.html"]
 
 var cachePrefix = "freeshow-ccfii-"
-var version = cachePrefix + "1.0.1-"
+var version = cachePrefix + "1.0.2-"
 
 self.addEventListener("install", function (event) {
     console.log("WORKER: install event in progress.")
@@ -162,7 +162,7 @@ self.addEventListener("activate", function (event) {
                     keys
                         .filter(function (key) {
                             // Remove this app's prior caches and the exact legacy cache names.
-                            return (key === "1.0.0fundamentals" || key === "1.0.0pages" || (key.startsWith(cachePrefix) && !key.startsWith(version)))
+                            return key === "1.0.0fundamentals" || key === "1.0.0pages" || (key.startsWith(cachePrefix) && !key.startsWith(version))
                         })
                         .map(function (key) {
                             /* Return a promise that's fulfilled

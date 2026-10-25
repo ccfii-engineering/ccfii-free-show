@@ -30,6 +30,9 @@ jobs:
             - name: Build app
               run: npm run build
 
+            - name: Validate bundled PowerPoint renderer
+              run: node scripts/tests/runPowerpointRendererElectron.mjs
+
             - name: Build and release app
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -77,6 +80,9 @@ jobs:
 
             - name: Build app
               run: npm run build
+
+            - name: Validate bundled PowerPoint renderer
+              run: node scripts/tests/runPowerpointRendererElectron.mjs
 
             - name: Build and release app
               env:

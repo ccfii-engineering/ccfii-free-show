@@ -1,12 +1,14 @@
 import { get } from "svelte/store"
 import { CONTROLLER, REMOTE, STAGE } from "../../types/Channels"
+import { Main } from "../../types/IPC/Main"
 import type { ClientMessage, Clients } from "../../types/Socket"
 import { API_ACTIONS } from "../components/actions/api"
 import { checkWindowCapture } from "../components/helpers/output"
-import { connections, remotePassword, shows } from "../stores"
+import { connections, outLocked, remotePassword, shows } from "../stores"
+import { requestMainResult } from "../IPC/main"
 import { isMainWindow } from "./common"
 import { receiveCONTROLLER } from "./controllerTalk"
-import { receiveREMOTE } from "./remoteTalk"
+import { closeRemoteMediaConnection, receiveREMOTE } from "./remoteTalk"
 import { receiveSTAGE } from "./stageTalk"
 
 export function filterObjectArray(object: any, keys: string[], filter: null | string = null) {
@@ -41,6 +43,7 @@ export function client(id: Clients, msg: ClientMessage) {
             if (c[id]) delete c[id][msgId]
             return c
         })
+        if (id === REMOTE) closeRemoteMediaConnection(msgId)
         console.info("SERVER: " + msgId + " disconnected")
 
         // stop output capture when the last mirror viewer disconnects
@@ -71,6 +74,8 @@ export async function sendData(id: Clients, msg: ClientMessage, check = false) {
     let connectionId = msg.id
     if (!connectionId) connectionId = Object.keys(get(connections)[id] || {})[0]
 
+    if (id === REMOTE && requiresRemoteEntry(channel, msg.api) && !isRemoteConnectionAuthorized(connectionId)) return
+
     // when a REMOTE password is set, only honor control/API messages from connections that have authenticated
     if (id === REMOTE && get(remotePassword).length) {
         const PRE_AUTH_CHANNELS = ["PASSWORD", "ACCESS"]
@@ -83,7 +88,21 @@ export async function sendData(id: Clients, msg: ClientMessage, check = false) {
     if (channel === "API") {
         if (!msg.data) msg.data = {}
         const apiId = msg.api || ""
-        const data = await API_ACTIONS[apiId]?.(msg.data)
+        let data
+        if (id === REMOTE && apiId === "get_thumbnail") {
+            const result = await requestMainResult(Main.REMOTE_MEDIA_THUMBNAIL, { connectionId: connectionId || "", path: msg.data.path })
+            if (result.status !== "success" || !isRemoteConnectionAuthorized(connectionId)) return
+            data = result.data.thumbnail
+        } else if (id === REMOTE && (apiId === "play_media" || apiId === "play_audio")) {
+            const result = await requestMainResult(Main.REMOTE_MEDIA_RESOLVE, {
+                connectionId: connectionId || "",
+                path: msg.data.path,
+                ...(apiId === "play_audio" ? { kind: "audio" as const } : {})
+            })
+            if (result.status !== "success" || !isRemoteConnectionAuthorized(connectionId) || get(outLocked)) return
+            if (apiId === "play_media" && result.data.kind === "audio") return
+            data = await API_ACTIONS[apiId]?.({ ...msg.data, path: result.data.path })
+        } else data = await API_ACTIONS[apiId]?.(msg.data)
 
         if (apiId === "get_thumbnail") msg.data.thumbnail = data
         else msg.data = data
@@ -98,6 +117,8 @@ export async function sendData(id: Clients, msg: ClientMessage, check = false) {
     } else if (id === REMOTE) {
         if (!receiveREMOTE[channel]) return console.info("UNKNOWN CHANNEL:", channel)
         msg = await receiveREMOTE[channel](msg)
+        if ((msg as any)?._remoteMediaOperation === "thumbnail") msg = (await fetchRemoteMediaThumbnail(msg, connectionId || "")) as any
+        else if ((msg as any)?._remoteMediaOperation === "play") msg = (await playRemoteMedia(msg, connectionId || "")) as any
     } else if (id === STAGE) {
         if (!receiveSTAGE[channel]) return console.info("UNKNOWN CHANNEL:", channel)
         msg.data = receiveSTAGE[channel](msg.data, connectionId)
@@ -106,9 +127,11 @@ export async function sendData(id: Clients, msg: ClientMessage, check = false) {
         if (msg.data?.channel === "ERROR") msg = { ...msg, channel: "ERROR", data: msg.data?.data }
     } else if (id === CONTROLLER) {
         if (!receiveCONTROLLER[channel]) return console.info("UNKNOWN CHANNEL:", channel)
-        msg = receiveCONTROLLER[channel](msg)
+        msg = await receiveCONTROLLER[channel](msg)
     }
 
+    if (id === REMOTE && msg && !isPreAuthRemoteChannel(msg.channel) && !isRemoteConnectionAuthorized(msg.id || connectionId)) return
+    if (id === CONTROLLER && msg?.id && !get(connections).CONTROLLER?.[msg.id]) return
     // let ids: string[] = []
     // if (msg.id) ids = [msg.id]
     // else ids = Object.keys(get(connections).REMOTE || {})
@@ -118,6 +141,54 @@ export async function sendData(id: Clients, msg: ClientMessage, check = false) {
         // window.api.send(id, { id, ...msg })
         // })
     }
+}
+
+async function fetchRemoteMediaThumbnail(msg: any, connectionId: string) {
+    const requestId = msg.data?.requestId
+    const result = await requestMainResult(Main.REMOTE_MEDIA_THUMBNAIL, { connectionId, path: msg.data?.path })
+    if (result.status !== "success" || !isRemoteConnectionAuthorized(connectionId)) {
+        return { id: connectionId, channel: "MEDIA_ERROR", data: { requestId, code: mediaIPCErrorCode(result) } }
+    }
+
+    return { id: connectionId, channel: "MEDIA_THUMBNAIL_RESULT", data: { requestId, ...result.data } }
+}
+
+async function playRemoteMedia(msg: any, connectionId: string) {
+    const requestId = msg.data?.requestId
+    const result = await requestMainResult(Main.REMOTE_MEDIA_RESOLVE, { connectionId, path: msg.data?.path })
+    if (result.status !== "success" || !isRemoteConnectionAuthorized(connectionId)) {
+        return { id: connectionId, channel: "MEDIA_PLAY_RESULT", data: { requestId, ok: false, code: mediaIPCErrorCode(result) } }
+    }
+    if (get(outLocked)) return { id: connectionId, channel: "MEDIA_PLAY_RESULT", data: { requestId, ok: false, code: "unavailable" } }
+
+    const action = result.data.kind === "audio" ? API_ACTIONS.play_audio : API_ACTIONS.play_media
+    await action({ path: result.data.path })
+    return { id: connectionId, channel: "MEDIA_PLAY_RESULT", data: { requestId, ok: true } }
+}
+
+function isRemoteConnectionAuthorized(connectionId: string | undefined): boolean {
+    if (!connectionId) return false
+    const connection = get(connections).REMOTE?.[connectionId]
+    return !!connection?.entered && (!get(remotePassword).length || connection.entered === true)
+}
+
+function requiresRemoteEntry(channel: string, apiId: string | undefined) {
+    if (channel === "MEDIA_LIST" || channel === "MEDIA_CANCEL" || channel === "MEDIA_THUMBNAIL" || channel === "MEDIA_PLAY") return true
+    return channel === "API" && ["get_thumbnail", "play_media", "play_audio"].includes(apiId || "")
+}
+
+function isPreAuthRemoteChannel(channel: string) {
+    return ["PASSWORD", "ACCESS", "ERROR", "LANGUAGE"].includes(channel)
+}
+
+function mediaIPCErrorCode(result: any) {
+    if (result.status === "error") {
+        const message = result.error.message.toLowerCase()
+        for (const code of ["busy", "invalid_path", "cursor_expired", "restart_required", "not_media", "too_large", "unavailable"]) {
+            if (message.includes(code)) return code
+        }
+    }
+    return "unavailable"
 }
 
 // limit data sent per second

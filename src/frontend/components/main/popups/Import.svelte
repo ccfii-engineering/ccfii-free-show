@@ -64,7 +64,7 @@
     ]
 
     const powerpoint_options = [
-        { name: "Preserve appearance", description: "Imports each slide as an image.", icon: "pdf", click: pptRendered },
+        { name: "Preserve appearance", description: "Imports each .pptx slide as an image. Fonts and unsupported features may look different.", icon: "pdf", click: pptRendered },
         { name: "Editable slides", description: "Formatting may vary; text and objects stay editable.", icon: "txt", click: pptText },
         { name: "PDF", description: "Requires LibreOffice installed.", icon: "pdf", click: libreOfficeConvert },
         { name: "PDF (Online)", description: "Requires network connection, and manual steps.", icon: "pdf", click: onlineConvert },
@@ -72,7 +72,7 @@
     ]
 
     function pptRendered() {
-        void runRenderedPowerPointImport({ channel: "powerpoint", format: { name: "PowerPoint", extensions: ["ppt", "pptx"] }, mode: "rendered" })
+        void runRenderedPowerPointImport({ channel: "powerpoint", format: { name: "PowerPoint", extensions: ["pptx"] }, mode: "rendered" })
         activePopup.set(null)
     }
     function pptText() {

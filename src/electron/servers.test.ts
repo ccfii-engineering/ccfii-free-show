@@ -1,4 +1,5 @@
 import net from "net"
+import http from "http"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import { io as connect, type Socket } from "socket.io-client"
 
@@ -14,7 +15,7 @@ vi.mock("./data/bonjour", () => ({ publishPort: mocks.publishPort, unpublishPort
 vi.mock("./output/OutputHelper", () => ({ OutputHelper: { getOutput: vi.fn() } }))
 vi.mock("./capture/CaptureHelper", () => ({ CaptureHelper: { captureBase64Frame: vi.fn() } }))
 
-import { closeServers, getConnections, getStageStreamSubscriberIds, startServers, toServer, toStageStreamSubscribers } from "./servers"
+import { closeServers, getConnections, getServerData, getStageStreamSubscriberIds, startServers, toServer, toStageStreamSubscribers } from "./servers"
 
 const sockets: Socket[] = []
 const ports: { remote: number; stage: number; output_stream: number } = { remote: 0, stage: 0, output_stream: 0 }
@@ -38,6 +39,38 @@ async function openSocket(port: number): Promise<Socket> {
     return socket
 }
 
+function requestSocketIoHttp(port: number): Promise<{ statusCode: number; body: string }> {
+    return new Promise((resolve, reject) => {
+        const request = http.get({ host: "127.0.0.1", port, path: "/socket.io/?EIO=4&transport=polling" }, (response) => {
+            let body = ""
+            response.setEncoding("utf8")
+            response.on("data", (chunk) => (body += chunk))
+            response.on("end", () => resolve({ statusCode: response.statusCode || 0, body }))
+        })
+        request.on("error", reject)
+    })
+}
+
+async function expectPortClosed(port: number) {
+    const socket = net.createConnection(port, "127.0.0.1")
+    const result = await new Promise<"connected" | "refused">((resolve, reject) => {
+        socket.once("connect", () => resolve("connected"))
+        socket.once("error", (error: NodeJS.ErrnoException) => (error.code === "ECONNREFUSED" ? resolve("refused") : reject(error)))
+        socket.setTimeout(2000, () => reject(new Error(`Timed out connecting to port ${port}`)))
+    })
+    socket.destroy()
+    expect(result).toBe("refused")
+}
+
+function makeServerConfiguration(data: Record<string, unknown> = {}, configuredPorts = ports) {
+    return {
+        ports: { ...configuredPorts },
+        max: 10,
+        disabled: { remote: false, stage: false, controller: true, output_stream: false },
+        data: { remote: data }
+    } as any
+}
+
 async function waitFor(predicate: () => boolean, message: string, timeoutMs = 2000) {
     const started = performance.now()
     while (!predicate()) {
@@ -56,17 +89,31 @@ describe("distribution server compatibility", () => {
         ports.stage = await reservePort()
         ports.output_stream = await reservePort()
 
-        startServers({
-            ports,
-            max: 10,
-            disabled: { remote: false, stage: false, controller: true, output_stream: false },
-            data: {}
-        } as any)
+        await startServers(makeServerConfiguration())
     })
 
-    afterAll(() => {
+    afterAll(async () => {
         sockets.forEach((socket) => socket.disconnect())
-        closeServers()
+        await closeServers()
+    })
+
+    it("stamps remote messages with the owning socket id instead of a client supplied id", async () => {
+        const client = await openSocket(ports.remote)
+        await waitFor(() => getConnections("REMOTE") === 1, "Remote connection was not registered")
+        mocks.toApp.mockClear()
+
+        client.emit("REMOTE", { channel: "MEDIA_LIST", id: "spoofed-owner", data: { requestId: "scan" } })
+        await waitFor(() => mocks.toApp.mock.calls.some(([, message]) => message?.channel === "MEDIA_LIST"), "Remote request was not forwarded")
+
+        const forwarded = mocks.toApp.mock.calls.map(([, message]) => message).find((message) => message?.channel === "MEDIA_LIST")
+        expect(forwarded.id).toBe(client.id)
+
+        const callCount = mocks.toApp.mock.calls.length
+        client.emit("REMOTE", { channel: "CONNECTION", id: "spoofed-owner", data: { entered: true } })
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        expect(mocks.toApp.mock.calls).toHaveLength(callCount)
+        client.disconnect()
+        await waitFor(() => getConnections("REMOTE") === 0, "Remote test socket did not disconnect")
     })
 
     it("enforces the configured remote client cap and frees a slot after disconnect", async () => {
@@ -82,6 +129,10 @@ describe("distribution server compatibility", () => {
         const replacement = await openSocket(ports.remote)
         await waitFor(() => getConnections("REMOTE") === 10, "Remote server did not accept a replacement client")
         expect(replacement.connected).toBe(true)
+
+        clients.slice(1).forEach((client) => client.disconnect())
+        replacement.disconnect()
+        await waitFor(() => getConnections("REMOTE") === 0, "Remote cap test clients did not disconnect")
     }, 10000)
 
     it("sends stage frames only to active subscribers and expires stale subscriptions", async () => {
@@ -147,4 +198,66 @@ describe("distribution server compatibility", () => {
         toServer("OUTPUT_STREAM", { channel: "STREAM", data: { id: "output-b", sequence: 3 } })
         await waitFor(() => replacementFrames.length === 1, "Output stream did not recover after reconnect")
     }, 10000)
+
+    it("waits for the old HTTP and Socket.IO listeners before restarting on the same port", async () => {
+        const previous = await openSocket(ports.remote)
+        await waitFor(() => getConnections("REMOTE") === 1, "Previous remote listener did not register its client")
+
+        await startServers(makeServerConfiguration({ generation: "restarted" }))
+
+        await waitFor(() => !previous.connected, "Previous remote socket remained connected after restart")
+        expect(previous.connected).toBe(false)
+        expect(getServerData("REMOTE")).toEqual({ generation: "restarted" })
+        const httpResponse = await requestSocketIoHttp(ports.remote)
+        expect(httpResponse.statusCode).toBe(200)
+        expect(httpResponse.body).toContain('"sid"')
+
+        const replacement = await openSocket(ports.remote)
+        await waitFor(() => getConnections("REMOTE") === 1, "Replacement listener did not register its client")
+        expect(replacement.connected).toBe(true)
+    })
+
+    it("coalesces overlapping starts to the latest configuration", async () => {
+        const earlier = startServers(makeServerConfiguration({ generation: "earlier" }))
+        const latest = startServers(makeServerConfiguration({ generation: "latest" }))
+        await Promise.all([earlier, latest])
+
+        expect(getServerData("REMOTE")).toEqual({ generation: "latest" })
+        const replacement = await openSocket(ports.remote)
+        expect(replacement.connected).toBe(true)
+    })
+
+    it("rejects an invalid port once, cleans up partial listeners, and accepts later lifecycle requests", async () => {
+        const unhandledRejections: unknown[] = []
+        const onUnhandledRejection = (reason: unknown) => unhandledRejections.push(reason)
+        const listenSpy = vi.spyOn(http.Server.prototype, "listen")
+        process.on("unhandledRejection", onUnhandledRejection)
+
+        try {
+            const initialListenCalls = listenSpy.mock.calls.length
+            await expect(startServers(makeServerConfiguration({ generation: "invalid" }, { ...ports, remote: 65536 }))).rejects.toThrow()
+            const listenCallsAfterFailure = listenSpy.mock.calls.length
+            expect(listenCallsAfterFailure - initialListenCalls).toBe(3)
+            await new Promise((resolve) => setTimeout(resolve, 25))
+            expect(listenSpy).toHaveBeenCalledTimes(listenCallsAfterFailure)
+            expect(unhandledRejections).toEqual([])
+
+            await startServers(makeServerConfiguration({ generation: "recovered" }))
+            expect(getServerData("REMOTE")).toEqual({ generation: "recovered" })
+            await closeServers()
+            await expectPortClosed(ports.remote)
+        } finally {
+            process.off("unhandledRejection", onUnhandledRejection)
+            listenSpy.mockRestore()
+        }
+    })
+
+    it("keeps a stop queued after an overlapping start and leaves the port closed", async () => {
+        const pendingStart = startServers(makeServerConfiguration({ generation: "stopped" }))
+        const stop = closeServers()
+        await Promise.all([pendingStart, stop])
+
+        expect(getConnections("REMOTE")).toBe(0)
+        await expectPortClosed(ports.remote)
+    })
 })

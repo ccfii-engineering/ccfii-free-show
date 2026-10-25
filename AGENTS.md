@@ -53,7 +53,7 @@ npm run format:prettier   # Auto-format src and scripts
 
 ### IPC Communication
 
-All cross-process communication flows through typed IPC channels defined in `src/types/Channels.ts`. Channel constants: `MAIN`, `OUTPUT`, `STARTUP`, `EXPORT`, `REMOTE`, `STAGE`, `CONTROLLER`, `OUTPUT_STREAM`, `CLOUD`, `NDI`, `BLACKMAGIC`, `AUDIO`, `API_DATA`.
+Most cross-process communication flows through typed channels defined in `src/types/Channels.ts`. The isolated PowerPoint render job uses its private typed bridge in `src/types/PowerPointRenderer.ts`; see [`docs/agents/code-navigation.md`](docs/agents/code-navigation.md) for that route. Channel constants: `MAIN`, `OUTPUT`, `STARTUP`, `EXPORT`, `REMOTE`, `STAGE`, `CONTROLLER`, `OUTPUT_STREAM`, `CLOUD`, `NDI`, `BLACKMAGIC`, `AUDIO`, `API_DATA`.
 
 - `src/types/IPC/` — Message type definitions (`Main.ts` enumerates main-channel message IDs, `ToMain.ts` for reverse direction)
 - `src/electron/IPC/main.ts` + `responsesMain.ts` — Electron-side handlers

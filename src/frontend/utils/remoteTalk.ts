@@ -2,20 +2,23 @@ import { get } from "svelte/store"
 import { uid } from "uid"
 import type { Show } from "../../types/Show"
 import type { ClientMessage } from "../../types/Socket"
-import { AudioPlayer } from "../audio/audioPlayer"
+import type { RemoteMediaErrorCode, RemoteMediaPageRequest } from "../../types/remote/control"
+import { Main } from "../../types/IPC/Main"
 import { loadJsonBible } from "../components/drawer/bible/scripture"
 import { clone, keysToID, removeDeleted } from "../components/helpers/array"
 import { getThumbnailPath, mediaSize } from "../components/helpers/media"
-import { getAllNormalOutputs, getFirstActiveOutput, setOutput } from "../components/helpers/output"
+import { getFirstActiveOutput, setOutput } from "../components/helpers/output"
 import { loadShows } from "../components/helpers/setShow"
 import { getLayoutRef } from "../components/helpers/show"
 import { updateOut } from "../components/helpers/showActions"
 import { _show } from "../components/helpers/shows"
 import { clearAll } from "../components/output/clear"
 import { REMOTE } from "./../../types/Channels"
-import { actions, actionTags, activePage, activeProject, activeShow, activeTimers, audioChannelsData, categories, connections, dictionary, folders, language, openedFolders, outLocked, outputs, overlayCategories, overlays, playerVideos, projects, remotePassword, runningActions, scriptures, shows, showsCache, styles, templateCategories, templates, timers, variables, variableTags } from "./../stores"
+import { actions, actionTags, activePage, activeProject, activeShow, activeTimers, categories, connections, dictionary, folders, language, openedFolders, outLocked, overlayCategories, overlays, playerVideos, projects, remotePassword, runningActions, scriptures, shows, showsCache, styles, templateCategories, templates, timers, variables, variableTags } from "./../stores"
 import { lastClickTime } from "./common"
 import { translateText } from "./language"
+import { requestMainResult, sendMain } from "../IPC/main"
+import { RemoteMediaViews } from "./remoteMediaViews"
 import { send } from "./request"
 import { sendData, setConnectedState } from "./sendData"
 
@@ -23,6 +26,12 @@ import { sendData, setConnectedState } from "./sendData"
 
 let currentOut = ""
 let loadingShow = ""
+const remoteMediaViews = new RemoteMediaViews()
+
+connections.subscribe((current) => {
+    remoteMediaViews.closeUnauthorized((connectionId) => !!current.REMOTE?.[connectionId]?.entered, closeRemoteMediaConnection)
+})
+
 export const receiveREMOTE: any = {
     PASSWORD: (msg: any) => {
         msg.data = {
@@ -296,6 +305,43 @@ export const receiveREMOTE: any = {
         msg.data = { templates: get(templates), categories: get(templateCategories) }
         return msg
     },
+    MEDIA_LIST: async (msg: ClientMessage) => {
+        const connectionId = msg.id || ""
+        const data = msg.data as RemoteMediaPageRequest | undefined
+        if (!connectionId || !data) return
+        if (!get(connections).REMOTE?.[connectionId]?.entered) {
+            return { id: connectionId, channel: "MEDIA_ERROR", data: { requestId: data.requestId, code: "unavailable" } }
+        }
+
+        let view = remoteMediaViews.get(connectionId)
+        if (data.page === 0) {
+            closeRemoteMediaConnection(connectionId)
+            view = { requestId: data.requestId, path: data.path }
+            remoteMediaViews.set(connectionId, view)
+        } else if (!view || view.requestId !== data.requestId || view.path !== data.path) {
+            return { id: connectionId, channel: "MEDIA_ERROR", data: { requestId: data.requestId, code: "cursor_expired" } }
+        }
+
+        if (!view || view.activeRequest) return { id: connectionId, channel: "MEDIA_ERROR", data: { requestId: data.requestId, code: "busy" } }
+        const controller = new AbortController()
+        view.activeRequest = controller
+        const result = await requestMainResult(Main.REMOTE_MEDIA_PAGE, { ...data, connectionId }, { signal: controller.signal })
+
+        if (remoteMediaViews.get(connectionId) !== view || controller.signal.aborted) return
+        view.activeRequest = undefined
+
+        if (result.status === "success") return { id: connectionId, channel: "MEDIA_PAGE", data: result.data }
+        if (result.status === "cancelled") return
+        const error = result.status === "error" ? result.error.message : "unavailable"
+        return { id: connectionId, channel: "MEDIA_ERROR", data: { requestId: data.requestId, code: remoteMediaErrorCode(error) } }
+    },
+    MEDIA_CANCEL: (msg: ClientMessage) => {
+        const connectionId = msg.id || ""
+        const requestId = msg.data?.requestId
+        if (connectionId && requestId) closeRemoteMediaConnection(connectionId, requestId)
+    },
+    MEDIA_THUMBNAIL: (msg: ClientMessage) => ({ ...msg, _remoteMediaOperation: "thumbnail" }),
+    MEDIA_PLAY: (msg: ClientMessage) => ({ ...msg, _remoteMediaOperation: "play" }),
     GET_FUNCTIONS: (msg: any) => {
         msg.data = {
             actions: get(actions),
@@ -399,4 +445,13 @@ function openShow(id: string) {
     if (Date.now() - lastClickTime < 20000) return
 
     activeShow.set({ id })
+}
+
+export function closeRemoteMediaConnection(connectionId: string, requestId?: string) {
+    remoteMediaViews.close(connectionId, requestId, () => sendMain(Main.REMOTE_MEDIA_CLOSE, { connectionId }))
+}
+
+function remoteMediaErrorCode(message: string): RemoteMediaErrorCode {
+    const codes: RemoteMediaErrorCode[] = ["busy", "invalid_path", "cursor_expired", "restart_required", "not_media", "too_large", "unavailable"]
+    return codes.find((code) => message.toLowerCase().includes(code)) || "unavailable"
 }

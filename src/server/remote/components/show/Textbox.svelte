@@ -5,18 +5,33 @@
     import { getStyles } from "../../../common/util/style"
     import { send } from "../../util/socket"
     import { mediaCache } from "../../util/stores"
+    import Icon from "../../../common/components/Icon.svelte"
 
     export let item: Item
+    export let mediaSources: Record<string, string> | undefined = undefined
+    export let revealed: number | null = null
+    export let clickRevealed = true
+    export let lineWindow: { start: number | null; end: number | null } | null = null
 
     const requestedThumbnails = new Set<string>()
     const isDirectMediaPath = (path: string) => /^(data|blob|https?):/i.test(path)
 
     $: {
         const path = item?.type === "media" ? item.src || "" : ""
-        if (path && !isDirectMediaPath(path) && !$mediaCache[path] && !requestedThumbnails.has(path)) {
+        if (mediaSources === undefined && path && !isDirectMediaPath(path) && !$mediaCache[path] && !requestedThumbnails.has(path)) {
             requestedThumbnails.add(path)
             send("API:get_thumbnail", { path })
         }
+    }
+    $: mediaSource = item?.src ? (mediaSources === undefined ? $mediaCache[item.src] || item.src : mediaSources[item.src] || "") : ""
+
+    function visibleLines(lines: any[] = []) {
+        return createVirtualBreaks(lines)
+            .map((line, index) => ({ line, index }))
+            .filter(({ index }) => {
+                if (lineWindow && ((lineWindow.start !== null && index < lineWindow.start) || (lineWindow.end !== null && index >= lineWindow.end))) return false
+                return !item?.lineReveal || revealed === null || index <= revealed
+            })
     }
 
     $: lineGap = item?.specialStyle?.lineGap
@@ -87,25 +102,31 @@
     }
 </script>
 
-<div class="item" style={getCustomStyle(item.style)} bind:this={itemElem}>
-    {#if item.lines}
-        <div class="align" style={item.align}>
-            <div class="lines" style={lineStyleBox}>
-                {#each createVirtualBreaks(item.lines) as line}
-                    <div class="break" style="{lineStyle}{line.align}">
-                        {#each line.text || [] as text}
-                            <span style="{text.style};{fontSize ? `font-size: ${fontSize}px;` : ''}">{@html text.value?.replaceAll("\n", "<br>") || "<br>"}</span>
-                        {/each}
-                    </div>
-                {/each}
+{#if !item.clickReveal || clickRevealed}
+    <div class="item" style={getCustomStyle(item.style)} bind:this={itemElem}>
+        {#if item.lines}
+            <div class="align" style={item.align}>
+                <div class="lines" style={lineStyleBox}>
+                    {#each visibleLines(item.lines) as { line }}
+                        <div class="break" style="{lineStyle}{line.align}">
+                            {#each line.text || [] as text}
+                                <span style="{text.style};{fontSize ? `font-size: ${fontSize}px;` : ''}">{@html text.value?.replaceAll("\n", "<br>") || "<br>"}</span>
+                            {/each}
+                        </div>
+                    {/each}
+                </div>
             </div>
-        </div>
-    {:else if item.type === "media" && item.src}
-        <img src={$mediaCache[item.src] || item.src} style="width:100%;height:100%;object-fit:{item.fit || 'contain'};" alt="" />
-    {:else if item.type === "icon" && item.customSvg}
-        <div class="customSvg">{@html item.customSvg}</div>
-    {/if}
-</div>
+        {:else if item.type === "media" && item.src}
+            {#if mediaSources === undefined || mediaSource}
+                <img src={mediaSource} style="width:100%;height:100%;object-fit:{item.fit || 'contain'};" alt="" />
+            {:else}
+                <div class="unavailable-media"><Icon id="image" size={2.2} /></div>
+            {/if}
+        {:else if item.type === "icon" && item.customSvg}
+            <div class="customSvg">{@html item.customSvg}</div>
+        {/if}
+    </div>
+{/if}
 
 <style>
     .align {
@@ -157,5 +178,14 @@
     .customSvg :global(svg) {
         width: 100%;
         height: 100%;
+    }
+
+    .unavailable-media {
+        display: grid;
+        width: 100%;
+        height: 100%;
+        place-items: center;
+        color: #e3caa8;
+        background: #2b2020;
     }
 </style>

@@ -8,7 +8,6 @@ import { PassThrough } from "stream"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("../IPC/main", () => ({ requestToMainResult: vi.fn(), sendToMain: vi.fn() }))
-vi.mock("../output/ppt/soffice", () => ({ getSofficePath: () => "soffice" }))
 vi.mock("../utils/files", () => ({ getDataFolderRoot: () => "/tmp", sanitizeFileName: (name: string) => name }))
 
 import { buildImportCacheKey, findReusableRenderedPages, rerenderImportedSource, resolveManagedImportPath, runOwnedCommand, runRenderedImportJob, runWithRendererLock, shouldUseRenderedPowerPointImport, type RenderImportDependencies } from "./renderedPowerPointImport"
@@ -34,13 +33,13 @@ describe("rendered PowerPoint import", () => {
         const dependencies: RenderImportDependencies = {
             dataRoot,
             createJobId: () => `job-${++nextJobId}`,
-            convert: async (_sourcePath, pdfPath) => {
-                await fs.writeFile(pdfPath, "test PDF")
-                return "LibreOffice test 1.0"
-            },
+            preflightPowerPoint: async () => ({ pageCount: 3 }),
+            openPowerPoint: async () => ({ pageCount: 3, rendererVersion: "@web-ppt/core test 0.4.5; Electron test; Chromium test" }),
             openPdf: async () => ({ pageCount: 3, rendererVersion: "PDF.js test 1.0" }),
             renderPage: async () => ({ png: Uint8Array.from([137, 80, 78, 71]).buffer, width: 1, height: 1 }),
+            renderPowerPointPage: async () => ({ png: Uint8Array.from([137, 80, 78, 71]).buffer, width: 1, height: 1 }),
             closePdf: async () => {},
+            closePowerPoint: async () => {},
             progress: (value) => progress.push(value),
             createShow: (value) => shows.push(value),
             ...overrides
@@ -60,7 +59,7 @@ describe("rendered PowerPoint import", () => {
         let maxActiveRenders = 0
         let requestedResolution: RenderImportDependencies["renderPage"] extends (...args: infer T) => any ? T[2] : never
         const { dependencies, shows } = makeDependencies({
-            renderPage: async (jobId, pageIndex, resolution) => {
+            renderPowerPointPage: async (jobId, pageIndex, resolution) => {
                 requestedResolution = resolution
                 activeRenders++
                 maxActiveRenders = Math.max(maxActiveRenders, activeRenders)
@@ -83,7 +82,7 @@ describe("rendered PowerPoint import", () => {
         expect(shows).toHaveLength(1)
         expect(shows[0].source).toEqual(result.source)
         expect(result.source.sourcePath.startsWith("/")).toBe(false)
-        expect(result.source.pdfPath.startsWith("/")).toBe(false)
+        expect(result.source).not.toHaveProperty("pdfPath")
         expect(result.source.pagePaths.every((filePath) => !filePath.startsWith("/"))).toBe(true)
         const manifest = JSON.parse(await fs.readFile(path.join(dataRoot, result.source.pagePaths[0], "..", "manifest.json"), "utf8"))
         expect(manifest.source).toEqual(result.source)
@@ -93,7 +92,7 @@ describe("rendered PowerPoint import", () => {
         expect(await findReusableRenderedPages(result.source, dataRoot)).toHaveLength(3)
     })
 
-    it("can rerender from the managed copy after the original moves and invalidates when LibreOffice changes", async () => {
+    it("rerenders an older PowerPoint source without requiring its PDF and invalidates the previous renderer cache", async () => {
         const inputPath = await createInput()
         const { dependencies } = makeDependencies()
         const imported = await runRenderedImportJob(inputPath, "powerpoint", undefined, dependencies)
@@ -101,20 +100,21 @@ describe("rendered PowerPoint import", () => {
         if (imported.status !== "complete") return
         await fs.rm(inputPath)
 
-        let conversionSource = ""
+        let rendererSource = ""
         const rerenderDependencies = makeDependencies({
             createJobId: () => "rerender-job",
-            convert: async (sourcePath, pdfPath) => {
-                conversionSource = sourcePath
+            openPowerPoint: async (jobId, sourcePath) => {
+                rendererSource = sourcePath
                 expect(existsSync(sourcePath)).toBe(true)
-                await fs.writeFile(pdfPath, "new converter PDF")
-                return "LibreOffice test 2.0"
+                expect(jobId).toBe("rerender-job")
+                return { pageCount: 3, rendererVersion: "@web-ppt/core test 0.4.6; Electron test; Chromium test" }
             },
-            openPdf: async () => ({ pageCount: 3, rendererVersion: "PDF.js test 1.0" })
+            renderPowerPointPage: async () => ({ png: Uint8Array.from([137, 80, 78, 71]).buffer, width: 1280, height: 720 })
         })
-        const rerendered = await rerenderImportedSource(imported.source, undefined, rerenderDependencies.dependencies)
+        const legacyPowerPointSource = { ...imported.source, pdfPath: undefined, renderer: "LibreOffice + PDF.js", rendererVersion: "LibreOffice old; PDF.js old" }
+        const rerendered = await rerenderImportedSource(legacyPowerPointSource, undefined, rerenderDependencies.dependencies)
 
-        expect(conversionSource).toBe(resolveManagedImportPath(dataRoot, imported.source.sourcePath))
+        expect(rendererSource).toBe(resolveManagedImportPath(dataRoot, imported.source.sourcePath))
         expect(rerendered.source.cacheKey).not.toBe(imported.source.cacheKey)
         expect(rerendered.source.sourcePath).toBe(imported.source.sourcePath)
         expect(rerendered.source.pagePaths).not.toEqual(imported.source.pagePaths)
@@ -128,7 +128,7 @@ describe("rendered PowerPoint import", () => {
         await fs.mkdir(completedFolder, { recursive: true })
         await fs.writeFile(path.join(completedFolder, "manifest.json"), "completed")
         const { dependencies, shows } = makeDependencies({
-            renderPage: async (_jobId, pageIndex) => {
+            renderPowerPointPage: async (_jobId, pageIndex) => {
                 if (pageIndex === 1) throw new Error("controlled render failure")
                 return { png: new ArrayBuffer(4), width: 1, height: 1 }
             }
@@ -141,7 +141,7 @@ describe("rendered PowerPoint import", () => {
         expect(existsSync(path.join(completedFolder, "manifest.json"))).toBe(true)
     })
 
-    it("closes the PDF.js job after cancellation and preserves completed imports", async () => {
+    it("closes the isolated PowerPoint renderer after cancellation and preserves completed imports", async () => {
         const inputPath = await createInput()
         const completedFolder = path.join(dataRoot, "imports", "PowerPoint", "older-job")
         await fs.mkdir(completedFolder, { recursive: true })
@@ -149,9 +149,9 @@ describe("rendered PowerPoint import", () => {
         const controller = new AbortController()
         let started!: () => void
         const renderStarted = new Promise<void>((resolve) => (started = resolve))
-        const closePdf = vi.fn(async () => {})
+        const closePowerPoint = vi.fn(async () => {})
         const { dependencies, shows } = makeDependencies({
-            renderPage: async (_jobId, _pageIndex, _resolution, signal) =>
+            renderPowerPointPage: async (_jobId, _pageIndex, _resolution, signal) =>
                 new Promise((_, reject) => {
                     started()
                     signal?.addEventListener(
@@ -164,7 +164,7 @@ describe("rendered PowerPoint import", () => {
                         { once: true }
                     )
                 }),
-            closePdf
+            closePowerPoint
         })
 
         const pending = runRenderedImportJob(inputPath, "powerpoint", controller.signal, dependencies)
@@ -173,27 +173,39 @@ describe("rendered PowerPoint import", () => {
         const result = await pending
 
         expect(result.status).toBe("cancelled")
-        expect(closePdf).toHaveBeenCalledWith("job-1")
+        expect(closePowerPoint).toHaveBeenCalledWith("job-1")
         expect(shows).toHaveLength(0)
         expect(existsSync(path.join(dataRoot, "imports", "PowerPoint", "job-1"))).toBe(false)
         expect(existsSync(path.join(completedFolder, "manifest.json"))).toBe(true)
     })
 
-    it("returns an actionable renderer-unavailable outcome without downgrading to editable", async () => {
+    it("surfaces portable renderer errors without asking for LibreOffice or downgrading to editable", async () => {
         const inputPath = await createInput()
         const { dependencies, shows } = makeDependencies({
-            convert: async () => {
-                const error = new Error("soffice not found") as NodeJS.ErrnoException
-                error.code = "ENOENT"
-                throw error
+            preflightPowerPoint: async () => {
+                throw new Error("The built-in PowerPoint renderer is not available")
             }
         })
 
         const result = await runRenderedImportJob(inputPath, "powerpoint", undefined, dependencies)
-        expect(result.status).toBe("renderer-unavailable")
-        expect(result.message).toContain("Export the presentation as PDF")
+        expect(result.status).toBe("error")
+        expect(result.message).toContain("built-in PowerPoint renderer")
         expect(shows).toHaveLength(0)
         expect(existsSync(path.join(dataRoot, "imports", "PowerPoint", "job-1"))).toBe(false)
+    })
+
+    it("rejects legacy and macro-enabled PowerPoint formats with a direct save-as action", async () => {
+        for (const extension of ["ppt", "pptm"]) {
+            const inputPath = await createInput(`unsupported.${extension}`)
+            const preflightPowerPoint = vi.fn(async () => ({ pageCount: 1 }))
+            const { dependencies, shows } = makeDependencies({ preflightPowerPoint })
+            const result = await runRenderedImportJob(inputPath, "powerpoint", undefined, dependencies)
+
+            expect(result.status).toBe("error")
+            expect(result.message).toContain("Save this presentation as .pptx")
+            expect(preflightPowerPoint).not.toHaveBeenCalled()
+            expect(shows).toHaveLength(0)
+        }
     })
 
     it("keeps same-named imports in distinct managed folders and dispatches only PowerPoint by default", async () => {
@@ -217,21 +229,21 @@ describe("rendered PowerPoint import", () => {
         expect(shouldUseRenderedPowerPointImport("powerpoint", "rendered")).toBe(true)
         expect(shouldUseRenderedPowerPointImport("powerpoint", "editable")).toBe(false)
         expect(shouldUseRenderedPowerPointImport("pdf")).toBe(false)
-        expect(buildImportCacheKey("source", "LibreOffice A; PDF.js A")).not.toBe(buildImportCacheKey("source", "LibreOffice A; PDF.js B"))
-        expect(buildImportCacheKey("source", "LibreOffice A; PDF.js A")).not.toBe(buildImportCacheKey("source", "LibreOffice B; PDF.js A"))
+        expect(buildImportCacheKey("source", "web-ppt A; Electron A; Chromium A")).not.toBe(buildImportCacheKey("source", "web-ppt A; Electron A; Chromium B"))
+        expect(buildImportCacheKey("source", "web-ppt A; Electron A; Chromium A")).not.toBe(buildImportCacheKey("source", "web-ppt B; Electron A; Chromium A"))
     })
 
-    it("imports a manual PDF as a PDF source without invoking the PowerPoint converter", async () => {
+    it("imports a manual PDF with PDF.js and keeps PDF paths required", async () => {
         const inputPath = await createInput("source.pdf")
-        const convert = vi.fn()
+        const preflightPowerPoint = vi.fn()
         const { dependencies, shows } = makeDependencies({
-            convert,
+            preflightPowerPoint,
             openPdf: async () => ({ pageCount: 1, rendererVersion: "PDF.js test 1.0" })
         })
 
         const result = await runRenderedImportJob(inputPath, "pdf", undefined, dependencies)
         expect(result.status).toBe("complete")
-        expect(convert).not.toHaveBeenCalled()
+        expect(preflightPowerPoint).not.toHaveBeenCalled()
         expect(shows[0].source.kind).toBe("pdf")
         expect(shows[0].source.sourcePath).toBe(shows[0].source.pdfPath)
     })
@@ -265,55 +277,34 @@ describe("rendered PowerPoint import", () => {
         expect(queuedAction).not.toHaveBeenCalled()
     })
 
-    it("hard-terminates an owned child on abort and timeout, cleans its job, and runs the next queued import", async () => {
-        const runFailureRound = async (mode: "abort" | "timeout") => {
-            const firstInput = await createInput(`${mode}.pptx`)
-            const nextInput = await createInput(`${mode}-next.pptx`)
-            const childPidFile = path.join(tempRoot, `${mode}-descendant.pid`)
-            const childScript = `const fs = require("fs"); const { spawn } = require("child_process"); const child = spawn(process.execPath, ["-e", 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000)'], { stdio: "ignore" }); fs.writeFileSync(${JSON.stringify(childPidFile)}, String(child.pid)); setInterval(() => {}, 1000)`
-            const controller = new AbortController()
-            let commandStarted!: () => void
-            const started = new Promise<void>((resolve) => (commandStarted = resolve))
-            const firstDependencies = makeDependencies({
-                createJobId: () => `${mode}-job`,
-                convert: async (_sourcePath, _pdfPath, _jobFolder, signal) => {
-                    commandStarted()
-                    await runOwnedCommand(process.execPath, ["-e", childScript], signal, mode === "timeout" ? 200 : 30_000, 40)
-                    return "LibreOffice test 1.0"
-                }
-            })
-            const nextDependencies = makeDependencies({
-                createJobId: () => `${mode}-next-job`,
-                convert: async (_sourcePath, pdfPath) => {
-                    const childPid = Number(await fs.readFile(childPidFile, "utf8"))
-                    expect(await isProcessActive(childPid)).toBe(false)
-                    await fs.writeFile(pdfPath, "next-job PDF")
-                    return "LibreOffice test 1.0"
-                }
-            })
-            const first = runWithRendererLock(mode === "abort" ? controller.signal : undefined, () => runRenderedImportJob(firstInput, "powerpoint", mode === "abort" ? controller.signal : undefined, firstDependencies.dependencies))
+    it("cleans an aborted PowerPoint job before starting the next queued import", async () => {
+        const firstInput = await createInput("abort.pptx")
+        const nextInput = await createInput("next.pptx")
+        const controller = new AbortController()
+        let renderStarted!: () => void
+        const started = new Promise<void>((resolve) => (renderStarted = resolve))
+        const firstDependencies = makeDependencies({
+            createJobId: () => "abort-job",
+            renderPowerPointPage: async (_jobId, _pageIndex, _resolution, signal) =>
+                new Promise((_, reject) => {
+                    renderStarted()
+                    signal?.addEventListener("abort", () => reject(Object.assign(new Error("cancelled"), { name: "AbortError" })), { once: true })
+                })
+        })
+        const nextDependencies = makeDependencies({ createJobId: () => "next-job" })
+        const first = runWithRendererLock(controller.signal, () => runRenderedImportJob(firstInput, "powerpoint", controller.signal, firstDependencies.dependencies))
 
-            await started
-            const next = runWithRendererLock(undefined, () => runRenderedImportJob(nextInput, "powerpoint", undefined, nextDependencies.dependencies))
-            if (mode === "abort") {
-                await waitForFile(childPidFile)
-                controller.abort()
-            }
+        await started
+        const next = runWithRendererLock(undefined, () => runRenderedImportJob(nextInput, "powerpoint", undefined, nextDependencies.dependencies))
+        controller.abort()
 
-            const [firstResult, nextResult] = await Promise.all([first, next])
-            expect(firstResult.status).toBe(mode === "abort" ? "cancelled" : "error")
-            if (mode === "timeout" && firstResult.status !== "complete") expect(firstResult.message).toContain("timed out")
-            expect(nextResult.status).toBe("complete")
-            expect(existsSync(path.join(dataRoot, "imports", "PowerPoint", `${mode}-job`))).toBe(false)
-            expect(existsSync(path.join(dataRoot, "imports", "PowerPoint", `${mode}-next-job`, "manifest.json"))).toBe(true)
-            expect(firstDependencies.shows).toHaveLength(0)
-            expect(nextDependencies.shows).toHaveLength(1)
-            const descendantPid = Number(await fs.readFile(childPidFile, "utf8"))
-            expect(await isProcessActive(descendantPid)).toBe(false)
-        }
-
-        await runFailureRound("abort")
-        await runFailureRound("timeout")
+        const [firstResult, nextResult] = await Promise.all([first, next])
+        expect(firstResult.status).toBe("cancelled")
+        expect(nextResult.status).toBe("complete")
+        expect(existsSync(path.join(dataRoot, "imports", "PowerPoint", "abort-job"))).toBe(false)
+        expect(existsSync(path.join(dataRoot, "imports", "PowerPoint", "next-job", "manifest.json"))).toBe(true)
+        expect(firstDependencies.shows).toHaveLength(0)
+        expect(nextDependencies.shows).toHaveLength(1)
     })
 
     it("uses PID-scoped Windows tree termination for abort and timeout", async () => {

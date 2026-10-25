@@ -15,6 +15,7 @@ import type { Dictionary, Resolution, Themes } from "../Settings"
 import type { Overlays, Show, Shows, Templates, TrimmedShows } from "../Show"
 import type { ServerData } from "../Socket"
 import type { StageLayouts } from "../Stage"
+import type { ControllerPresenterThumbnailIPCRequest, ControllerPresenterThumbnailResult, RemoteMediaCloseRequest, RemoteMediaPage, RemoteMediaPageIPCRequest, RemoteMediaPathIPCRequest, RemoteMediaResolvedPath, RemoteMediaThumbnail, RemoteMediaThumbnailIPCRequest } from "../remote/control"
 import type { Event } from "./../Calendar"
 import type { History } from "./../History"
 import type { SaveData, SaveListSyncedSettings } from "./../Save"
@@ -142,6 +143,11 @@ export enum Main {
     READ_BIBLES_FOLDER = "READ_BIBLES_FOLDER",
     FILE_INFO = "FILE_INFO",
     READ_FOLDER = "READ_FOLDER",
+    REMOTE_MEDIA_PAGE = "REMOTE_MEDIA_PAGE",
+    REMOTE_MEDIA_RESOLVE = "REMOTE_MEDIA_RESOLVE",
+    REMOTE_MEDIA_THUMBNAIL = "REMOTE_MEDIA_THUMBNAIL",
+    REMOTE_MEDIA_CLOSE = "REMOTE_MEDIA_CLOSE",
+    CONTROLLER_PRESENTER_THUMBNAIL = "CONTROLLER_PRESENTER_THUMBNAIL",
     READ_FILE = "READ_FILE",
     OPEN_FOLDER = "OPEN_FOLDER",
     OPEN_FILE = "OPEN_FILE",
@@ -248,6 +254,11 @@ export interface MainSendPayloads {
     [Main.MEDIA_FOLDER_COPY]: { paths: string[] }
     [Main.FILE_INFO]: string
     [Main.READ_FOLDER]: { path: string | string[]; depth?: number; generateThumbnails?: boolean; captureFolderContent?: boolean; requestId?: string; useWorker?: boolean }
+    [Main.REMOTE_MEDIA_PAGE]: RemoteMediaPageIPCRequest
+    [Main.REMOTE_MEDIA_RESOLVE]: RemoteMediaPathIPCRequest
+    [Main.REMOTE_MEDIA_THUMBNAIL]: RemoteMediaThumbnailIPCRequest
+    [Main.REMOTE_MEDIA_CLOSE]: RemoteMediaCloseRequest
+    [Main.CONTROLLER_PRESENTER_THUMBNAIL]: ControllerPresenterThumbnailIPCRequest
     [Main.READ_FILE]: { path: string }
     [Main.OPEN_FOLDER]: { channel: string; title?: string; path?: string }
     [Main.OPEN_FILE]: { id: string; channel: string; title?: string; filter: any; multiple: boolean; read?: boolean }
@@ -360,6 +371,11 @@ export interface MainReturnPayloads {
     [Main.READ_BIBLES_FOLDER]: { path: string; name: string }[]
     [Main.FILE_INFO]: { path: string; stat: Stats; extension: string; folder: boolean } | null
     [Main.READ_FOLDER]: Promise<{ [key: string]: FileFolder } | FolderScanComplete>
+    [Main.REMOTE_MEDIA_PAGE]: Promise<RemoteMediaPage>
+    [Main.REMOTE_MEDIA_RESOLVE]: Promise<RemoteMediaResolvedPath>
+    [Main.REMOTE_MEDIA_THUMBNAIL]: Promise<RemoteMediaThumbnail>
+    [Main.REMOTE_MEDIA_CLOSE]: void
+    [Main.CONTROLLER_PRESENTER_THUMBNAIL]: Promise<ControllerPresenterThumbnailResult>
     [Main.READ_FILE]: { content: string }
     // SYNC
     [Main.CAN_SYNC]: Promise<boolean>

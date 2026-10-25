@@ -1,18 +1,34 @@
 <script lang="ts">
+    import type { ControllerPresenterPreview, ControllerPresenterSnapshot } from "../../types/remote/control"
     import "../common/brand.css"
     import { io } from "socket.io-client"
     import Brand from "../common/components/Brand.svelte"
     import Icon from "../common/components/Icon.svelte"
+    import PresenterPreview from "./components/PresenterPreview.svelte"
+    import { htmlToPlainText } from "../common/util/plainText"
+
+    type PreviewData = ControllerPresenterPreview & { assets?: Record<string, string> }
+    type PresenterState = Omit<ControllerPresenterSnapshot, "current" | "next"> & { current: PreviewData | null; next: PreviewData | null }
 
     let socket = io()
 
     console.log(socket)
 
     let outputId: string = ""
+    let presenterState: PresenterState | null = null
+    let presenterThumbnails: Record<string, string> = {}
+    let assetRevision = -1
+    let assetQueue: string[] = []
+    let pendingAssets = new Set<string>()
+    let thumbnailBytes = 0
+    const MAX_THUMBNAIL_BYTES = 8 * 1024 * 1024
+
+    $: presenterNotes = presenterState ? htmlToPlainText(presenterState.notes) : ""
 
     socket.on("connect", () => {
         // id = socket.id
         socket.emit("CONTROLLER", { channel: "GET_OUTPUT_ID" })
+        socket.emit("CONTROLLER", { channel: "PRESENTER_SUBSCRIBE" })
     })
 
     let aspectRatio = 16 / 9
@@ -29,8 +45,64 @@
             case "GET_OUTPUT_ID":
                 outputId = msg.data
                 break
+            case "PRESENTER_STATE":
+                updatePresenterState(msg.data)
+                break
+            case "PRESENTER_THUMBNAIL_RESULT":
+                receivePresenterThumbnail(msg.data)
+                break
         }
     })
+
+    socket.on("disconnect", () => {
+        outputId = ""
+        presenterState = null
+        presenterThumbnails = {}
+        assetQueue = []
+        pendingAssets.clear()
+        thumbnailBytes = 0
+        assetRevision = -1
+    })
+
+    function updatePresenterState(data: PresenterState) {
+        if (presenterState && data.revision < presenterState.revision) return
+        presenterState = data
+        outputId = data.outputId || outputId
+        if (assetRevision === data.revision) return
+
+        assetRevision = data.revision
+        presenterThumbnails = {}
+        thumbnailBytes = 0
+        pendingAssets.clear()
+        const assets = [data.current, data.next].flatMap((preview) => Object.values(preview?.assets || {}))
+        assetQueue = Array.from(new Set(assets))
+        flushPresenterThumbnails()
+    }
+
+    function flushPresenterThumbnails() {
+        while (presenterState && pendingAssets.size < 2 && assetQueue.length) {
+            const assetId = assetQueue.shift()!
+            if (pendingAssets.has(assetId) || presenterThumbnails[assetId] !== undefined) continue
+            pendingAssets.add(assetId)
+            socket.emit("CONTROLLER", {
+                channel: "PRESENTER_THUMBNAIL",
+                data: { revision: presenterState.revision, assetId }
+            })
+        }
+    }
+
+    function receivePresenterThumbnail(data: { revision: number; assetId: string; thumbnail: string }) {
+        if (!presenterState || data.revision !== presenterState.revision || !pendingAssets.has(data.assetId)) return
+        pendingAssets.delete(data.assetId)
+        const size = data.thumbnail?.length || 0
+        if (size && thumbnailBytes + size <= MAX_THUMBNAIL_BYTES) {
+            presenterThumbnails = { ...presenterThumbnails, [data.assetId]: data.thumbnail }
+            thumbnailBytes += size
+        } else {
+            presenterThumbnails = { ...presenterThumbnails, [data.assetId]: "" }
+        }
+        flushPresenterThumbnails()
+    }
 
     let thumbnailInterval: any = null
     let frameReceived = true
@@ -121,6 +193,31 @@
     <Brand role="Controller" compact />
 </div>
 
+<section class="presenter-context" aria-label="Presenter view">
+    <div class="preview-grid">
+        <section class="preview-panel">
+            <div class="preview-heading"><strong>Current</strong><span>{presenterState?.showName || (presenterState?.status === "cleared" ? "Output cleared" : "On screen")}</span></div>
+            {#if presenterState?.current}
+                <PresenterPreview preview={presenterState.current} thumbnails={presenterThumbnails} />
+            {:else}
+                <div class="preview-frame preview-empty">{presenterState?.status === "cleared" ? "Output cleared" : "No active slide"}</div>
+            {/if}
+        </section>
+        <section class="preview-panel">
+            <div class="preview-heading"><strong>Next</strong><span>{presenterState?.next?.showName || "Coming up"}</span></div>
+            {#if presenterState?.next}
+                <PresenterPreview preview={presenterState.next} thumbnails={presenterThumbnails} />
+            {:else}
+                <div class="preview-frame preview-empty">{presenterState?.atEnd ? "End of show" : "No next slide"}</div>
+            {/if}
+        </section>
+    </div>
+    <section class="presenter-notes" aria-label="Current slide notes">
+        <strong>Notes</strong>
+        <p>{presenterNotes || "No notes for this slide."}</p>
+    </section>
+</section>
+
 {#if draw}
     <div class="draw">
         <select name="tools" value={tool} on:change={changeTool}>
@@ -146,15 +243,15 @@
     </div>
 {:else}
     <div class="controller">
-        <button class="quart" on:click={() => sendAction("previous")}>
+        <button class="quart" aria-label="Previous slide" on:click={() => sendAction("previous")}>
             <Icon id="previous" size={4} />
         </button>
-        <button class="quart" on:click={() => sendAction("next")}>
+        <button class="quart" aria-label="Next slide" on:click={() => sendAction("next")}>
             <Icon id="next" size={4} />
         </button>
         <!-- <button class="quart" />
   <button class="quart" /> -->
-        <button class="center" class:red={justCleared} on:click={() => sendAction("clear")}>
+        <button class="center" class:red={justCleared} aria-label="Clear output" on:click={() => sendAction("clear")}>
             <Icon id="clear" size={4} white />
             <!-- <Icon id={justCleared ? "clear" : "slide"} size={4} white /> -->
         </button>
@@ -199,7 +296,7 @@
         /* transition: background-color 0.5s; */
         -webkit-tap-highlight-color: transparent;
 
-        font-family: system-ui;
+        font-family: var(--font-family);
         font-size: 1.5em;
 
         height: 100%;
@@ -218,6 +315,94 @@
         left: 12px;
         z-index: 20;
         pointer-events: none;
+    }
+
+    .presenter-context {
+        position: absolute;
+        z-index: 1;
+        top: 58px;
+        right: 12px;
+        left: 12px;
+        display: flex;
+        flex-direction: column;
+        max-width: 840px;
+        margin: 0 auto;
+        gap: 6px;
+        pointer-events: none;
+    }
+
+    .preview-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .preview-panel {
+        min-width: 0;
+        overflow: hidden;
+        padding: 6px;
+        border: 1px solid var(--primary-lighter);
+        border-radius: 8px;
+        background: var(--primary-darker);
+    }
+
+    .preview-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 0 2px 5px;
+        font-size: 0.72rem;
+    }
+
+    .preview-heading strong,
+    .presenter-notes strong {
+        color: var(--accent);
+        font-size: 0.68rem;
+        text-transform: uppercase;
+    }
+
+    .preview-heading span {
+        overflow: hidden;
+        color: var(--text);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .presenter-context :global(.preview-frame) {
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        overflow: hidden;
+        border-radius: 5px;
+        background: #000;
+    }
+
+    .presenter-context .preview-empty {
+        display: grid;
+        place-items: center;
+        color: #c5b5b5;
+        font-size: 0.78rem;
+    }
+
+    .presenter-notes {
+        overflow: auto;
+        min-height: 86px;
+        max-height: 128px;
+        flex: 0 0 auto;
+        padding: 5px 8px;
+        border: 1px solid var(--primary-lighter);
+        border-radius: 7px;
+        color: var(--text);
+        background: var(--primary-darker);
+        font-size: 0.74rem;
+        pointer-events: auto;
+    }
+
+    .presenter-notes p {
+        margin: 2px 0 0;
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+        line-height: 1.25;
     }
 
     :global(svg.white) {
@@ -282,7 +467,7 @@
     /* pad */
     .draw {
         position: absolute;
-        top: 50%;
+        top: 60%;
         left: 50%;
         transform: translate(-50%, -50%);
         display: flex;
@@ -292,7 +477,7 @@
     }
 
     .pad {
-        height: 55vw;
+        height: min(55vw, 42vh);
         /* width: 80vw; */
         border-radius: 5px;
         background-color: var(--primary-darkest);
@@ -314,21 +499,35 @@
     /* controller */
     .controller {
         position: absolute;
-        top: 50%;
+        top: 74%;
         left: 50%;
         transform: translate(-50%, -50%);
         /* transform: translate(-50%, -50%) rotate(45deg); */
 
-        height: 80vw;
-        width: 80vw;
+        height: min(34vw, 32vh, 300px);
+        width: min(34vw, 32vh, 300px);
         border-radius: 50%;
         overflow: hidden;
     }
 
-    @media only screen and (min-width: 800px) {
+    @media only screen and (max-width: 550px) {
+        .presenter-context {
+            max-width: 420px;
+        }
+        .preview-grid {
+            grid-template-columns: minmax(0, 1fr);
+        }
+        .presenter-notes {
+            min-height: 76px;
+            max-height: 92px;
+        }
         .controller {
-            height: 70vh;
-            width: 70vh;
+            top: 82%;
+            height: min(38vw, 18vh, 160px);
+            width: min(38vw, 18vh, 160px);
+        }
+        .toggles {
+            bottom: 12px;
         }
     }
     @media only screen and (min-width: 620px) {
@@ -339,9 +538,9 @@
     }
     @media (max-height: 700px) {
         .controller {
-            top: 45%;
-            height: 75vmin;
-            width: 75vmin;
+            top: 76%;
+            height: min(34vw, 28vh, 260px);
+            width: min(34vw, 28vh, 260px);
         }
         .controller :global(svg) {
             width: 2.5rem !important;
@@ -349,7 +548,7 @@
             min-width: 2.5rem !important;
         }
         .draw {
-            top: 45%;
+            top: 62%;
         }
         .pad {
             height: 40vh;
@@ -374,8 +573,8 @@
     /* (orientation: landscape) for wider devices */
     @media (min-width: 600px) and (max-height: 700px) {
         .controller {
-            height: 70vmin;
-            width: 70vmin;
+            height: min(30vw, 25vh, 240px);
+            width: min(30vw, 25vh, 240px);
         }
         .controller :global(svg) {
             width: 3.5rem !important;
@@ -393,8 +592,8 @@
     @media (max-height: 299px) {
         .controller {
             top: 50%;
-            height: 85vmin;
-            width: 85vmin;
+            height: min(34vw, 48vh, 180px);
+            width: min(34vw, 48vh, 180px);
         }
         .controller :global(svg) {
             width: 3rem !important;
@@ -403,6 +602,12 @@
         }
         .draw {
             top: 50%;
+        }
+    }
+
+    @media only screen and (min-width: 551px) {
+        .presenter-notes {
+            min-height: 92px;
         }
     }
 

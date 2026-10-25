@@ -59,7 +59,7 @@ export interface Show {
 export interface ImportSource {
     kind: "powerpoint" | "pdf"
     sourcePath: string
-    pdfPath: string
+    pdfPath?: string
     sourceHash: string
     renderer: string
     rendererVersion: string

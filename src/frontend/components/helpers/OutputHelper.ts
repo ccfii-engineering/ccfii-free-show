@@ -117,14 +117,20 @@ export class OutputHelper {
 
     // this allows changing back to the previous project item with keyboard instead of advancing the slide if the active show is right before/after the outputted show
     private static quickChangeBack(outputId: string, show: OutSlide, next: boolean, options: Options) {
-        let active = this.getActiveItem()
-        let projectItems = this.getProjectItems()
-        if (active?.index === undefined || active.id === show.id) return false
-        if (projectItems[active.index + (next ? 1 : -1)]?.id !== show.id) return false
-        if (next ? this.getPreviousSlide(outputId, show) : this.getNextSlide(outputId, show)) return false
+        const active = this.getQuickChangeBackItem(outputId, show, next)
+        if (!active) return false
 
         this.changeProjectItem(outputId, active, next, options)
         return true
+    }
+
+    private static getQuickChangeBackItem(outputId: string, show: OutSlide, next: boolean) {
+        const active = this.getActiveItem()
+        const projectItems = this.getProjectItems()
+        if (active?.index === undefined || active.id === show.id) return null
+        if (projectItems[active.index + (next ? 1 : -1)]?.id !== show.id) return null
+        if (next ? this.getPreviousSlide(outputId, show) : this.getNextSlide(outputId, show)) return null
+        return active
     }
 
     private static changeProjectItem(outputId: string, item: OutSlide | ShowRef | null = null, next: boolean, options: Options) {
@@ -316,6 +322,36 @@ export class OutputHelper {
     // 4. Active show/item
     private static getSubsequent(outputId: string, data: OutSlide | null, next: boolean): OutSlide | null {
         return next ? this.getNextSlide(outputId, data) : this.getPreviousSlide(outputId, data)
+    }
+
+    static getPresenterNext(outputId: string): OutSlide | null {
+        const options: Options = { isSpace: false, slideLayers: true, playNext: false }
+        const show = this.getShow(outputId, true, options)
+        if (!show) return null
+
+        const quickChangeItem = this.getQuickChangeBackItem(outputId, show, true)
+        if (quickChangeItem) {
+            if (!get(focusMode)) return show
+            const nextProjectItem = this.getProjectItems()[quickChangeItem.index! + 1]
+            if (!nextProjectItem || (nextProjectItem.type && nextProjectItem.type !== "show")) return null
+            return this.getSubsequent(outputId, { id: nextProjectItem.id, layout: nextProjectItem.layout }, true)
+        }
+
+        const nextSlide = this.getSubsequent(outputId, show, true)
+        if (nextSlide) return nextSlide
+        if (!get(focusMode) && get(special).nextItemOnLastSlide === false) return null
+
+        const projectItems = this.getProjectItems()
+        let nextIndex = this.getProjectItemIndex(show) + 1
+        if (get(focusMode)) {
+            while (projectItems[nextIndex]?.type === "section") nextIndex++
+        } else {
+            while (projectItems[nextIndex]?.type === "section" && !projectItems[nextIndex]?.notes) nextIndex++
+        }
+
+        const nextItem = projectItems[nextIndex]
+        if (!nextItem || (nextItem.type && nextItem.type !== "show")) return null
+        return this.getSubsequent(outputId, { id: nextItem.id, layout: nextItem.layout }, true)
     }
 
     private static getNextSlide(outputId: string, data: OutSlide | null): OutSlide | null {

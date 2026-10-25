@@ -7,6 +7,7 @@ import { Main } from "../../../types/IPC/Main"
 import type { Variable } from "../../../types/Main"
 import type { ProjectShowRef } from "../../../types/Projects"
 import type { Item, LayoutRef, OutSlide, Show, Slide, SlideAction, SlideData } from "../../../types/Show"
+import { getItemWithMostLines } from "../../../common/outputLineWindows"
 import { clearAudio } from "../../audio/audioFading"
 import { AudioMicrophone } from "../../audio/audioMicrophone"
 import { AudioPlayer } from "../../audio/audioPlayer"
@@ -148,15 +149,7 @@ export function swichProjectItem(pos: number, id: string) {
     }
 }
 
-export function getItemWithMostLines(slide: Slide | { items: Item[] }) {
-    let amount = 0
-    if (!Array.isArray(slide.items)) return 0
-    slide.items.forEach((item) => {
-        const lines: number = (Array.isArray(item?.lines) ? item.lines.filter((line) => Array.isArray(line.text) && line.text.filter((text) => text.value !== undefined).length > 0) : [])?.length || 0
-        if (lines > amount) amount = lines
-    })
-    return amount
-}
+export { getItemWithMostLines }
 
 // get output with fewest lines
 export function getFewestOutputLines(updater = get(outputs)) {
