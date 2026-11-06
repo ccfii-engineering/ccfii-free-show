@@ -1,19 +1,19 @@
-import { io } from "socket.io-client"
 import type { RemoteApiChannel, RemoteProtocol, RemoteRequestKey, RemoteResponseKey, RemoteResponses } from "../../../types/remote/protocol"
-import { REMOTE_PRE_AUTH_KEYS } from "../../../types/remote/protocol"
+import { toRemoteReplayRequest, REMOTE_PRE_AUTH_KEYS } from "../../../types/remote/protocol"
 import type { WebSendArgs } from "../../../types/WebProtocol"
+import { createWebClient } from "../../common/util/webClient"
 import { receiver } from "./receiver"
-import { _get, _set, _update } from "./stores"
+import { _set, _update } from "./stores"
 
-const socket = io()
-let id: string = ""
-const responseListeners = new Map<string, Set<(data: never) => void>>()
-
-export function initSocket() {
-    socket.on("connect", () => {
-        id = socket.id || ""
-        console.log("Connected with id:", id)
-
+// The Remote uses the shared web client. It adds the saved-password handshake and the `API:<action>` requests.
+// Offline rule: live sends are dropped while disconnected (only PASSWORD/ACCESS pass); data requests
+// (show, output, functions, ...) are re-issued after reconnect once access is granted (markReady).
+const client = createWebClient<RemoteProtocol, RemoteResponses>({
+    event: "REMOTE",
+    preAuthKeys: REMOTE_PRE_AUTH_KEYS,
+    gateInbound: true,
+    replay: toRemoteReplayRequest,
+    onConnect: () => {
         // try accessing with saved password
         const SAVED_PASSWORD = localStorage.password
         if (SAVED_PASSWORD) {
@@ -25,53 +25,27 @@ export function initSocket() {
 
         // check if there is a password!
         send("PASSWORD")
-    })
+    },
+    onDisconnect: () => _set("isConnected", false)
+})
 
-    // the wire message is untyped; the channel decides which RemoteResponses payload it carries
-    socket.on("REMOTE", (msg: { channel: string; data: unknown }) => {
-        const key = msg.channel
-        if (!_get("isConnected")) {
-            if (!REMOTE_PRE_AUTH_KEYS.includes(key)) return
-        }
+export function initSocket() {
+    client.start(receiver)
+}
 
-        const listeners = responseListeners.get(key)
-        if (listeners) {
-            listeners.forEach((listener) => listener(msg.data as never))
-            return
-        }
-
-        const handler = (receiver as Record<string, ((data: never) => void) | undefined>)[key]
-        if (!handler) {
-            if (msg.data !== null) console.log("Unhandled message:", msg)
-            return
-        }
-
-        handler(msg.data as never)
-    })
-
-    socket.on("disconnect", () => _set("isConnected", false))
+/** The connection is authorized: re-issue the data requests the view asked for before the reconnect. */
+export function markReady() {
+    client.setReady(true)
 }
 
 /** Listen for one response channel; the payload type comes from the protocol. */
 export function onResponse<C extends RemoteResponseKey>(channel: C, listener: (data: RemoteResponses[C]) => void) {
-    let listeners = responseListeners.get(channel)
-    if (!listeners) {
-        listeners = new Set()
-        responseListeners.set(channel, listeners)
-    }
-    listeners.add(listener as (data: never) => void)
-
-    return () => {
-        listeners?.delete(listener as (data: never) => void)
-        if (!listeners?.size) responseListeners.delete(channel)
-    }
+    return client.onResponse(channel, listener)
 }
 
 /** Send a protocol request, or an `API:<action>` request (its action payload is outside the protocol). */
 export function send<K extends RemoteRequestKey>(channel: K, ...data: WebSendArgs<RemoteProtocol, K>): void
 export function send(channel: RemoteApiChannel, data?: unknown): void
 export function send(channel: string, data: unknown = null) {
-    // never buffer a live action while offline: Socket.IO would replay it after reconnect
-    if (!socket.connected && !REMOTE_PRE_AUTH_KEYS.includes(channel)) return
-    socket.emit("REMOTE", { id, channel, data: data ?? null })
+    client.sendRaw(channel, data)
 }

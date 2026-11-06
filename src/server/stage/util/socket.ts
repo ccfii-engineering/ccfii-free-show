@@ -1,63 +1,31 @@
-import { io } from "socket.io-client"
-import { uid } from "uid"
-import { receiver, type ReceiverKey } from "./receiver"
+import type { StageProtocol, StageResponses } from "../../../types/stage/protocol"
+import { toStageReplayRequest } from "../../../types/stage/protocol"
+import type { WebSendArgs } from "../../../types/WebProtocol"
+import { createWebClient } from "../../common/util/webClient"
+import { receiver } from "./receiver"
 
-const socket = io()
-let id: string = ""
+// The Stage uses the shared web client. On every (re)connect it asks for the layouts, which reopens the
+// layout it showed; once the app confirms the layout (markReady) the output/show/progress requests are re-issued.
+const client = createWebClient<StageProtocol, StageResponses>({
+    event: "STAGE",
+    replay: toStageReplayRequest,
+    onConnect: () => client.send("LAYOUTS")
+})
 
 export function initSocket() {
-    socket.on("connect", () => {
-        id = socket.id || ""
-        console.log("Connected with id:", id)
-        send("LAYOUTS")
-    })
-
-    socket.on("STAGE", (msg) => {
-        let key = msg.channel as ReceiverKey
-        if (!receiver[key]) {
-            if (!requestChannels.find((a) => msg.channel.includes(a))) console.log("Unhandled message:", msg)
-            return
-        }
-
-        receiver[key](msg.data)
-    })
+    client.start(receiver)
 }
 
-export const send = (channel: string, data: any = null) => socket.emit("STAGE", { id, channel, data })
-
-const requestChannels = ["get_dynamic_value"]
-
-const pendingRequests = new Map<string, { resolve: (value: any) => void; timeout: NodeJS.Timeout }>()
-
-let requestListenerInitialized = false
-function initRequestListener() {
-    if (requestListenerInitialized) return
-    requestListenerInitialized = true
-
-    socket.on("STAGE", (msg: any) => {
-        if (!msg.listenerId) return
-        const pending = pendingRequests.get(msg.listenerId)
-        if (!pending) return
-
-        clearTimeout(pending.timeout)
-        pendingRequests.delete(msg.listenerId)
-        pending.resolve(msg.data)
-    })
+/** The layout is open on the app side: re-issue the data requests the view made before a reconnect. */
+export function markReady() {
+    client.setReady(true)
 }
 
-export async function awaitRequest(channel: string, data: any = null) {
-    initRequestListener()
+export function send<K extends keyof StageProtocol & string>(channel: K, ...data: WebSendArgs<StageProtocol, K>) {
+    client.send(channel, ...data)
+}
 
-    const listenerId = channel + uid(5)
-    socket.emit("STAGE", { id, channel, data, listenerId })
-
-    const waitingTimeout = 3000
-    return new Promise((resolve) => {
-        const timeout = setTimeout(() => {
-            pendingRequests.delete(listenerId)
-            resolve(null)
-        }, waitingTimeout)
-
-        pendingRequests.set(listenerId, { resolve, timeout })
-    })
+/** Ask the app and wait for the matching reply; null when offline, on timeout or on disconnect. */
+export function awaitRequest(channel: string, data: unknown = null) {
+    return client.request(channel, data)
 }

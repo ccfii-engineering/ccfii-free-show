@@ -20,16 +20,15 @@
     // }
 
     // let socket = io();
-    import { io } from "socket.io-client"
-    let socket = io()
+    import type { CamProtocol, CamResponses } from "../../types/stream/protocol"
+    import { createWebClient } from "../common/util/webClient"
+    const client = createWebClient<CamProtocol, CamResponses>({ event: "CAM", autoReady: true })
+    client.start()
 
     function viewVideo(video: any, context: any) {
         context.drawImage(video, 0, 0, context.width, context.height)
         // const base64 = this.result.replace(/.*base64,/, '');
-        socket.emit("CAM", {
-            channel: "STREAM",
-            data: canvas.toDataURL("image/webp")
-        })
+        client.send("STREAM", canvas.toDataURL("image/webp"))
         // const base64 = canvas.toString("base64")
         // socket.emit("stream", base64)
     }

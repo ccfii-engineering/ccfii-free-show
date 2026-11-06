@@ -3,7 +3,7 @@ import type { RemoteOutTemp, RemoteResponses } from "../../../types/remote/proto
 import type { WebReceiverTable } from "../../../types/WebProtocol"
 import type { Item, Show } from "../../../types/Show"
 import { setError, translate } from "./helpers"
-import { send } from "./socket"
+import { markReady, send } from "./socket"
 import { _, _get, _set, _update, activeTimers, currentScriptureState, overlays, runningActions, scriptureCache, scriptures, timers } from "./stores"
 
 function sanitizeBiblePayload(bible: any) {
@@ -64,6 +64,9 @@ export const receiver: WebReceiverTable<RemoteResponses> = {
 
         // Request current output data which should include scripture state
         send("API:get_output")
+
+        // re-issue show/output/function requests that were dropped or answered before a reconnect
+        markReady()
     },
 
     /////
