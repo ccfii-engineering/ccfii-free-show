@@ -8,10 +8,14 @@ import { createStore, createStoreHistory, deleteStore, deleteStoreHistory, updat
 import { deselect } from "./select"
 import { loadShows } from "./setShow"
 import { removeTemplatesFromShow } from "./show"
-import { _show } from "./shows"
+import { _show, getSlideSettings } from "./shows"
 
 // override previous history
 const override = ["textAlign", "textStyle", "deleteItem", "setItems", "setStyle", "slideStyle", "STAGE"]
+
+function getSlideTemplateState(showId: string | undefined) {
+    return { slides: clone(_show(showId).get("slides") || {}), layouts: clone(_show(showId).get("layouts") || {}), media: clone(_show(showId).get("media") || {}) }
+}
 
 // a slide's own template only changes its items when the template is applied, so re-apply the show template to that one slide (it uses its own template)
 function refreshSlideTemplate(showId: string | undefined, slideId: string, before: string | undefined, after: string | undefined) {
@@ -108,6 +112,25 @@ export function history(obj: History, shouldUndo: null | boolean = null) {
                         .set({ key: "settings", value: obj.newData.style })
                 }
                 refreshSlideTemplate(showID, obj.location?.slide || "", old.style[0]?.template, obj.newData.style?.template)
+                break
+            // apply a template to selected slides as one step: undo and redo restore the stored slides, layouts and media
+            case "slideTemplate":
+                if (shouldUndo === null) {
+                    const before = getSlideTemplateState(showID)
+                    const slideIds: string[] = [...new Set<string>(obj.newData.slideIds || [])]
+                    slideIds.forEach((slideId) =>
+                        _show(showID)
+                            .slides([slideId])
+                            .set({ key: "settings", value: { ...getSlideSettings(slideId, showID), template: obj.newData.template } })
+                    )
+                    slideIds.forEach((slideId) => refreshSlideTemplate(showID, slideId, "", obj.newData.template))
+                    obj.oldData = before
+                    obj.newData = getSlideTemplateState(showID)
+                } else {
+                    _show(showID).set({ key: "slides", value: clone(obj.newData.slides) })
+                    _show(showID).set({ key: "layouts", value: clone(obj.newData.layouts) })
+                    _show(showID).set({ key: "media", value: clone(obj.newData.media) })
+                }
                 break
             case "slide":
                 old = {

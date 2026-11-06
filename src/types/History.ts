@@ -18,6 +18,7 @@ export type HistoryIDs =
     | "setItems"
     | "setStyle"
     | "slideStyle"
+    | "slideTemplate"
     // show
     | "slide"
     | "showMedia"

@@ -13,8 +13,8 @@ vi.mock("./historyHelpers", () => ({ _updaters: {} }))
 vi.mock("./show", () => ({ getShowCacheId: (id: string) => id, removeTemplatesFromShow: vi.fn() }))
 
 import { getShowsCache, setShowsCache, showsCache } from "../../showsCacheState/showsCache.svelte"
-import { activeShow, templates } from "../../stores"
-import { history } from "./history"
+import { activeShow, templates, undoHistory } from "../../stores"
+import { history, redo, undo } from "./history"
 
 const line = (value: string) => ({ align: "", text: [{ value, style: "" }] })
 const slide = (value: string) => ({ group: "g", color: null, settings: {}, notes: "", items: [{ type: "text", style: "", align: "", lines: [line(value)] }] })
@@ -87,5 +87,49 @@ describe("selected-slide template apply", () => {
         expect(JSON.stringify(slides.s2.items)).not.toContain(TEMPLATE_STYLE)
         expect(JSON.stringify(slides.s1.items)).toContain(TEMPLATE_STYLE)
         expect(slides.s2.settings.template).toBe("other")
+    })
+
+    describe("slideTemplate (one step per click)", () => {
+        const apply = (slideIds: string[]) => history({ id: "slideTemplate", newData: { template: "other", slideIds }, location: { page: "edit", show: get(activeShow)! } })
+        const own = () =>
+            Object.entries(getShowsCache().sh.slides)
+                .filter(([, sl]) => sl.settings?.template)
+                .map(([id]) => id)
+
+        beforeEach(() => {
+            vi.stubGlobal("document", { activeElement: null })
+            undoHistory.set([])
+            templates.update((a: any) => ({ ...a, other: { ...a.tpl, name: "other", items: [{ ...a.tpl.items[0], lines: [{ align: "", text: [{ value: "", style: "font-size: 11px;" }] }] }] } }))
+            setShowsCache({ sh: makeShow("tpl") })
+            history({ id: "TEMPLATE", save: false, newData: { id: "tpl", data: { createItems: true } }, location: { page: "none", override: "show#sh" } })
+        })
+
+        it("undo restores the slides deep-equal to before and redo re-applies the template", () => {
+            const before = structuredClone(getShowsCache().sh)
+            apply(["s2"])
+            const applied = structuredClone(getShowsCache().sh)
+            expect(own()).toEqual(["s2"])
+            expect(JSON.stringify(applied.slides.s2.items)).toContain("font-size: 11px;")
+            expect(get(undoHistory)).toHaveLength(1)
+
+            undo()
+            const undone = getShowsCache().sh
+            expect(undone.slides).toEqual(before.slides)
+            expect(undone.layouts).toEqual(before.layouts)
+            expect(own()).toEqual([])
+
+            redo()
+            expect(getShowsCache().sh.slides).toEqual(applied.slides)
+            expect(own()).toEqual(["s2"])
+        })
+
+        it("several slides are one history step", () => {
+            const before = structuredClone(getShowsCache().sh.slides)
+            apply(["s1", "s2"])
+            expect(own()).toEqual(["s1", "s2"])
+            expect(get(undoHistory)).toHaveLength(1)
+            undo()
+            expect(getShowsCache().sh.slides).toEqual(before)
+        })
     })
 })

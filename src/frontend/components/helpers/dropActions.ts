@@ -318,16 +318,7 @@ export const dropActions = {
                     return
                 }
 
-                const slideSettings = getSlideSettings(slideId)
-                const oldData = { style: clone(slideSettings) }
-                const newData = { style: { ...slideSettings, template: templateId } }
-
-                history({
-                    id: "slideStyle",
-                    oldData,
-                    newData,
-                    location: { page: "edit", show: get(activeShow)!, slide: slideId }
-                })
+                history({ id: "slideTemplate", newData: { template: templateId, slideIds: [slideId] }, location: { page: "edit", show: get(activeShow)! } })
 
                 // update
                 history({ id: "TEMPLATE", save: false, newData: { id: showTemplateId }, location: { page: "show" } })

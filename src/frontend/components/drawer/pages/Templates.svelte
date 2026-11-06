@@ -11,7 +11,7 @@
     import { getFirstActiveOutput, getResolution } from "../../helpers/output"
     import { deselect } from "../../helpers/select"
     import { getLayoutRef } from "../../helpers/show"
-    import { _show, getSlideSettings } from "../../helpers/shows"
+    import { _show } from "../../helpers/shows"
     import T from "../../helpers/T.svelte"
     import FloatingInputs from "../../input/FloatingInputs.svelte"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
@@ -133,30 +133,24 @@
         // selected slides
         if (scope === "slides" && selectedSlideCount) {
             let ref = getLayoutRef()
+            const slideIds: string[] = []
             $selected.data.forEach(({ index, showId }) => {
                 let slideId = ref[index]?.id
+                if (!slideId || (showId && showId !== $activeShow?.id)) return
 
                 // check if locked
-                let groupSlide = _show(showId || "active")
+                let groupSlide = _show("active")
                     .slides([ref[index]?.parent?.id || ref[index]?.id])
                     .get()[0]
                 if (groupSlide?.locked) return
 
-                let slideSettings = getSlideSettings(slideId, showId || "active")
-                let oldData = { style: clone(slideSettings) }
-                let newData = { style: { ...slideSettings, template: templateId } }
-
-                // WIP apply to all slides at once...
-                history({
-                    id: "slideStyle",
-                    oldData,
-                    newData,
-                    location: { page: "edit", show: $activeShow, slide: slideId }
-                })
+                slideIds.push(slideId)
             })
 
+            // one history step: undo and redo restore the slides, not only the template id
+            if (slideIds.length) history({ id: "slideTemplate", newData: { template: templateId, slideIds }, location: { page: "edit", show: $activeShow } })
+
             deselect()
-            // WIP refresh slides (apply template)
             return
         }
 
