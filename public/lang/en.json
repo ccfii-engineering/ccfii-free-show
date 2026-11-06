@@ -45,6 +45,26 @@
         "warn_category": "Category \"$1\" sets the template \"$2\", so whole-show applies are blocked. To change it: Shows drawer, right-click the category, Category template.",
         "warn_style": "The output style template \"$1\" overrides what is shown on screen."
     },
+    "text_scope": {
+        "apply_to": "Apply changes to:",
+        "slide": "This slide",
+        "all": "All slides",
+        "template": "Template",
+        "desc_slide": "Changes only this slide.",
+        "desc_all": "Changes the matching text box on every slide in this layout.",
+        "desc_template": "Changes the template \"$1\". Slides pick it up when the template is applied.",
+        "desc_no_template": "No template is in use for this slide.",
+        "offer": "Changed this slide only.",
+        "offer_all": "Apply to all slides",
+        "offer_template": "Save to template",
+        "offer_keep": "Keep",
+        "own_style": "$1 slides have their own text style",
+        "own_style_one": "1 slide has its own text style",
+        "own_style_none": "All slides follow the template",
+        "reset": "Reset to template",
+        "template_saved": "Saved to template \"$1\"",
+        "no_match": "The template has no matching text box"
+    },
     "guide": {
         "start": "Quick start guide",
         "skip": "Skip"

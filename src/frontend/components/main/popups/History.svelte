@@ -69,6 +69,7 @@
         setStyle: "Changed item style",
         slideStyle: "Changed slide style",
         slideTemplate: "Applied template to slides",
+        textScope: "Changed text style on slides",
 
         slide: "Added slide",
         showMedia: "Added media to show",

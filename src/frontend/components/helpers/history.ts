@@ -17,6 +17,10 @@ function getSlideTemplateState(showId: string | undefined) {
     return { slides: clone(_show(showId).get("slides") || {}), layouts: clone(_show(showId).get("layouts") || {}), media: clone(_show(showId).get("media") || {}) }
 }
 
+function getTextScopeState(showId: string | undefined) {
+    return { slides: clone(_show(showId).get("slides") || {}), settings: clone(_show(showId).get("settings") || {}) }
+}
+
 // a slide's own template only changes its items when the template is applied, so re-apply the show template to that one slide (it uses its own template)
 function refreshSlideTemplate(showId: string | undefined, slideId: string, before: string | undefined, after: string | undefined) {
     if (!slideId || (before || "") === (after || "")) return
@@ -130,6 +134,30 @@ export function history(obj: History, shouldUndo: null | boolean = null) {
                     _show(showID).set({ key: "slides", value: clone(obj.newData.slides) })
                     _show(showID).set({ key: "layouts", value: clone(obj.newData.layouts) })
                     _show(showID).set({ key: "media", value: clone(obj.newData.media) })
+                }
+                break
+            // text style on several slides as one step (Text tab scope "All slides", reset to template): undo and redo restore the stored slides and settings
+            case "textScope":
+                if (shouldUndo === null) {
+                    const before = getTextScopeState(showID)
+                    const writes: any[] = obj.newData.writes || []
+                    writes.forEach((write) => {
+                        const target = _show(showID).slides([write.slide]).items(write.items)
+                        if (write.id === "setItems") target.set(write.style)
+                        else target.lines([]).set(write.style)
+                    })
+                    Object.entries(obj.newData.items || {}).forEach(([slideId, items]) =>
+                        _show(showID)
+                            .slides([slideId])
+                            .set({ key: "items", value: clone(items) })
+                    )
+                    // remove templates because the slides have manual updates (only for changes, not when resetting to the template)
+                    if (obj.newData.detach !== false) [...new Set<string>(writes.map((a) => a.slide))].forEach((slideId) => removeTemplatesFromShow(showID || "", slideId))
+                    obj.oldData = before
+                    obj.newData = getTextScopeState(showID)
+                } else {
+                    _show(showID).set({ key: "slides", value: clone(obj.newData.slides) })
+                    _show(showID).set({ key: "settings", value: clone(obj.newData.settings) })
                 }
                 break
             case "slide":
