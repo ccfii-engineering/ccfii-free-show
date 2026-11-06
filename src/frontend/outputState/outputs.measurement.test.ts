@@ -57,7 +57,7 @@ const scenarios: { name: string; writes: (update: (fn: (a: Outputs) => Outputs) 
         after: 3 // 1 selector + 2 whole-record subscribers
     },
     {
-        name: "burst of 3 writes to one output in one tick (slide, transition, clear)",
+        name: "burst of 3 real writes to one output (slide, transition, clear)",
         writes: (update) => {
             update((a) => {
                 a.b.active = true
@@ -73,7 +73,7 @@ const scenarios: { name: string; writes: (update: (fn: (a: Outputs) => Outputs) 
             })
         },
         before: 18,
-        after: 7 // selector coalesces the burst (net value changed once more than zero), whole-record: 3 writes x 2
+        after: 9 // 3 selector runs (each write really changed the output) + whole-record: 3 writes x 2
     },
     {
         name: "write that changes nothing (e.g. clear on an already clear output)",

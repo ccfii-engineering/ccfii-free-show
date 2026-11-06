@@ -2,6 +2,7 @@ import { flushSync } from "svelte"
 import { get } from "svelte/store"
 import { describe, expect, it, vi } from "vitest"
 import { createRuneRecordStore } from "./runeRecordStore.svelte"
+import { trackEntry } from "./runeRecordStore.fixture.svelte"
 
 type Item = { name: string; nested: { n: number }; list?: number[] }
 
@@ -105,18 +106,30 @@ describe("createRuneRecordStore", () => {
         expect(runB).toHaveBeenCalledTimes(2)
     })
 
-    it("select(id) coalesces several writes in one tick into one run", () => {
+    it("select(id) is synchronous and runs once per real change of that entry", () => {
         const store = seeded()
         const run = vi.fn()
         const stop = store.select("a").subscribe(run)
-        flushSync()
         run.mockClear()
         store.patch("a", { name: "1" })
-        store.patch("a", { name: "2" })
-        store.patch("a", { name: "3" })
-        flushSync()
         expect(run).toHaveBeenCalledTimes(1)
+        store.patch("a", { name: "1" })
+        expect(run).toHaveBeenCalledTimes(1)
+        store.patch("a", { name: "2" })
+        expect(run).toHaveBeenCalledTimes(2)
         stop()
+    })
+
+    it("getEntry(id) is a rune signal per entry: an effect reading one entry ignores the others", () => {
+        const store = seeded()
+        const log = trackEntry(store, "a")
+        flushSync()
+        store.patch("b", { name: "other" })
+        flushSync()
+        expect(log).toHaveLength(1)
+        store.patch("a", { name: "mine" })
+        flushSync()
+        expect(log).toHaveLength(2)
     })
 
     it("select(id) does not lose a write that lands before the first effect run", () => {

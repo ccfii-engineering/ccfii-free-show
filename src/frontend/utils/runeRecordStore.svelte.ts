@@ -4,7 +4,8 @@ import type { Readable } from "svelte/store"
 /**
  * A record of entries (`{ [id]: T }`) kept in Svelte 5 rune state, behind a small domain interface.
  *
- * - Fine-grained: every entry has its own signal, so `select(id)` / `getEntry(id)` only react to that entry.
+ * - Fine-grained: `select(id)` wakes only the subscribers of entries that changed; `getEntry(id)` is backed by one rune signal
+ *   per entry, so `$derived` / `$effect` code tracks only the entries it reads.
  * - Store compatible: `subscribe` / `get` give legacy components (`$store`) and `get()` callers the whole record,
  *   delivered synchronously like a writable store, but only when something actually changed.
  * - Writes are diffed per entry (deep equality): unchanged entries keep their reference and notify nobody.
@@ -21,7 +22,7 @@ export interface RuneRecordStore<T> extends Readable<RecordOf<T>> {
     get(): RecordOf<T>
     /** Reactive read of one entry (tracks only that entry when called inside `$derived` / `$effect`). */
     getEntry(id: string): T | undefined
-    /** Store of a single entry. Runs once with the current value, then only when that entry changes (batched per tick). */
+    /** Store of a single entry. Runs synchronously with the current value, then only when that entry changes. Emits undefined when missing. */
     select(id: string): Readable<T | undefined>
     /** Replace the whole record. Entries equal to the current ones are kept by reference. */
     set(next: RecordOf<T>): void
@@ -71,11 +72,14 @@ export function createRuneRecordStore<T>(initial: RecordOf<T> = {}): RuneRecordS
     // plain side: the record handed to store subscribers and get(). Rebuilt (new identity) on every real change.
     let record: RecordOf<T> = {}
     const subscribers = new Set<(value: RecordOf<T>) => void>()
+    // per-entry listeners behind select(id): called synchronously, only for the entries that changed
+    const entrySubscribers = new Map<string, Set<(value: T | undefined) => void>>()
 
     function commit(next: RecordOf<T>) {
         const nextIds = Object.keys(next)
         const currentIds = Object.keys(record)
         let changed = false
+        const changedIds: string[] = []
 
         const merged: RecordOf<T> = {}
         for (const id of nextIds) {
@@ -86,18 +90,22 @@ export function createRuneRecordStore<T>(initial: RecordOf<T> = {}): RuneRecordS
             }
             merged[id] = next[id]
             entries.set(id, next[id])
+            changedIds.push(id)
             changed = true
         }
 
         const removed = currentIds.filter((id) => !(id in merged))
         for (const id of removed) {
             entries.delete(id)
+            changedIds.push(id)
             changed = true
         }
 
-        // key order is meaningful (first entry = default). Rebuild the signal map if the order moved.
-        const sameOrder = nextIds.length === currentIds.length - removed.length && nextIds.every((id, index) => id === currentIds.filter((key) => key in merged)[index])
-        if (!sameOrder) {
+        // key order is meaningful (first entry = default). Existing keys keep their relative order and new keys are appended,
+        // anything else means the order moved and the signal map is rebuilt.
+        const kept = currentIds.filter((id) => id in merged)
+        const expectedOrder = [...kept, ...nextIds.filter((id) => !(id in record))]
+        if (!expectedOrder.every((id, index) => id === nextIds[index])) {
             entries.clear()
             for (const id of nextIds) entries.set(id, merged[id])
             changed = true
@@ -106,6 +114,7 @@ export function createRuneRecordStore<T>(initial: RecordOf<T> = {}): RuneRecordS
         if (!changed) return
         record = merged
         for (const run of [...subscribers]) run(record)
+        for (const id of changedIds) for (const run of [...(entrySubscribers.get(id) ?? [])]) run(record[id])
     }
 
     commit(initial)
@@ -126,18 +135,14 @@ export function createRuneRecordStore<T>(initial: RecordOf<T> = {}): RuneRecordS
         select(id) {
             return {
                 subscribe(run) {
-                    let last: T | undefined = record[id]
-                    run(last)
-                    // the effect's first run happens after subscribe returns; comparing with `last` keeps a write that lands
-                    // in between from being swallowed, and drops runs where the value did not change
-                    return $effect.root(() => {
-                        $effect(() => {
-                            const value = entries.get(id)
-                            if (value === last) return
-                            last = value
-                            run(value)
-                        })
-                    })
+                    let listeners = entrySubscribers.get(id)
+                    if (!listeners) entrySubscribers.set(id, (listeners = new Set()))
+                    listeners.add(run)
+                    run(record[id])
+                    return () => {
+                        listeners.delete(run)
+                        if (!listeners.size) entrySubscribers.delete(id)
+                    }
                 }
             }
         },
