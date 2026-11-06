@@ -16,7 +16,7 @@ jobs:
             - uses: actions/checkout@v4
             - uses: useblacksmith/setup-node@v5
               with:
-                  node-version: 20
+                  node-version: 22
                   cache: "npm"
             - name: Install libraries
               run: sudo apt-get install libfontconfig1-dev
@@ -32,6 +32,8 @@ jobs:
                       playwright-${{ runner.os }}-
             - name: Install Playwright Browsers
               run: npx playwright install --with-deps
+            - name: Download Electron binary (Electron 42+ does not fetch it on install)
+              run: node node_modules/electron/install.js
             - name: Build
               run: npm run build
             - name: Run Playwright tests
