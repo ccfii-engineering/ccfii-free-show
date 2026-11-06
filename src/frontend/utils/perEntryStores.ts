@@ -53,13 +53,8 @@ function createSelectAccessor<T>(select: (id: string) => Readable<T | undefined>
 /** Subscribe to a single entry in $media by path. */
 export const mediaEntry = createSelectAccessor(selectMediaEntry)
 
-const outputEntryReadable = createSelectAccessor<Output>(selectOutput)
-
 /** Subscribe to a single entry in $outputs by output id. */
-export const outputEntry = outputEntryReadable
-
-/** Subscribe to a single output entry using reference changes only (same readable: entries are replaced, never mutated). */
-export const outputEntryRef = outputEntryReadable
+export const outputEntry = createSelectAccessor<Output>(selectOutput)
 
 /** Subscribe to a single entry in $showsCache by show id. */
 export const showEntry = createSelectAccessor(selectCachedShow)
