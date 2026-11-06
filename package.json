@@ -76,7 +76,7 @@
         "@rollup/plugin-terser": "^1.0.0",
         "@rollup/plugin-typescript": "^12.1.4",
         "@soundtouchjs/audio-worklet": "^1.0.10",
-        "@sveltejs/vite-plugin-svelte": "^2.5.3",
+        "@sveltejs/vite-plugin-svelte": "^7.3.1",
         "@tsconfig/svelte": "^2.0.1",
         "@types/better-sqlite3": "^7.6.13",
         "@types/ebml": "^3.0.5",
@@ -113,24 +113,16 @@
         "stylelint": "^16.23.1",
         "stylelint-config-html": "^1.1.0",
         "stylelint-use-logical": "^2.1.2",
-        "svelte": "^3.59.2",
-        "svelte-check": "^2.10.3",
+        "svelte": "^5.57.3",
+        "svelte-check": "^4.7.8",
         "svelte-inspector": "github:vassbo/svelte-inspector#78307db",
-        "svelte-preprocess": "^5.1.4",
+        "svelte-preprocess": "^6.0.5",
         "tmp": "^0.2.7",
         "tslib": "^2.8.1",
         "typescript": "^6.0.3",
         "typescript7": "npm:typescript@^7.0.2",
-        "vite": "^4.5.14",
-        "vitest": "^2.1.9"
-    },
-    "overrides": {
-        "svelte-preprocess": {
-            "typescript": "$typescript"
-        },
-        "svelte-check": {
-            "typescript": "$typescript"
-        }
+        "vite": "^8.3.6",
+        "vitest": "^5.1.0"
     },
     "dependencies": {
         "@discordjs/opus": "^0.10.0",
@@ -179,5 +171,10 @@
         "yauzl": "^3.2.0",
         "yazl": "^3.3.1",
         "youtube-player": "^5.6.0"
+    },
+    "overrides": {
+        "eslint-plugin-svelte3": {
+            "svelte": "$svelte"
+        }
     }
 }
