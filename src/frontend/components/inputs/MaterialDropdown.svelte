@@ -356,7 +356,7 @@
 
     {#if open}
         {#if useVirtualList}
-            <div class="dropdown virtual" style="max-height: {maxHeight}px" transition:flyFade>
+            <div class="dropdown virtual" style="max-height: {maxHeight}px" transition:flyFade|global>
                 <VirtualList items={options} height="{maxHeight}px" activeIndex={highlightedIndex} let:item={option}>
                     <li style="{option.data ? 'justify-content: space-between;' : ''}{option.style || ''}" role="option" aria-selected={option.value === value} class:selected={option.value === value} class:highlighted={options.indexOf(option) === highlightedIndex} on:click={(e) => selectOption(e, option.value)}>
                         {#if option.icon}<Icon id={option.icon} style="margin-right: 5px;" color={option.iconColor} boxed={!!option.iconColor} white />{/if}
@@ -393,7 +393,7 @@
                 {/if}
             </div>
         {:else}
-            <ul style="max-height: {maxHeight}px" class="dropdown" role="listbox" tabindex="-1" bind:this={scrollElem} transition:flyFade>
+            <ul style="max-height: {maxHeight}px" class="dropdown" role="listbox" tabindex="-1" bind:this={scrollElem} transition:flyFade|global>
                 {#if allowEmpty}
                     <li style="opacity: 0.5;font-style: italic;" role="option" aria-selected={!value} class:selected={!value} class:highlighted={highlightedIndex < 0} on:click={() => selectOption(null, "")}>
                         {translateText("main.none")}

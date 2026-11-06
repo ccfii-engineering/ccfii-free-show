@@ -407,7 +407,7 @@
     </Autoscroll>
 
     {#if canAddToProject}
-        <div class="addToProject" role="none" on:mousedown={addSelectedToProject} transition:fade={{ duration: 50 }}>
+        <div class="addToProject" role="none" on:mousedown={addSelectedToProject} transition:fade|global={{ duration: 50 }}>
             <Icon id="add" size={2} white />
             <T id="context.addToProject" />
         </div>
@@ -417,7 +417,7 @@
 {#if projectId && !$projectView && !$focusMode && !recentlyUsedList.length && !projectReadOnly}
     {#if addMenuOpen}
         <!-- new show, new media, new PDF/PPT?, new scripture, new section -->
-        <div class="addMenu" transition:fade={{ duration: 80 }} role="none" on:click={() => (addMenuOpen = false)}>
+        <div class="addMenu" transition:fade|global={{ duration: 80 }} role="none" on:click={() => (addMenuOpen = false)}>
             <!-- createShow -->
             <MaterialButton variant="outlined" icon="slide" title="tooltip.show" on:click={() => openSearch("shows")}>
                 <div class="label">

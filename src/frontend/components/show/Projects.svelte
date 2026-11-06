@@ -370,7 +370,7 @@
 
                             {#if showProjectDropdown && currentProject}
                                 <!-- WIP use context menu style -->
-                                <div class="projectDropdown" transition:fade={{ duration: 100 }} role="none" on:click={() => (showProjectDropdown = false)}>
+                                <div class="projectDropdown" transition:fade|global={{ duration: 100 }} role="none" on:click={() => (showProjectDropdown = false)}>
                                     {#if currentProjectPcoFolderId && $activeProject}
                                         <MaterialButton title="Sync with Planning Center" icon="refresh" on:click={() => refreshPcoProject(currentProjectPcoFolderId, $activeProject)} white>
                                             <T id="cloud.sync" />
@@ -454,7 +454,7 @@
                         </MaterialButton>
 
                         {#if showProjectDropdown}
-                            <div class="projectDropdown" transition:fade={{ duration: 100 }} role="none" on:click={() => (showProjectDropdown = false)}>
+                            <div class="projectDropdown" transition:fade|global={{ duration: 100 }} role="none" on:click={() => (showProjectDropdown = false)}>
                                 <MaterialButton title="edit.options" icon="options" on:click={() => (showProjectsOptions = !showProjectsOptions)} white>
                                     <T id="edit.options" />
                                 </MaterialButton>
@@ -504,7 +504,7 @@
             </FloatingInputs> -->
 
             {#if addMenuOpen}
-                <div class="addMenu" transition:fade={{ duration: 80 }} role="none" on:click={() => (addMenuOpen = false)}>
+                <div class="addMenu" transition:fade|global={{ duration: 80 }} role="none" on:click={() => (addMenuOpen = false)}>
                     <MaterialButton variant="outlined" icon="project" title="<b>new.project</b><br>tooltip.project" on:click={() => createProject()}>
                         <T id="formats.project" />
                     </MaterialButton>

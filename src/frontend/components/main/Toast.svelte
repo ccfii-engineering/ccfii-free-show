@@ -45,7 +45,7 @@
 </script>
 
 {#if messages?.[0]}
-    <div class="toast" transition:slide>
+    <div class="toast" transition:slide|global>
         {translateText(messages[0])}
     </div>
 {/if}

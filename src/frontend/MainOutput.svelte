@@ -70,7 +70,7 @@
 
     <!-- black overlay for live preparation/changes -->
     {#if $livePrepare[outputId]}
-        <div class="blackOverlay" transition:fade></div>
+        <div class="blackOverlay" transition:fade|global></div>
     {/if}
 
     <!-- preload CMGSans font -->

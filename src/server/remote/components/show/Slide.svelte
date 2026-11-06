@@ -60,7 +60,7 @@
         <!-- WIP show overlays / layers... -->
         <!-- {#if $outOverlays.length}
     {#each $outOverlays as id}
-      <div style={$overlays[id].style} transition:fade={transition}>
+      <div style={$overlays[id].style} transition:fade|global={transition}>
         <div>
           {#each $overlays[id].items as item}
             <Textbox {item} />

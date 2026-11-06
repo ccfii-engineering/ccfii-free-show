@@ -77,7 +77,7 @@
         {/if}
     </button>
     {#if active}
-        <div class="dropdown" class:up class:arrow style={$$props.style || ""} transition:slide={{ duration: 200 }}>
+        <div class="dropdown" class:up class:arrow style={$$props.style || ""} transition:slide|global={{ duration: 200 }}>
             {#each options as option}
                 <span
                     id={formatId(option.name)}
