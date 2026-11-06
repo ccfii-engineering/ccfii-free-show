@@ -228,6 +228,9 @@ test("ordinary output media playback across supported formats", async () => {
         await mainWindow.locator(`#previewArea button[data-title="${operatorMuteBefore ? "Mute" : "Unmute"}"]`).click()
         await expect.poll(async () => (await queryAPI(apiUrl, "get_playing_video_state")).muted, { message: "operator mute can be restored" }).toBe(operatorMuteBefore)
 
+        // Anchor away from the wrap boundary: turning loop off near the end of the clip legitimately
+        // clears the output (clear media on finish), which made this section depend on elapsed time.
+        await queryAPI(apiUrl, "video_seekto", { seconds: 0.3 })
         const operatorLoopBefore = (await queryAPI(apiUrl, "get_playing_video_state")).loop
         const operatorLoop = mainWindow.locator('#previewArea button[data-title^="Loop"]')
         await operatorLoop.click()
@@ -270,6 +273,8 @@ test("ordinary output media playback across supported formats", async () => {
 
         // SHUTDOWN: closing the Presentation Output releases playback ownership cleanly
         await playMediaCardUntil(mainWindow, apiUrl, primary.file, (s) => s.duration > 1)
+        // The operator button asks for a second click to confirm stopping a live output.
+        await outputButton.click()
         await outputButton.click() // toggle off
         let afterClose = -1
         for (let attempt = 0; attempt < 12 && afterClose !== 0; attempt++) {

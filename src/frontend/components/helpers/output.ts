@@ -36,6 +36,7 @@ import { mergeWithTemplate } from "./slideTemplateMerge"
 import { getFirstOutputIdWithAudableBackground } from "./video"
 import { nextPresentationMode } from "../output/presentationState"
 import { makeOutputVideoData, makeOutputVideoTime, matchesOutputBackground } from "../media/video/outputPlaybackControl"
+import { outputSeekTracker } from "../media/video/outputSeekTracker"
 
 export function toggleOutputs(outputIds: string[] | null = null, options: { force?: boolean; autoStartup?: boolean; state?: boolean } = {}) {
     if (outputIds === null) outputIds = getActiveOutputs(get(outputs), false)
@@ -266,13 +267,15 @@ function changeOutputBackground(data, { output, id, mute, videoOutputId }) {
     }
 
     // wait for video receiver to change
+    const startRequestedAt = outputSeekTracker.now()
     setTimeout(() => {
         const currentBackground = get(outputs)[id]?.out?.background
         if (!matchesOutputBackground(identity, currentBackground)) return
 
         const currentVideoData = makeOutputVideoData(identity, { muted: currentBackground?.muted ?? false, loop: currentBackground?.loop || false })
         send(OUTPUT, ["DATA"], { [id]: currentVideoData })
-        if (currentBackground?.startAt !== undefined) send(OUTPUT, ["TIME"], { [id]: makeOutputVideoTime(identity, currentBackground.startAt || 0) })
+        // an operator seek made while waiting is newer than startAt
+        if (currentBackground?.startAt !== undefined && !outputSeekTracker.seekedSince(id, startRequestedAt)) send(OUTPUT, ["TIME"], { [id]: makeOutputVideoTime(identity, currentBackground.startAt || 0) })
     }, 600)
 
     return data
