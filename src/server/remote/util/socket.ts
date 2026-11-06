@@ -1,10 +1,13 @@
 import { io } from "socket.io-client"
+import type { RemoteApiChannel, RemoteProtocol, RemoteRequestKey, RemoteResponseKey, RemoteResponses } from "../../../types/remote/protocol"
+import { REMOTE_PRE_AUTH_KEYS } from "../../../types/remote/protocol"
+import type { WebSendArgs } from "../../../types/WebProtocol"
+import { receiver } from "./receiver"
 import { _get, _set, _update } from "./stores"
-import { receiver, ReceiverKey } from "./receiver"
 
 const socket = io()
 let id: string = ""
-const responseListeners = new Map<string, Set<(data: any) => void>>()
+const responseListeners = new Map<string, Set<(data: never) => void>>()
 
 export function initSocket() {
     socket.on("connect", () => {
@@ -24,42 +27,51 @@ export function initSocket() {
         send("PASSWORD")
     })
 
-    socket.on("REMOTE", (msg) => {
-        let key = msg.channel as ReceiverKey
+    // the wire message is untyped; the channel decides which RemoteResponses payload it carries
+    socket.on("REMOTE", (msg: { channel: string; data: unknown }) => {
+        const key = msg.channel
         if (!_get("isConnected")) {
-            const UNCONNECTED_ALLOWED_KEYS = ["PASSWORD", "ERROR", "ACCESS", "LANGUAGE"]
-            if (!UNCONNECTED_ALLOWED_KEYS.includes(key)) return
+            if (!REMOTE_PRE_AUTH_KEYS.includes(key)) return
         }
 
         const listeners = responseListeners.get(key)
         if (listeners) {
-            listeners.forEach((listener) => listener(msg.data))
+            listeners.forEach((listener) => listener(msg.data as never))
             return
         }
 
-        if (!receiver[key]) {
+        const handler = (receiver as Record<string, ((data: never) => void) | undefined>)[key]
+        if (!handler) {
             if (msg.data !== null) console.log("Unhandled message:", msg)
             return
         }
 
-        receiver[key](msg.data)
+        handler(msg.data as never)
     })
 
     socket.on("disconnect", () => _set("isConnected", false))
 }
 
-export function onResponse(channel: string, listener: (data: any) => void) {
+/** Listen for one response channel; the payload type comes from the protocol. */
+export function onResponse<C extends RemoteResponseKey>(channel: C, listener: (data: RemoteResponses[C]) => void) {
     let listeners = responseListeners.get(channel)
     if (!listeners) {
         listeners = new Set()
         responseListeners.set(channel, listeners)
     }
-    listeners.add(listener)
+    listeners.add(listener as (data: never) => void)
 
     return () => {
-        listeners?.delete(listener)
+        listeners?.delete(listener as (data: never) => void)
         if (!listeners?.size) responseListeners.delete(channel)
     }
 }
 
-export const send = (channel: string, data: any = null) => socket.emit("REMOTE", { id, channel, data })
+/** Send a protocol request, or an `API:<action>` request (its action payload is outside the protocol). */
+export function send<K extends RemoteRequestKey>(channel: K, ...data: WebSendArgs<RemoteProtocol, K>): void
+export function send(channel: RemoteApiChannel, data?: unknown): void
+export function send(channel: string, data: unknown = null) {
+    // never buffer a live action while offline: Socket.IO would replay it after reconnect
+    if (!socket.connected && !REMOTE_PRE_AUTH_KEYS.includes(channel)) return
+    socket.emit("REMOTE", { id, channel, data: data ?? null })
+}

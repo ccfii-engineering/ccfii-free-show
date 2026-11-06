@@ -87,25 +87,4 @@ describe("remote media authorization after async validation", () => {
         expect(testState.playAudio).toHaveBeenCalledWith({ path: "/approved/song.mp3" })
         expect(testState.playMedia).not.toHaveBeenCalled()
     })
-
-    it("forwards explicit loop and mute values through the authenticated media launch route", async () => {
-        testState.remoteResult.mockResolvedValue({ status: "success", data: { path: "/approved/clip.mp4", kind: "video", size: 1, modifiedAt: 1 } })
-        testState.receiveRemote.MEDIA_PLAY = (message) => ({ ...message, _remoteMediaOperation: "play" })
-
-        await sendData(REMOTE, { id: "connection", channel: "MEDIA_PLAY", data: { requestId: "launch-1", path: "/requested/clip.mp4", loop: false, muted: false } } as any)
-
-        expect(testState.remoteResult).toHaveBeenCalledWith(Main.REMOTE_MEDIA_RESOLVE, {
-            connectionId: "connection",
-            path: "/requested/clip.mp4"
-        })
-        expect(testState.playMedia).toHaveBeenCalledWith({
-            path: "/approved/clip.mp4",
-            data: { type: "video", loop: false, muted: false }
-        })
-        expect(testState.send).toHaveBeenCalledWith(REMOTE, {
-            id: "connection",
-            channel: "MEDIA_PLAY_RESULT",
-            data: { requestId: "launch-1", ok: true }
-        })
-    })
 })

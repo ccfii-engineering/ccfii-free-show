@@ -1,4 +1,6 @@
 import { sanitizeVerseText } from "../../../common/scripture/sanitizeVerseText"
+import type { RemoteOutTemp, RemoteResponses } from "../../../types/remote/protocol"
+import type { WebReceiverTable } from "../../../types/WebProtocol"
 import type { Item, Show } from "../../../types/Show"
 import { setError, translate } from "./helpers"
 import { send } from "./socket"
@@ -31,25 +33,25 @@ function sanitizeChapterVerses(verses: any) {
     })
 }
 
-export type ReceiverKey = keyof typeof receiver
-export const receiver = {
-    PASSWORD: (data: any) => {
+export type ReceiverKey = keyof RemoteResponses
+export const receiver: WebReceiverTable<RemoteResponses> = {
+    PASSWORD: (data) => {
         if (data.dictionary) _set("dictionary", data.dictionary)
         let password: boolean = data.password
         _update("password", "required", password)
     },
-    ERROR: (data: any) => {
+    ERROR: (data) => {
         if (data === "wrongPass") {
             setError(translate("remote.wrong_password"))
             localStorage.removeItem("password")
             _update("password", "required", true)
         } else setError(data)
     },
-    LANGUAGE: (data: any) => {
+    LANGUAGE: (data) => {
         _.dictionary.update((a) => {
             Object.keys(a).forEach((i) => {
                 Object.keys(a[i] || {}).forEach((j) => {
-                    if (data.strings[i]?.[j] && a[i]) a[i]![j] = data.strings[i][j]
+                    if (data.strings[i]?.[j] && a[i]) a[i]![j] = data.strings[i]![j]
                 })
             })
             return a
@@ -66,7 +68,7 @@ export const receiver = {
 
     /////
 
-    SHOWS: (data: any) => {
+    SHOWS: (data) => {
         const shows = Object.keys(data).map((id) => ({ id, ...data[id] }))
         _set("shows", shows)
         if (_get("quickPlay")) _set("activeTab", "shows")
@@ -74,7 +76,7 @@ export const receiver = {
     // "SHOWS_CACHE": (data: any) => {
     //   showsCache = data
     //   },
-    SHOW: (data: any) => {
+    SHOW: (data) => {
         if (!_get("isConnected")) return
 
         if (!_get("activeShow") && !_get("quickPlay")) _set("activeTab", "show")
@@ -84,14 +86,14 @@ export const receiver = {
 
         _set("activeShow", data)
     },
-    OUT: (data: any) => {
+    OUT: (data) => {
         if (!_get("isConnected")) return
 
         // scripture
-        if (data.id === "temp") {
+        if (isOutTemp(data)) {
             _set("outSlide", 0)
             _set("outLayout", "default")
-            const show = getShowFromItems(data.tempItems, data.nextSlides[0])
+            const show = getShowFromItems(data.tempItems || [], data.nextSlides?.[0])
             _set("outShow", show)
 
             _update("isCleared", "all", false)
@@ -114,18 +116,18 @@ export const receiver = {
             _set("outShow", _get("activeShow"))
         }
     },
-    OUT_DATA: (data: any) => {
+    OUT_DATA: (data) => {
         _set("outData", data)
         send("API:get_cleared")
     },
-    FOLDERS: (data: any) => {
+    FOLDERS: (data) => {
         if (!_get("isConnected")) return
 
         _set("folders", data.folders)
         if (!_get("openedFolders").length) _set("openedFolders", data.opened)
         // console.log(folders)
     },
-    PROJECTS: (data: any) => {
+    PROJECTS: (data) => {
         if (!_get("isConnected")) return
 
         // Sort once before setting to avoid double store update
@@ -135,7 +137,7 @@ export const receiver = {
         const project = sortedProjects.find((a: any) => a.id === _get("project"))
         if (project) _set("activeProject", project)
     },
-    PROJECT: (data: any) => {
+    PROJECT: (data) => {
         if (!_get("project") && data && _get("isConnected")) {
             _set("project", data)
 
@@ -145,13 +147,13 @@ export const receiver = {
             if (!_get("activeShow") && !_get("quickPlay")) _set("activeTab", "project")
         }
     },
-    SCRIPTURE: (data: any) => {
+    SCRIPTURE: (data) => {
         scriptures.set(data)
     },
-    CATEGORIES: (data: any) => {
+    CATEGORIES: (data) => {
         _.categories.set(data)
     },
-    ACTIVE_SCRIPTURE: (data: any) => {
+    ACTIVE_SCRIPTURE: (data) => {
         const source: any = data?.api || data?.bible || data || {}
         const scriptureId: string = String(source.scriptureId || source.id || "")
 
@@ -188,7 +190,7 @@ export const receiver = {
 
         currentScriptureState.set(normalized)
     },
-    GET_SCRIPTURE: (data: any) => {
+    GET_SCRIPTURE: (data) => {
         if (!data) return
 
         if (data.bible) {
@@ -242,71 +244,71 @@ export const receiver = {
         }
     },
     // SCRIPTURE_CHAPTERS and SCRIPTURE_VERSES are handled by GET_SCRIPTURE's bibleUpdate handling
-    SEARCH_SCRIPTURE: (data: any) => {
+    SEARCH_SCRIPTURE: (data) => {
         // Store search results for the search component to use
         if (data.searchResults !== undefined) {
             _set("scriptureSearchResults", data.searchResults)
         }
     },
-    OVERLAYS: (data: any) => {
+    OVERLAYS: (data) => {
         overlays.set(data)
     },
-    OVERLAY_CATEGORIES: (data: any) => {
+    OVERLAY_CATEGORIES: (data) => {
         _set("overlayCategories", data)
     },
-    TEMPLATES: (data: any) => {
+    TEMPLATES: (data) => {
         _set("templates", data)
     },
-    TEMPLATE_CATEGORIES: (data: any) => {
+    TEMPLATE_CATEGORIES: (data) => {
         _set("templateCategories", data)
     },
-    ACTIONS: (data: any) => {
+    ACTIONS: (data) => {
         _set("actions", data)
     },
-    ACTION_TAGS: (data: any) => {
+    ACTION_TAGS: (data) => {
         _set("actionTags", data)
     },
-    VARIABLES: (data: any) => {
+    VARIABLES: (data) => {
         _set("variables", data)
     },
-    VARIABLE_TAGS: (data: any) => {
+    VARIABLE_TAGS: (data) => {
         _set("variableTags", data)
     },
-    TIMER_TAGS: (data: any) => {
+    TIMER_TAGS: (data) => {
         _set("timerTags", data)
     },
-    TIMERS: (data: any) => {
+    TIMERS: (data) => {
         timers.set(data)
     },
-    ACTIVE_TIMERS: (data: any) => {
+    ACTIVE_TIMERS: (data) => {
         activeTimers.set(data)
     },
-    RUNNING_ACTIONS: (data: any) => {
+    RUNNING_ACTIONS: (data) => {
         runningActions.set(data)
     },
 
-    GET_OVERLAYS: (data: any) => {
+    GET_OVERLAYS: (data) => {
         overlays.set(data.overlays)
         _set("overlayCategories", data.categories)
     },
-    GET_TEMPLATES: (data: any) => {
+    GET_TEMPLATES: (data) => {
         _set("templates", data.templates)
         _set("templateCategories", data.categories)
     },
-    GET_FUNCTIONS: (data: any) => {
+    GET_FUNCTIONS: (data) => {
         _set("actions", data.actions)
         _set("actionTags", data.actionTags)
         _set("variables", data.variables)
         _set("variableTags", data.variableTags)
-        _set("timerTags", data.timerTags)
+        _set("timerTags", data.timerTags || {})
         timers.set(data.timers)
         activeTimers.set(data.activeTimers)
         runningActions.set(data.runningActions)
     },
-    GET_AUDIO: (data: any) => {
+    GET_AUDIO: (data) => {
         _set("audio", data)
     },
-    MEDIA: (data: any) => {
+    MEDIA: (data) => {
         if (!data) {
             _set("audio", {})
             return
@@ -335,34 +337,34 @@ export const receiver = {
 
     /////
 
-    "API:get_thumbnail": (data: any) => {
+    "API:get_thumbnail": (data) => {
         if (!data.path || !data.thumbnail) return
 
         _update("mediaCache", data.path, data.thumbnail)
     },
-    "API:get_plain_text": (data: any) => {
+    "API:get_plain_text": (data) => {
         _update("textCache", data.id, data.value)
     },
-    "API:get_groups": (data: any) => {
+    "API:get_groups": (data) => {
         _update("groupsCache", data.id, data.value)
     },
-    "API:get_cleared": (data: any) => {
+    "API:get_cleared": (data) => {
         _set("isCleared", data)
     },
 
-    "API:get_playing_audio_data": (data: any) => {
+    "API:get_playing_audio_data": (data) => {
         _set("playingAudioData", data)
     },
-    "API:get_playing_audio_time": (data: any) => {
+    "API:get_playing_audio_time": (data) => {
         _set("playingAudioTime", data)
     },
-    "API:get_playing_video_time": (data: any) => {
+    "API:get_playing_video_time": (data) => {
         _set("playingVideoTime", data || 0)
     },
-    "API:get_playing_video_duration": (data: any) => {
+    "API:get_playing_video_duration": (data) => {
         _set("playingVideoDuration", data || 0)
     },
-    "API:get_playing_video_state": (data: any) => {
+    "API:get_playing_video_state": (data) => {
         if (!data) return
         if (data.duration !== undefined) _set("playingVideoDuration", data.duration || 0)
         if (data.time !== undefined) _set("playingVideoTime", data.time || 0)
@@ -371,7 +373,7 @@ export const receiver = {
         if (data.muted !== undefined) _set("playingVideoMuted", data.muted !== false)
     },
 
-    "API:get_media_loop_state": (data: any) => {
+    "API:get_media_loop_state": (data) => {
         _set("playingVideoLoop", data !== false)
     },
 
@@ -380,15 +382,19 @@ export const receiver = {
         send("API:get_playing_video_state")
     },
 
-    "API:get_pdf_thumbnails": (data: { path: string; pages: string[] }) => {
+    "API:get_pdf_thumbnails": (data) => {
         _update("pdfPages", data.path, data.pages)
     },
 
-    "API:create_show": (data: { show: Show; id: string }) => {
+    "API:create_show": (data) => {
         send("SHOW", data.id)
         _set("active", { id: data.id, type: "show" })
         _set("activeTab", "show")
     }
+}
+
+function isOutTemp(data: RemoteResponses["OUT"]): data is RemoteOutTemp {
+    return "id" in data && data.id === "temp"
 }
 
 function getShowFromItems(items: Item[], nextSlideItems: Item[] | undefined) {

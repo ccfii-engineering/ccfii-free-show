@@ -1,8 +1,10 @@
 import { get } from "svelte/store"
 import { uid } from "uid"
-import type { Show } from "../../types/Show"
-import type { ClientMessage } from "../../types/Socket"
-import type { RemoteMediaErrorCode, RemoteMediaPageRequest } from "../../types/remote/control"
+import type { OutData } from "../../types/Output"
+import type { OutSlide, Show } from "../../types/Show"
+import type { RemoteMediaErrorCode } from "../../types/remote/control"
+import type { RemoteOutSlide, RemoteOutTemp, RemotePasswordInfo, RemoteProject, RemoteProtocol, RemoteScriptureResponse, RemoteScriptureSearchResponse, RemoteShow } from "../../types/remote/protocol"
+import type { WebHandlerTable } from "../../types/WebProtocol"
 import { Main } from "../../types/IPC/Main"
 import { loadJsonBible } from "../components/drawer/bible/scripture"
 import { clone, keysToID, removeDeleted } from "../components/helpers/array"
@@ -12,6 +14,7 @@ import { loadShows } from "../components/helpers/setShow"
 import { getLayoutRef } from "../components/helpers/show"
 import { updateOut } from "../components/helpers/showActions"
 import { _show } from "../components/helpers/shows"
+import { API_ACTIONS } from "../components/actions/api"
 import { clearAll } from "../components/output/clear"
 import { REMOTE } from "./../../types/Channels"
 import { actions, actionTags, activePage, activeProject, activeShow, activeTimers, categories, connections, dictionary, folders, language, openedFolders, outLocked, overlayCategories, overlays, playerVideos, projects, remotePassword, runningActions, scriptures, shows, showsCache, styles, templateCategories, templates, timers, variables, variableTags } from "./../stores"
@@ -20,6 +23,7 @@ import { translateText } from "./language"
 import { requestMainResult, sendMain } from "../IPC/main"
 import { RemoteMediaViews } from "./remoteMediaViews"
 import { send } from "./request"
+import { isRemoteConnectionAuthorized } from "./remoteAccess"
 import { sendData, setConnectedState } from "./sendData"
 
 // REMOTE
@@ -32,42 +36,30 @@ connections.subscribe((current) => {
     remoteMediaViews.closeUnauthorized((connectionId) => !!current.REMOTE?.[connectionId]?.entered, closeRemoteMediaConnection)
 })
 
-export const receiveREMOTE: any = {
-    PASSWORD: (msg: any) => {
-        msg.data = {
-            dictionary: get(dictionary),
-            password: !!get(remotePassword).length
-        }
-        if (msg.data.password) return msg
+export const receiveREMOTE: WebHandlerTable<RemoteProtocol> = {
+    PASSWORD: (msg) => {
+        const id = msg.id || ""
+        const info: RemotePasswordInfo = { dictionary: get(dictionary), password: !!get(remotePassword).length }
+        if (info.password) return { id: msg.id, channel: "PASSWORD", data: info }
 
-        setConnectedState("REMOTE", msg.id, "entered", true)
+        setConnectedState("REMOTE", id, "entered", true)
+        initializeRemote(id)
 
-        // msg = { id: msg.id, channel: "SHOWS_CACHE", data: filterObjectArray(get(showsCache), ["name", "private", "category", "timestamps"]) }
-        msg = { id: msg.id, channel: "SHOWS", data: get(shows) }
-        initializeRemote(msg.id)
-
-        return msg
+        return { id, channel: "SHOWS", data: get(shows) }
     },
-    ACCESS: (msg: any) => {
+    ACCESS: (msg) => {
+        const id = msg.id || ""
         if (get(remotePassword).length && msg.data !== get(remotePassword)) return { id: msg.id, channel: "ERROR", data: "wrongPass" }
 
         send(REMOTE, ["LANGUAGE"], { lang: get(language), strings: get(dictionary) })
 
-        setConnectedState("REMOTE", msg.id, "entered", true)
+        setConnectedState("REMOTE", id, "entered", true)
+        initializeRemote(id)
 
-        // msg = { id: msg.id, channel: "SHOWS_CACHE", data: filterObjectArray(get(showsCache), ["name", "private", "category", "timestamps"]) }
-        msg = { id: msg.id, channel: "SHOWS", data: get(shows) }
-        initializeRemote(msg.id)
-
-        return msg
+        return { id, channel: "SHOWS", data: get(shows) }
     },
-    // SHOWS: (msg: any) => {
-    //   msg.data = filterObjectArray(get(shows), ["name"])
-    //   return msg
-    // },
-    SHOW: async (msg: any) => {
-        // msg.data = filterObjectArray(get(shows)[msg.data], [""])
-        const showID: string = msg.data
+    SHOW: async (msg) => {
+        const showID = msg.data
 
         if (msg.id) {
             setConnectedState("REMOTE", msg.id, "active", showID)
@@ -76,15 +68,14 @@ export const receiveREMOTE: any = {
         loadingShow = showID
         await loadShows([showID])
 
-        msg.data = clone({ ...(await convertBackgrounds(get(showsCache)[showID])), id: showID })
-        // send(REMOTE, ["MEDIA"], { media: msg.data.media })
+        const data: RemoteShow = clone({ ...((await convertBackgrounds(get(showsCache)[showID])) as Show), id: showID })
 
         if (loadingShow !== showID) return
 
         openShow(showID)
-        return msg
+        return { id: msg.id, channel: "SHOW", data }
     },
-    OUT: async (msg: any) => {
+    OUT: async (msg) => {
         if (get(outLocked)) return
         // set id because convertBackgrounds might use a long time
         const currentId = uid(5)
@@ -92,56 +83,58 @@ export const receiveREMOTE: any = {
 
         const currentOutput = getFirstActiveOutput()
         const out = currentOutput?.out?.slide || null
+        const request = msg.data
         let id = ""
+        let data: RemoteOutSlide | RemoteOutTemp | undefined
 
-        if (msg.data === "clear") {
+        if (request === "clear") {
             clearAll()
             return
-        } else if (msg.data?.id) {
-            id = msg.data.id
+        } else if (request && typeof request === "object") {
+            id = request.id
             await loadShows([id])
 
             const layout = getLayoutRef(id)
-            if (msg.data.index < layout.length && msg.data.index >= 0) {
-                if (!msg.data.layout) msg.data.layout = _show(id).get("settings.activeLayout")
-                updateOut(msg.data.id, msg.data.index, _show(msg.data.id).layouts([msg.data.layout]).ref()[0])
-                setOutput("slide", msg.data)
+            if (request.index < layout.length && request.index >= 0) {
+                const layoutId = request.layout || _show(id).get("settings.activeLayout")
+                updateOut(id, request.index, _show(id).layouts([layoutId]).ref()[0])
+                setOutput("slide", { ...request, layout: layoutId })
             }
 
             return
-        } else if (msg.data !== null && msg.data !== undefined && out) {
+        } else if (typeof request === "number" && out) {
             id = out.id
 
             const layout = getLayoutRef(id)
-            if (msg.data < layout.length && msg.data >= 0) {
-                const newOutSlide: any = { ...out, index: msg.data }
+            if (request < layout.length && request >= 0) {
+                const newOutSlide: OutSlide = { ...out, index: request }
                 setOutput("slide", newOutSlide)
             }
-            msg.data = null
         } else if (out?.id === "temp") {
-            msg.data = out
+            data = out as RemoteOutTemp
         } else {
-            const styleRes = currentOutput?.style ? get(styles)[currentOutput?.style]?.aspectRatio || get(styles)[currentOutput?.style]?.resolution : null
-            msg.data = { slide: out ? out.index : null, layout: out?.layout || null, styleRes }
+            const style = currentOutput?.style ? get(styles)[currentOutput.style] : null
+            const slideData: RemoteOutSlide = { slide: out ? (out.index ?? null) : null, layout: out?.layout || null, styleRes: style?.aspectRatio || style?.resolution || null }
             // && out.id !== oldOutSlide
             if (out && out.id !== "temp") {
                 id = out.id
                 oldOutSlide = id
-                msg.data.show = await convertBackgrounds(get(showsCache)[id], false, true)
-                msg.data.show.id = id
+                slideData.show = { ...((await convertBackgrounds(get(showsCache)[id], false, true)) as Show), id }
             }
 
             if (currentOut !== currentId) return
+            data = slideData
         }
         if (id?.length && msg.id) {
             setConnectedState("REMOTE", msg.id, "active", id)
         }
 
-        return msg
+        if (!data) return
+        return { id: msg.id, channel: "OUT", data }
     },
-    OUT_DATA: (msg: any) => {
+    OUT_DATA: (msg) => {
         const currentOutput = getFirstActiveOutput()
-        const out = clone(currentOutput?.out || {})
+        const out: OutData = clone(currentOutput?.out || {})
 
         // Include player video name for online media (YouTube, Vimeo, etc.)
         if (out.background?.type === "player" && out.background?.id) {
@@ -149,38 +142,34 @@ export const receiveREMOTE: any = {
             if (playerName) out.background.name = playerName
         }
 
-        msg.data = out
-
-        return msg
+        return { id: msg.id, channel: "OUT_DATA", data: out }
     },
-    PROJECTS: (msg: any) => {
-        msg.data = removeDeleted(keysToID(clone(get(projects))))
+    PROJECTS: (msg) => {
+        const data: RemoteProject[] = removeDeleted(keysToID(clone(get(projects))))
 
         // get names
-        msg.data.forEach((project) => {
+        data.forEach((project) => {
             project.shows.forEach((show) => {
                 if (show.type === "overlay") show.name = get(overlays)[show.id]?.name || translateText("main.unnamed")
             })
-
-            return project
         })
 
-        return msg
+        return { id: msg.id, channel: "PROJECTS", data }
     },
-    GET_SCRIPTURE: async (msg: ClientMessage) => {
-        const { id, bookKey, chapterKey, bookIndex, chapterIndex } = msg.data || {}
+    GET_SCRIPTURE: async (msg) => {
+        const request = msg.data
+        const { id, bookKey, chapterKey, bookIndex, chapterIndex } = request || {}
         if (!id) return
 
         const jsonBible = await loadJsonBible(id)
         if (!jsonBible) return
 
+        const reply = (extra: Partial<RemoteScriptureResponse>) => ({ id: msg.id, channel: "GET_SCRIPTURE" as const, data: { ...request, ...extra } })
+
         const scriptureData: any = get(scriptures)[id]
         const isApi = scriptureData?.api === true
 
-        if (!isApi) {
-            msg.data.bible = jsonBible.data
-            return msg
-        }
+        if (!isApi) return reply({ bible: jsonBible.data })
 
         if (bookKey && !chapterKey) {
             try {
@@ -189,12 +178,11 @@ export const receiveREMOTE: any = {
                     number: c.number,
                     keyName: c.number
                 }))
-                msg.data.bibleUpdate = { kind: "chapters", id, bookIndex, chapters: mapped }
+                return reply({ bibleUpdate: { kind: "chapters", id, bookIndex, chapters: mapped } })
             } catch (error) {
                 console.warn(`Failed to load book ${bookKey}:`, error)
-                msg.data.bibleUpdate = { kind: "chapters", id, bookIndex, chapters: [] }
+                return reply({ bibleUpdate: { kind: "chapters", id, bookIndex, chapters: [] } })
             }
-            return msg
         }
 
         if (bookKey && chapterKey) {
@@ -207,12 +195,11 @@ export const receiveREMOTE: any = {
                     text: v.text,
                     keyName: v.number
                 }))
-                msg.data.bibleUpdate = { kind: "verses", id, bookIndex, chapterIndex, verses: mappedVerses }
+                return reply({ bibleUpdate: { kind: "verses", id, bookIndex, chapterIndex, verses: mappedVerses } })
             } catch (error) {
                 console.warn(`Failed to load ${bookKey} ${chapterKey}:`, error)
-                msg.data.bibleUpdate = { kind: "verses", id, bookIndex, chapterIndex, verses: [] }
+                return reply({ bibleUpdate: { kind: "verses", id, bookIndex, chapterIndex, verses: [] } })
             }
-            return msg
         }
 
         const books = jsonBible.data.books
@@ -222,24 +209,23 @@ export const receiveREMOTE: any = {
             keyName: b.id,
             chapters: []
         }))
-        msg.data.bible = { books: mappedBooks }
-        return msg
+        return reply({ bible: { books: mappedBooks } })
     },
-    SEARCH_SCRIPTURE: async (msg: ClientMessage) => {
-        const { id, searchTerm, searchType, bookFilter } = msg.data || {}
+    SEARCH_SCRIPTURE: async (msg) => {
+        const request = msg.data
+        const { id, searchTerm, searchType, bookFilter } = request || {}
         if (!id || !searchTerm) return
 
         const jsonBible = await loadJsonBible(id)
         if (!jsonBible) return
 
+        const reply = (searchResults: RemoteScriptureSearchResponse["searchResults"]) => ({ id: msg.id, channel: "SEARCH_SCRIPTURE" as const, data: { ...request, searchResults } })
+
         const scriptureData: any = get(scriptures)[id]
         const isApi = scriptureData?.api === true
 
         // For local bibles, return null to use cached search
-        if (!isApi) {
-            msg.data.searchResults = null
-            return msg
-        }
+        if (!isApi) return reply(null)
 
         try {
             if (searchType === "reference") {
@@ -252,64 +238,49 @@ export const receiveREMOTE: any = {
                         const bookObj = jsonBible.data.books.find((b: any) => b.number === result.book || b.id === result.book)
                         bookName = bookObj?.name || null
                     }
-                    msg.data.searchResults = {
+                    return reply({
                         type: "reference",
                         autocompleted: result.autocompleted || undefined,
                         book: result.book || null,
                         bookName: bookName,
                         chapter: result.chapter || null,
                         verses: result.verses || []
-                    }
-                } else {
-                    msg.data.searchResults = { type: "reference", found: false }
+                    })
                 }
-            } else {
-                // Use textSearch for content search (minimum 3 characters)
-                if (searchTerm.length < 3) {
-                    msg.data.searchResults = { type: "text", results: [], bookFilter }
-                    return msg
-                }
-                const results = await jsonBible.textSearch(searchTerm)
-                let filteredResults = (results || []).map((ref: any) => ({
-                    book: ref.book,
-                    chapter: ref.chapter,
-                    verseNumber: typeof ref.verse === "object" ? ref.verse.number : ref.verse,
-                    reference: `${ref.book}.${ref.chapter}.${typeof ref.verse === "object" ? ref.verse.number : ref.verse}`,
-                    referenceFull: ref.reference || "",
-                    verseText: typeof ref.verse === "object" ? ref.verse.text : ref.text || ""
-                }))
-
-                // Apply book filter if provided
-                if (bookFilter) {
-                    filteredResults = filteredResults.filter((ref: any) => ref.book === bookFilter)
-                }
-
-                msg.data.searchResults = {
-                    type: "text",
-                    results: filteredResults.slice(0, 50),
-                    bookFilter
-                }
+                return reply({ type: "reference", found: false })
             }
+
+            // Use textSearch for content search (minimum 3 characters)
+            if (searchTerm.length < 3) return reply({ type: "text", results: [], bookFilter })
+
+            const results = await jsonBible.textSearch(searchTerm)
+            let filteredResults = (results || []).map((ref: any) => ({
+                book: ref.book,
+                chapter: ref.chapter,
+                verseNumber: typeof ref.verse === "object" ? ref.verse.number : ref.verse,
+                reference: `${ref.book}.${ref.chapter}.${typeof ref.verse === "object" ? ref.verse.number : ref.verse}`,
+                referenceFull: ref.reference || "",
+                verseText: typeof ref.verse === "object" ? ref.verse.text : ref.text || ""
+            }))
+
+            // Apply book filter if provided
+            if (bookFilter) {
+                filteredResults = filteredResults.filter((ref: any) => ref.book === bookFilter)
+            }
+
+            return reply({ type: "text", results: filteredResults.slice(0, 50), bookFilter })
         } catch (err) {
             console.error("Scripture search error:", err)
-            msg.data.searchResults = { type: searchType, error: true }
+            return reply({ type: searchType || "", error: true })
         }
-
-        return msg
     },
-    GET_OVERLAYS: (msg: any) => {
-        msg.data = { overlays: get(overlays), categories: get(overlayCategories) }
-        return msg
-    },
-    GET_TEMPLATES: (msg: any) => {
-        msg.data = { templates: get(templates), categories: get(templateCategories) }
-        return msg
-    },
-    MEDIA_LIST: async (msg: ClientMessage) => {
+    GET_OVERLAYS: (msg) => ({ id: msg.id, channel: "GET_OVERLAYS", data: { overlays: get(overlays), categories: get(overlayCategories) } }),
+    GET_TEMPLATES: (msg) => ({ id: msg.id, channel: "GET_TEMPLATES", data: { templates: get(templates), categories: get(templateCategories) } }),
+    MEDIA_LIST: async (msg) => {
         const connectionId = msg.id || ""
-        const data = msg.data as RemoteMediaPageRequest | undefined
+        const data = msg.data
         if (!connectionId || !data) return
-        if (!get(connections).REMOTE?.[connectionId]?.entered) {
+        if (!isRemoteConnectionAuthorized(connectionId)) {
             return { id: connectionId, channel: "MEDIA_ERROR", data: { requestId: data.requestId, code: "unavailable" } }
         }
 
@@ -332,18 +303,47 @@ export const receiveREMOTE: any = {
 
         if (result.status === "success") return { id: connectionId, channel: "MEDIA_PAGE", data: result.data }
         if (result.status === "cancelled") return
-        const error = result.status === "error" ? result.error.message : "unavailable"
-        return { id: connectionId, channel: "MEDIA_ERROR", data: { requestId: data.requestId, code: remoteMediaErrorCode(error) } }
+        return { id: connectionId, channel: "MEDIA_ERROR", data: { requestId: data.requestId, code: remoteMediaResultCode(result) } }
     },
-    MEDIA_CANCEL: (msg: ClientMessage) => {
+    MEDIA_CANCEL: (msg) => {
         const connectionId = msg.id || ""
         const requestId = msg.data?.requestId
         if (connectionId && requestId) closeRemoteMediaConnection(connectionId, requestId)
     },
-    MEDIA_THUMBNAIL: (msg: ClientMessage) => ({ ...msg, _remoteMediaOperation: "thumbnail" }),
-    MEDIA_PLAY: (msg: ClientMessage) => ({ ...msg, _remoteMediaOperation: "play" }),
-    GET_FUNCTIONS: (msg: any) => {
-        msg.data = {
+    MEDIA_THUMBNAIL: async (msg) => {
+        const connectionId = msg.id || ""
+        const request = msg.data
+        if (!request) return
+        const result = await requestMainResult(Main.REMOTE_MEDIA_THUMBNAIL, { connectionId, path: request.path })
+        if (result.status !== "success" || !isRemoteConnectionAuthorized(connectionId)) {
+            return { id: connectionId, channel: "MEDIA_ERROR", data: { requestId: request.requestId, code: remoteMediaResultCode(result) } }
+        }
+
+        return { id: connectionId, channel: "MEDIA_THUMBNAIL_RESULT", data: { requestId: request.requestId, ...result.data } }
+    },
+    MEDIA_PLAY: async (msg) => {
+        const connectionId = msg.id || ""
+        const request = msg.data
+        if (!request) return
+        const result = await requestMainResult(Main.REMOTE_MEDIA_RESOLVE, { connectionId, path: request.path })
+        if (result.status !== "success" || !isRemoteConnectionAuthorized(connectionId)) {
+            return { id: connectionId, channel: "MEDIA_PLAY_RESULT", data: { requestId: request.requestId, ok: false, code: remoteMediaResultCode(result) } }
+        }
+        if (get(outLocked)) return { id: connectionId, channel: "MEDIA_PLAY_RESULT", data: { requestId: request.requestId, ok: false, code: "unavailable" } }
+
+        if (result.data.kind === "audio") API_ACTIONS.play_audio({ path: result.data.path })
+        else {
+            const playbackData: { type: string; loop?: boolean; muted?: boolean } = { type: result.data.kind }
+            if (typeof request.loop === "boolean") playbackData.loop = request.loop
+            if (typeof request.muted === "boolean") playbackData.muted = request.muted
+            API_ACTIONS.play_media({ path: result.data.path, data: playbackData })
+        }
+        return { id: connectionId, channel: "MEDIA_PLAY_RESULT", data: { requestId: request.requestId, ok: true } }
+    },
+    GET_FUNCTIONS: (msg) => ({
+        id: msg.id,
+        channel: "GET_FUNCTIONS",
+        data: {
             actions: get(actions),
             actionTags: get(actionTags),
             variables: get(variables),
@@ -352,8 +352,7 @@ export const receiveREMOTE: any = {
             activeTimers: get(activeTimers),
             runningActions: get(runningActions)
         }
-        return msg
-    }
+    })
 }
 
 let oldOutSlide = ""
@@ -451,7 +450,8 @@ export function closeRemoteMediaConnection(connectionId: string, requestId?: str
     remoteMediaViews.close(connectionId, requestId, () => sendMain(Main.REMOTE_MEDIA_CLOSE, { connectionId }))
 }
 
-function remoteMediaErrorCode(message: string): RemoteMediaErrorCode {
+function remoteMediaResultCode(result: { status: string; error?: { message: string } }): RemoteMediaErrorCode {
+    const message = result.status === "error" ? result.error?.message || "" : ""
     const codes: RemoteMediaErrorCode[] = ["busy", "invalid_path", "cursor_expired", "restart_required", "not_media", "too_large", "unavailable"]
     return codes.find((code) => message.toLowerCase().includes(code)) || "unavailable"
 }

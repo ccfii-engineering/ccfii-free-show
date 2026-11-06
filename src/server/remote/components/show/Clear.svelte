@@ -4,6 +4,7 @@
     import Button from "../../../common/components/Button.svelte"
     import Icon from "../../../common/components/Icon.svelte"
     import { translate } from "../../util/helpers"
+    import type { RemoteApiChannel } from "../../../../types/remote/protocol"
     import { send } from "../../util/socket"
     import { dictionary, isCleared, outData } from "../../util/stores"
 
@@ -17,7 +18,7 @@
     $: if (moreOptions) send("API:get_cleared")
 
     let dispatch = createEventDispatcher()
-    function clear(id: string) {
+    function clear(id: RemoteApiChannel) {
         send(id)
         send("API:get_cleared")
         dispatch("clear")
