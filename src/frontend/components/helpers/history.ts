@@ -1,9 +1,10 @@
 import { get } from "svelte/store"
 import type { History, HistoryNew, HistoryTypes } from "../../../types/History"
-import { activePage, activeShow, historyCacheCount, isDev, undoHistory } from "../../stores"
+import { activePage, activeShow, categories, historyCacheCount, isDev, templates, undoHistory } from "../../stores"
 import { redoHistory } from "./../../stores"
 import { areObjectsEqual, clone } from "./array"
 import { historyActions } from "./historyActions"
+import { showsCache } from "../../showsCacheState/showsCache.svelte"
 import { createStore, createStoreHistory, deleteStore, deleteStoreHistory, updateStore, updateStoreHistory } from "./historyStores"
 import { deselect } from "./select"
 import { loadShows } from "./setShow"
@@ -24,14 +25,31 @@ function getTextScopeState(showId: string | undefined) {
 // a slide's own template only changes its items when the template is applied, so re-apply the show template to that one slide (it uses its own template)
 function refreshSlideTemplate(showId: string | undefined, slideId: string, before: string | undefined, after: string | undefined) {
     if (!slideId || (before || "") === (after || "")) return
-    const activeId = get(activeShow)?.id
-    if (!activeId || (showId && showId !== activeId)) return
+    // restyle the show that was edited, whether or not it is the one open on the desktop (it is in the cache: the edit just read it)
+    const targetId = showId || get(activeShow)?.id
+    if (!targetId || !get(showsCache)[targetId]) return
 
-    const index = (_show(activeId).layouts("active").ref()[0] || []).findIndex((a) => a.id === slideId)
+    const index = (_show(targetId).layouts("active").ref()[0] || []).findIndex((a) => a.id === slideId)
     if (index < 0) return
 
-    const showTemplateId: string = _show(activeId).get("settings.template") || ""
-    history({ id: "TEMPLATE", save: false, newData: { id: showTemplateId, indexes: [index], data: { createItems: false } }, location: { page: "none" } })
+    const showTemplateId: string = _show(targetId).get("settings.template") || ""
+    history({ id: "TEMPLATE", save: false, newData: { id: showTemplateId, indexes: [index], showId: targetId, data: { createItems: false } }, location: { page: "none" } })
+}
+
+// re-apply the template a show uses to all its slides (same rules as opening the show: a category template wins), without a history entry
+export function restyleShowWithTemplate(showId: string) {
+    const show = get(showsCache)[showId]
+    if (!show) return
+
+    let templateId: string = show.settings?.template || ""
+    let createItems = false
+    const categoryTemplate = get(categories)[show.category || ""]?.template || ""
+    if (categoryTemplate && get(templates)[categoryTemplate]) {
+        templateId = categoryTemplate
+        createItems = true
+    }
+
+    history({ id: "TEMPLATE", save: false, newData: { id: templateId, showId, data: { createItems } }, location: { page: "none" } })
 }
 
 export function historyAwait(s: string[], obj: History) {
@@ -249,6 +267,9 @@ export function history(obj: History, shouldUndo: null | boolean = null) {
     }
 
     if (temp.obj) obj = temp.obj
+
+    // a template edit restyles the show that uses it, also on undo and redo
+    if (obj.restyleShow) restyleShowWithTemplate(obj.restyleShow)
 
     // set old
     if (old && !shouldUndo && !obj.oldData) obj.oldData = old

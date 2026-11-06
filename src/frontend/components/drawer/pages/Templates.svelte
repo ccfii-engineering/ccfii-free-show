@@ -63,8 +63,8 @@
 
     $: profileAccess = getAccess("shows")
     $: showReadOnly = profileAccess.global === "read" || profileAccess[categoryId] === "read"
-    $: applyBlock = getTemplateApplyBlock({ scope: clickTarget.scope === "slides" || scope === "slides" ? "slides" : "show", showLocked: !!currentShow?.locked, readOnly: showReadOnly, categoryTemplateId })
-    $: categoryBlocksShow = !!categoryTemplateId && scope === "show"
+    $: applyBlock = getTemplateApplyBlock({ scope: clickTarget.scope, showLocked: !!currentShow?.locked, readOnly: showReadOnly, categoryTemplateId })
+    $: categoryBlocksShow = !!categoryTemplateId && clickTarget.scope === "show"
     $: styleOverrideName = outputStyleTemplateId && templateInUse.outputStyleOverride ? $templates[templateInUse.outputStyleOverride]?.name || "" : ""
 
     let fullFilteredTemplates: (Template & { id: string })[] = []
@@ -130,8 +130,8 @@
             return
         }
 
-        // selected slides
-        if (scope === "slides" && selectedSlideCount) {
+        // selected slides (every slide selected counts as the whole show, as the target line says)
+        if (clickTarget.scope === "slides") {
             let ref = getLayoutRef()
             const slideIds: string[] = []
             $selected.data.forEach(({ index, showId }) => {

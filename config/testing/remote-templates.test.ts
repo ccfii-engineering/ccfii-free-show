@@ -205,3 +205,32 @@ test("a dropped connection takes the template taps away and nothing is replayed 
     expect(setTemplateMessages()).toHaveLength(0)
     await page.close()
 })
+
+test("minimizing the drawer or leaving the tab ends picking, so a tap on a slide plays it", async () => {
+    const page = await browser.newPage({ viewport: { width: 1024, height: 1366 } })
+    await openTemplates(page)
+    const played = () => received.filter((m) => m?.channel === "API:index_select_slide")
+
+    // pick, then minimize the drawer: the next tap plays
+    await page.getByRole("button", { name: "Selected slides" }).click()
+    await page.locator(".slide[data-index='0']").click()
+    await expect(page.locator(".slide.picked")).toHaveCount(1)
+    expect(played()).toHaveLength(0)
+    await page.locator(".dock-btn").click()
+    await expect(page.locator(".slide.picked")).toHaveCount(0)
+    await page.locator(".slide[data-index='1']").click()
+    await expect.poll(played).toHaveLength(1)
+    await expect(page.locator(".slide.picked")).toHaveCount(0)
+
+    // reopen on Templates, pick again, switch to another tab: the next tap plays
+    await page.locator(".drawer .tabs button").filter({ hasText: "Templates" }).click()
+    await expect(page.getByTestId("template-target")).toHaveText("Whole show")
+    await page.getByRole("button", { name: "Selected slides" }).click()
+    await page.locator(".slide[data-index='0']").click()
+    await expect(page.locator(".slide.picked")).toHaveCount(1)
+    await page.locator(".drawer .tabs button").filter({ hasText: "Shows" }).click()
+    await expect(page.locator(".slide.picked")).toHaveCount(0)
+    await page.locator(".slide[data-index='2']").click()
+    await expect.poll(played).toHaveLength(2)
+    await page.close()
+})

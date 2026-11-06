@@ -62,21 +62,21 @@ describe("API:set_plain_text from the Remote", () => {
         await sendData(REMOTE, message({ id: "ipad", value: text }))
 
         expect(state.loadShows).toHaveBeenCalledWith(["ipad"])
-        expect(state.formatText).toHaveBeenCalledWith(text, "ipad")
+        expect(state.formatText).toHaveBeenCalledWith(text, "ipad", "none")
         expect(reply()).toMatchObject({ id: "c1", data: { status: "saved", showId: "ipad" } })
     })
 
     it("saves an emptied text too", async () => {
         await sendData(REMOTE, message({ id: "ipad", value: "" }))
 
-        expect(state.formatText).toHaveBeenCalledWith("", "ipad")
+        expect(state.formatText).toHaveBeenCalledWith("", "ipad", "none")
         expect(reply().data).toEqual({ status: "saved", showId: "ipad" })
     })
 
     it("keeps old callers working: without an id the active show is used", async () => {
         await sendData(REMOTE, message({ value: text }))
 
-        expect(state.formatText).toHaveBeenCalledWith(text, "desktop-show")
+        expect(state.formatText).toHaveBeenCalledWith(text, "desktop-show", "none")
         expect(reply().data).toEqual({ status: "saved", showId: "desktop-show" })
     })
 

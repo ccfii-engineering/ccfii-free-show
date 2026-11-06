@@ -68,7 +68,7 @@ describe("API:set_template from the Remote", () => {
         await sendData(REMOTE, message({ id: "t1", showId: "ipad", scope: "show" }))
 
         expect(state.history).toHaveBeenCalledTimes(1)
-        expect(state.history.mock.calls[0][0]).toMatchObject({ id: "TEMPLATE", newData: { id: "t1" }, location: { override: "show#ipad" } })
+        expect(state.history.mock.calls[0][0]).toMatchObject({ id: "TEMPLATE", newData: { id: "t1", showId: "ipad" }, location: { page: "none", override: "show#ipad" } })
         expect(reply()).toMatchObject({ id: "c1", data: { status: "applied", showId: "ipad", scope: "show", count: 3 } })
     })
 
@@ -77,7 +77,8 @@ describe("API:set_template from the Remote", () => {
         await sendData(REMOTE, message({ id: "t1", showId: "ipad", scope: "slides", slides: [0, 1, 2, 2, 9] }))
 
         expect(state.history).toHaveBeenCalledTimes(1)
-        expect(state.history.mock.calls[0][0]).toMatchObject({ id: "slideTemplate", newData: { template: "t1", slideIds: ["a", "c"] }, location: { show: { id: "ipad" } } })
+        // the desktop operator's page must not move
+        expect(state.history.mock.calls[0][0]).toMatchObject({ id: "slideTemplate", newData: { template: "t1", slideIds: ["a", "c"] }, location: { page: "none", show: { id: "ipad" } } })
         expect(reply().data).toEqual({ status: "applied", showId: "ipad", scope: "slides", count: 2 })
     })
 

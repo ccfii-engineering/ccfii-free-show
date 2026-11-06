@@ -64,7 +64,7 @@
         "template": "Template",
         "desc_slide": "Changes only this slide.",
         "desc_all": "Changes the matching text box on every slide in this layout.",
-        "desc_template": "Changes the template \"$1\". Slides pick it up when the template is applied.",
+        "desc_template": "Changes the template \"$1\". The open show follows it right away.",
         "desc_no_template": "No template is in use for this slide.",
         "offer": "Changed this slide only.",
         "offer_all": "Apply to all slides",

@@ -13,8 +13,8 @@ vi.mock("./historyHelpers", () => ({ _updaters: {} }))
 vi.mock("./show", () => ({ getShowCacheId: (id: string) => id, removeTemplatesFromShow: vi.fn() }))
 
 import { getShowsCache, setShowsCache, showsCache } from "../../showsCacheState/showsCache.svelte"
-import { activeShow, templates, undoHistory } from "../../stores"
-import { history, redo, undo } from "./history"
+import { activePage, activeShow, categories, templates, undoHistory } from "../../stores"
+import { history, redo, restyleShowWithTemplate, undo } from "./history"
 
 const line = (value: string) => ({ align: "", text: [{ value, style: "" }] })
 const slide = (value: string) => ({ group: "g", color: null, settings: {}, notes: "", items: [{ type: "text", style: "", align: "", lines: [line(value)] }] })
@@ -131,5 +131,86 @@ describe("selected-slide template apply", () => {
             undo()
             expect(getShowsCache().sh.slides).toEqual(before)
         })
+    })
+})
+
+describe("a show that is not the desktop's active show", () => {
+    const styleOf = (id: string, slideId = "s1") => JSON.stringify(getShowsCache()[id].slides[slideId].items)
+
+    beforeEach(() => {
+        vi.stubGlobal("document", { activeElement: null })
+        undoHistory.set([])
+        activePage.set("settings")
+        templates.update((a: any) => ({ ...a, other: { ...a.tpl, name: "other", items: [{ ...a.tpl.items[0], lines: [{ align: "", text: [{ value: "", style: "font-size: 11px;" }] }] }] } }))
+        setShowsCache({ sh: makeShow(null), ipad: makeShow(null) })
+    })
+
+    it("whole-show TEMPLATE styles the show named in the request, not the active one", () => {
+        history({ id: "TEMPLATE", newData: { id: "tpl", showId: "ipad", data: { createItems: true } }, location: { page: "none", override: "show#ipad" } })
+
+        expect(styleOf("ipad")).toContain(TEMPLATE_STYLE)
+        expect(getShowsCache().ipad.settings.template).toBe("tpl")
+        expect(styleOf("sh")).not.toContain(TEMPLATE_STYLE)
+        expect(getShowsCache().sh.settings.template).toBeNull()
+        expect(get(activePage)).toBe("settings")
+    })
+
+    it("undo and redo go back to the show the apply targeted", () => {
+        const before = structuredClone(getShowsCache().ipad.slides)
+        history({ id: "TEMPLATE", newData: { id: "tpl", showId: "ipad", data: { createItems: true } }, location: { page: "none" } })
+        const applied = structuredClone(getShowsCache().ipad.slides)
+        // the operator moves on to another show before undoing
+        activeShow.set({ id: "sh", type: "show" })
+
+        undo()
+        expect(getShowsCache().ipad.slides).toEqual(before)
+        expect(getShowsCache().ipad.settings.template).toBeNull()
+        expect(styleOf("sh")).not.toContain(TEMPLATE_STYLE)
+
+        redo()
+        expect(getShowsCache().ipad.slides).toEqual(applied)
+        expect(getShowsCache().ipad.settings.template).toBe("tpl")
+    })
+
+    it("applies with no active show on the desktop", () => {
+        activeShow.set(null)
+        history({ id: "TEMPLATE", newData: { id: "tpl", showId: "ipad", data: { createItems: true } }, location: { page: "none" } })
+        expect(styleOf("ipad")).toContain(TEMPLATE_STYLE)
+    })
+
+    it("uses the target show's own active layout", () => {
+        const show = makeShow(null)
+        show.settings.activeLayout = "M"
+        show.layouts = { L: { name: "L", notes: "", slides: [{ id: "s1" }] }, M: { name: "M", notes: "", slides: [{ id: "s2" }, { id: "s1" }] } }
+        setShowsCache({ sh: makeShow(null), ipad: show })
+        history({ id: "TEMPLATE", save: false, newData: { id: "tpl", showId: "ipad", indexes: [0], data: { createItems: true } }, location: { page: "none" } })
+        // index 0 of layout M is s2
+        expect(styleOf("ipad", "s2")).toContain(TEMPLATE_STYLE)
+        expect(styleOf("ipad", "s1")).not.toContain(TEMPLATE_STYLE)
+    })
+
+    it("slideTemplate restyles the slides of a show that is not open, without moving the page", () => {
+        history({ id: "TEMPLATE", save: false, newData: { id: "tpl", showId: "ipad", data: { createItems: true } }, location: { page: "none" } })
+        history({ id: "slideTemplate", newData: { template: "other", slideIds: ["s2"] }, location: { page: "none", show: { id: "ipad" } } })
+
+        expect(styleOf("ipad", "s2")).toContain("font-size: 11px;")
+        expect(styleOf("ipad", "s2")).not.toContain(TEMPLATE_STYLE)
+        expect(styleOf("ipad", "s1")).toContain(TEMPLATE_STYLE)
+        expect(styleOf("sh", "s2")).not.toContain("font-size: 11px;")
+        expect(getShowsCache().ipad.slides.s2.settings.template).toBe("other")
+        expect(get(activePage)).toBe("settings")
+    })
+
+    it("restyleShowWithTemplate re-applies the template a show uses, and the category template wins", () => {
+        const show = makeShow("tpl")
+        setShowsCache({ sh: makeShow(null), ipad: show })
+        restyleShowWithTemplate("ipad")
+        expect(styleOf("ipad")).toContain(TEMPLATE_STYLE)
+
+        categories.set({ cat: { name: "cat", template: "other" } })
+        setShowsCache({ sh: makeShow(null), ipad: { ...makeShow("tpl"), category: "cat" } })
+        restyleShowWithTemplate("ipad")
+        expect(styleOf("ipad")).toContain("font-size: 11px;")
+        categories.set({})
     })
 })

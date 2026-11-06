@@ -12,7 +12,7 @@
     import { getExtension, getMediaType } from "../../helpers/media"
     import { getAllEnabledOutputs } from "../../helpers/output"
     import { getCustomMetadata, getLayoutRef, initializeMetadata, isSlideLocked } from "../../helpers/show"
-    import { _show } from "../../helpers/shows"
+    import { _show, getSlideSettings } from "../../helpers/shows"
     import { getStyles } from "../../helpers/style"
     import { MAX_FONT_SIZE } from "../scripts/autosize"
     import { addFilterString, addStyle, addStyleString, getItemStyleAtPos, getItemText, getLastLineAlign, getLineText, getSelectionRange } from "../scripts/textStyle"
@@ -714,19 +714,29 @@
         return [...new Set<string>(getLayoutRef().map((a) => a.id))].filter(Boolean)
     }
 
+    // the layout ref read once per run: slide id to its parent id (first match wins), and the first slide id
+    type LayoutContext = { parents: Map<string, string>; firstId: string }
+    function getLayoutContext(): LayoutContext {
+        const ref = getLayoutRef()
+        const parents = new Map<string, string>()
+        ref.forEach((a) => {
+            if (!parents.has(a.id)) parents.set(a.id, a.parent?.id || a.id)
+        })
+        return { parents, firstId: ref[0]?.id || "" }
+    }
+
     // same precedence as the edit header and the template apply: slide > group > first slide > category > show
-    function getSlideTemplateId(slideId: string, show: Show | null, _deps: any[] = []): string {
+    function getSlideTemplateId(slideId: string, show: Show | null, _deps: any[] = [], context: LayoutContext = getLayoutContext()): string {
         if (!show || !slideId) return ""
 
-        const ref = getLayoutRef()
-        const parentId = ref.find((a) => a.id === slideId)?.parent?.id || slideId
+        const parentId = context.parents.get(slideId) || slideId
         const showTemplateId = show.settings?.template || ""
         return (
             resolveTemplateInUse({
                 showTemplateId,
                 categoryTemplateId: $categories[show.category || ""]?.template,
                 firstSlideTemplateId: $templates[showTemplateId]?.settings?.firstSlideTemplate,
-                slide: { isFirstSlide: ref[0]?.id === slideId, slideTemplateId: show.slides?.[slideId]?.settings?.template, groupTemplateId: $groups[show.slides?.[parentId]?.globalGroup || ""]?.template },
+                slide: { isFirstSlide: context.firstId === slideId, slideTemplateId: show.slides?.[slideId]?.settings?.template, groupTemplateId: $groups[show.slides?.[parentId]?.globalGroup || ""]?.template },
                 isKnownTemplate: (templateId) => !!$templates[templateId]
             }).templateId || ""
         )
@@ -777,7 +787,9 @@
             id: "UPDATE",
             oldData: { id: templateId },
             newData: { key: "items", data: changed, indexes },
-            location: { page: "edit", id: "template_items", override: templateId + "#" + indexes.join(",") }
+            location: { page: "edit", id: "template_items", override: templateId + "#" + indexes.join(",") },
+            // the open show follows the template right away (and again on undo and redo)
+            restyleShow: $activeShow?.id
         })
     }
 
@@ -811,7 +823,8 @@
     }
 
     // offer after a change to one slide: apply it to all slides, save it to the template, or keep it as is
-    let lastChange: { input: any; templateId: string; slideId: string } | null = null
+    // `showTemplateId` and `slideTemplateId` are what the show and the slide had linked before the edit detached them
+    let lastChange: { input: any; templateId: string; slideId: string; showTemplateId: string; slideTemplateId: string } | null = null
     $: offerVisible = !!lastChange && lastChange.slideId === activeLayoutSlideId && scope === "slide"
 
     function offerAction(e: CustomEvent<string>) {
@@ -819,22 +832,78 @@
         if (!change) return
         if (e.detail === "all") updateValue({ detail: clone(change.input) }, { scope: "all" })
         else if (e.detail === "template") {
+            relinkToTemplate(change)
             updateValue({ detail: clone(change.input) }, { scope: "template", templateId: change.templateId })
             newToast(translateText("text_scope.template_saved", null, [$templates[change.templateId]?.name || ""]))
         }
         lastChange = null
     }
 
-    // slides with text styling of their own, compared to the template each slide uses
-    $: ownStyleSlideIds = scopeAvailable ? getOwnStyleSlideIds($myShow, [$templates, $groups, $categories]) : []
-    $: showFooter = scopeAvailable && layoutSlideIds.some((slideId) => !!getSlideTemplateId(slideId, $myShow, [$templates, $groups, $categories]))
+    // the This-slide edit detached the show (and the slide) from its template; saving the change to the template links them again
+    function relinkToTemplate(change: { slideId: string; showTemplateId: string; slideTemplateId: string }) {
+        const showId = $activeShow?.id || ""
+        if (!showId || !$showsCache[showId]) return
 
-    function getOwnStyleSlideIds(show: Show | null, _deps: any[]) {
-        if (!show) return []
-        const slides = getLayoutSlideIds(show)
-            .filter((slideId) => show.slides?.[slideId] && !isSlideLocked($activeShow?.id || "", slideId))
-            .map((slideId) => ({ id: slideId, items: show.slides[slideId].items || [] }))
-        return getOwnTextStyleSlideIds(slides, (slideId) => $templates[getSlideTemplateId(slideId, show)]?.items)
+        if (change.showTemplateId && !$showsCache[showId].settings?.template) _show(showId).set({ key: "settings.template", value: change.showTemplateId })
+        if (change.slideTemplateId && !$showsCache[showId].slides?.[change.slideId]?.settings?.template) {
+            _show(showId)
+                .slides([change.slideId])
+                .set({ key: "settings", value: { ...getSlideSettings(change.slideId, showId), template: change.slideTemplateId } })
+        }
+    }
+
+    // slides with text styling of their own, compared to the template each slide uses.
+    // Recomputed only when the show or the templates/groups/categories change (by reference), with the layout read once per run
+    // and a per-slide result reused while the slide's items and its template's items are the same objects.
+    let ownStyleSlideIds: string[] = []
+    let showFooter = false
+    let ownSignature: any[] = []
+    const ownStyleCache = new Map<string, { items: Item[] | undefined; templateItems: Item[] | undefined | null; own: boolean }>()
+    $: updateOwnStyle(scopeAvailable, $myShow, $templates, $groups, $categories)
+
+    function updateOwnStyle(available: boolean, show: Show | null, ...deps: any[]) {
+        const signature = [available, show, ...deps]
+        if (signature.length === ownSignature.length && signature.every((value, i) => value === ownSignature[i])) return
+        ownSignature = signature
+
+        if (!available || !show) {
+            ownStyleSlideIds = []
+            showFooter = false
+            return
+        }
+
+        const context = getLayoutContext()
+        const showId = $activeShow?.id || ""
+        const ids: string[] = []
+        let anyTemplate = false
+        const used = new Set<string>()
+
+        getLayoutSlideIds(show).forEach((slideId) => {
+            const templateId = getSlideTemplateId(slideId, show, [], context)
+            if (templateId) anyTemplate = true
+            const templateItems = $templates[templateId]?.items
+
+            const slide = show.slides?.[slideId]
+            if (!slide || isSlideLocked(showId, slideId)) return
+
+            used.add(slideId)
+            const items = slide.items
+            const cached = ownStyleCache.get(slideId)
+            let own: boolean
+            if (cached && cached.items === items && cached.templateItems === templateItems) own = cached.own
+            else {
+                own = getOwnTextStyleSlideIds([{ id: slideId, items: items || [] }], () => templateItems).length > 0
+                ownStyleCache.set(slideId, { items, templateItems, own })
+            }
+            if (own) ids.push(slideId)
+        })
+
+        ownStyleCache.forEach((_value, key) => {
+            if (!used.has(key)) ownStyleCache.delete(key)
+        })
+
+        ownStyleSlideIds = ids
+        showFooter = anyTemplate
     }
 
     function resetOwnStyle() {
@@ -842,8 +911,9 @@
         if (!show || !ownStyleSlideIds.length) return
 
         const items: { [slideId: string]: Item[] } = {}
+        const context = getLayoutContext()
         ownStyleSlideIds.forEach((slideId) => {
-            const templateItems = $templates[getSlideTemplateId(slideId, show)]?.items
+            const templateItems = $templates[getSlideTemplateId(slideId, show, [], context)]?.items
             if (templateItems) items[slideId] = resetTextStyleToTemplate(show.slides[slideId].items || [], templateItems)
         })
 
@@ -874,11 +944,14 @@
         // remember the template before the change: a manual change on a slide removes its show template
         const offerTemplateId = slideTemplateId
         const offerSlideId = activeLayoutSlideId
+        const offerShow = $activeShow?.id ? $showsCache[$activeShow.id] : null
+        const offerShowTemplateId: string = offerShow?.settings?.template || ""
+        const offerSlideTemplateId: string = offerShow?.slides?.[offerSlideId]?.settings?.template || ""
         const offerInput = clone(input)
 
         updateValue({ detail: input })
 
-        if (scopeAvailable && scope === "slide" && offerSlideId) lastChange = { input: offerInput, templateId: offerTemplateId, slideId: offerSlideId }
+        if (scopeAvailable && scope === "slide" && offerSlideId) lastChange = { input: offerInput, templateId: offerTemplateId, slideId: offerSlideId, showTemplateId: offerShowTemplateId, slideTemplateId: offerSlideTemplateId }
     }
 
     // don't load right away (because that will load content twice)

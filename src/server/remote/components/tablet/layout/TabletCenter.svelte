@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { _set, active, activeDrawerTab, activeProject, activeShow, createShow, dictionary, isConnected, outShow, outSlide, project, projectsOpened, selectedSlides, templateScope, textCache, textDraft } from "../../../util/stores"
+    import { _set, active, activeDrawerTab, activeProject, activeShow, createShow, dictionary, drawer, isConnected, outShow, outSlide, project, projectsOpened, selectedSlides, templateScope, textCache, textDraft } from "../../../util/stores"
     import { uid } from "uid"
     import { translate, throttle } from "../../../util/helpers"
     import { GetLayout } from "../../../util/output"
@@ -116,8 +116,17 @@
         return name || "—"
     }
 
-    // the Templates drawer's "Selected slides" scope turns a tap on a slide into a pick instead of a play
-    $: picking = $activeDrawerTab === "templates" && $templateScope === "slides"
+    // the Templates drawer's "Selected slides" scope turns a tap on a slide into a pick instead of a play,
+    // but only while that tab is showing in an open drawer (the tabs stay mounted behind the scenes)
+    const drawerMinHeight = 40
+    $: drawerOpen = ($drawer.height ?? 400) > drawerMinHeight
+    $: templatesVisible = drawerOpen && $activeDrawerTab === "templates"
+    $: picking = templatesVisible && $templateScope === "slides"
+    // minimizing the drawer or leaving the tab ends the picking: scope and picks reset so a tap plays again
+    $: if (!templatesVisible && $templateScope === "slides") {
+        templateScope.set("show")
+        selectedSlides.set([])
+    }
     // picks belong to one show
     let pickShowId = ""
     $: if (($activeShow?.id || "") !== pickShowId) {

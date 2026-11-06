@@ -26,6 +26,6 @@ export async function saveRemoteText(request: RemoteTextSaveRequest): Promise<Re
     if (access.global === "read" || access[show.category || ""] === "read") return { status: "blocked", reason: "read_only", showId }
     if (Object.values(show.slides || {}).some((slide) => slide?.locked)) return { status: "blocked", reason: "slide_locked", showId }
 
-    formatText(request.value, showId)
+    formatText(request.value, showId, "none")
     return { status: "saved", showId }
 }

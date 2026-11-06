@@ -597,7 +597,8 @@ export function setNextSlideTimer(time: number) {
 
 export async function setTemplate(data: RemoteTemplateRequest): Promise<RemoteTemplateResult> {
     const result = await applyRemoteTemplate(data)
-    if (result.status === "blocked" && result.reason === "show_locked") newToast("show.locked")
+    // automations (Actions, HTTP API) have no reply view, so say why nothing happened
+    if (result.status === "blocked") newToast(result.reason === "show_locked" ? "show.locked" : "template_use.blocked_" + result.reason)
     return result
 }
 

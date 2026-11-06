@@ -392,7 +392,9 @@ export const historyActions = ({ obj, undo = null }: any) => {
             data = (deleting ? obj.oldData : obj.newData) || {}
 
             if (initializing) {
-                data.remember = { showId: get(activeShow)?.id, layout: _show().get("settings.activeLayout") }
+                // the request names its show (Remote, automations); the desktop's active show is only the fallback
+                const targetShowId: string | undefined = data.showId || get(activeShow)?.id
+                data.remember = { showId: targetShowId, layout: (targetShowId && get(showsCache)[targetShowId]?.settings?.activeLayout) || "" }
             }
 
             let slides = clone(data?.data) || []
@@ -686,7 +688,9 @@ export const historyActions = ({ obj, undo = null }: any) => {
             data = (deleting ? obj.oldData : obj.newData) || {}
 
             if (initializing) {
-                data.remember = { showId: get(activeShow)?.id, layout: _show().get("settings.activeLayout") }
+                // the request names its show (Remote, automations); the desktop's active show is only the fallback
+                const targetShowId: string | undefined = data.showId || get(activeShow)?.id
+                data.remember = { showId: targetShowId, layout: (targetShowId && get(showsCache)[targetShowId]?.settings?.activeLayout) || "" }
             }
 
             // work on a copy: the cache hands out its live objects, and changing one in place skips change detection (subscribers are never told)
@@ -927,7 +931,9 @@ export const historyActions = ({ obj, undo = null }: any) => {
             // console.log(obj, deleting)
 
             if (initializing) {
-                data.remember = { showId: get(activeShow)?.id, layout: _show().get("settings.activeLayout") }
+                // the request names its show (Remote, automations); the desktop's active show is only the fallback
+                const targetShowId: string | undefined = data.showId || get(activeShow)?.id
+                data.remember = { showId: targetShowId, layout: (targetShowId && get(showsCache)[targetShowId]?.settings?.activeLayout) || "" }
             }
 
             if (deleting) {

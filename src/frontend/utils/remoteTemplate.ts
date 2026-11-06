@@ -41,10 +41,10 @@ export async function applyRemoteTemplate(request: RemoteTemplateRequest): Promi
         if (!slideIds.length) return { status: "blocked", reason: "no_slides", showId }
 
         // one history step: undo and redo restore the slides, not only the template id
-        history({ id: "slideTemplate", newData: { template: templateId, slideIds }, location: { page: "edit", show: { id: showId } } })
+        history({ id: "slideTemplate", newData: { template: templateId, slideIds }, location: { page: "none", show: { id: showId } } })
         return { status: "applied", showId, scope, count: slideIds.length }
     }
 
-    history({ id: "TEMPLATE", newData: { id: templateId, data: { createItems: true } }, location: { page: "none", override: "show#" + showId } })
+    history({ id: "TEMPLATE", newData: { id: templateId, showId, data: { createItems: true } }, location: { page: "none", override: "show#" + showId } })
     return { status: "applied", showId, scope, count: getLayoutRef(showId).length }
 }
