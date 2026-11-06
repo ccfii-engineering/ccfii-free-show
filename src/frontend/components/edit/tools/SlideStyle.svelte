@@ -1,5 +1,4 @@
 <script lang="ts">
-    import type { Item } from "../../../../types/Show"
     import { activeDrawerTab, activeEdit, activePage, activeShow, showsCache, templates } from "../../../stores"
     import { mediaExtensions } from "../../../values/extensions"
     import { clone } from "../../helpers/array"
@@ -11,7 +10,6 @@
     import MaterialColorInput from "../../inputs/MaterialColorInput.svelte"
     import MaterialFilePicker from "../../inputs/MaterialFilePicker.svelte"
     import MaterialPopupButton from "../../inputs/MaterialPopupButton.svelte"
-    import ItemsList from "./ItemsList.svelte"
 
     $: slideId = getLayoutRef()[$activeEdit.slide || 0]?.id
     $: editSlide = $showsCache && $activeEdit.slide !== null && slideId ? _show().slides([slideId]).get()[0] : null
@@ -55,8 +53,6 @@
         activeEdit.set({ type: "media", id: bgImage, items: [] })
         activePage.set("edit")
     }
-
-    export let allSlideItems: Item[]
 </script>
 
 <div class="tools">
@@ -111,8 +107,6 @@
             {/if}
         </InputRow>
     </div>
-
-    <ItemsList bind:allSlideItems />
 </div>
 
 <style>

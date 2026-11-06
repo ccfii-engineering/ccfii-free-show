@@ -19,7 +19,7 @@
     import { addStyleString } from "./scripts/textStyle"
     import BoxStyle from "./tools/BoxStyle.svelte"
     import ItemStyle from "./tools/ItemStyle.svelte"
-    import OverlayStyle from "./tools/OverlayStyle.svelte"
+    import ItemsList from "./tools/ItemsList.svelte"
     import SlideFilters from "./tools/SlideFilters.svelte"
     import SlideStyle from "./tools/SlideStyle.svelte"
     import TemplateStyle from "./tools/TemplateStyle.svelte"
@@ -28,6 +28,7 @@
     let tabs: TabsObj = {
         text: { name: "items.text", icon: "text" },
         item: { name: "tools.item", icon: "item" },
+        layers: { name: "edit.layers", icon: "rearrange" },
         slide: { name: "tools.slide", icon: "options", overflow: true },
         filters: { name: "edit.filters", icon: "filter", overflow: true }
     }
@@ -41,8 +42,9 @@
     // is not template or overlay
     $: isShow = !activeId
     $: tabs.filters.remove = !isShow // TODO: set filters in template / overlay ? ( && $activeEdit.type !== "template")
-    $: tabs.slide.remove = (!isShow && $activeEdit.type !== "template" && $activeEdit.type !== "overlay") || templateTextMode
-    $: if ((tabs.slide.remove && active === "slide") || (tabs.filters.remove && active === "filters")) active = "text"
+    $: tabs.slide.remove = (!isShow && $activeEdit.type !== "template") || templateTextMode // overlays have no slide settings
+    $: tabs.layers.remove = (!isShow && $activeEdit.type !== "template" && $activeEdit.type !== "overlay") || templateTextMode
+    $: if ((tabs.slide.remove && active === "slide") || (tabs.layers.remove && active === "layers") || (tabs.filters.remove && active === "filters")) active = templateItemMode ? "item" : "text"
 
     $: templateTextMode = $activeEdit.type === "template" && $templates[activeId]?.settings?.mode === "text"
     $: if (templateTextMode) {
@@ -428,14 +430,16 @@
             <div class="content">
                 <SlideFilters />
             </div>
+        {:else if active === "layers"}
+            <div class="content">
+                <ItemsList bind:allSlideItems />
+            </div>
         {:else if active === "slide"}
             <div class="content">
                 {#if $activeEdit.type === "template"}
-                    <TemplateStyle bind:allSlideItems />
-                {:else if $activeEdit.type === "overlay"}
-                    <OverlayStyle bind:allSlideItems />
+                    <TemplateStyle />
                 {:else}
-                    <SlideStyle bind:allSlideItems />
+                    <SlideStyle />
                 {/if}
             </div>
         {/if}
