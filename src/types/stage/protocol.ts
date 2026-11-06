@@ -1,5 +1,7 @@
+import type { Event } from "../Calendar"
+import type { MediaStyle, Variable } from "../Main"
 import type { Output } from "../Output"
-import type { Show } from "../Show"
+import type { OutSlide, Show, Timer } from "../Show"
 import type { StageLayout } from "../Stage"
 import type { WebProtocolDef } from "../WebProtocol"
 
@@ -47,20 +49,36 @@ export interface StageActionRequest {
     id: string
 }
 
+/** last slide per output id, kept so a cleared output can resume from its previous position */
+export type StageOutSlideCache = { [outputId: string]: OutSlide }
+/** a background (or the upcoming one) with its media style; `path` is a base64 thumbnail, `filePath` the original path */
+export interface StageBackgroundRef {
+    path?: string
+    filePath?: string
+    mediaStyle?: MediaStyle
+}
+/** `next` and `next2` are `{}` when there is no upcoming slide background */
+export interface StageBackground extends StageBackgroundRef {
+    next?: StageBackgroundRef
+    next2?: StageBackgroundRef
+}
+/** a running global timer: the timer definition plus its live state */
+export type StageActiveTimer = Timer & { id: string; currentTime?: number; paused?: boolean; startTime?: number }
+
 export interface StageResponses {
     LAYOUTS: StageLayoutEntry[]
     LAYOUT: StageLayoutData
     ERROR: StageError
     SWITCH: { id: string }
     OUT: Output
-    OUT_SLIDE_CACHE: any
-    BACKGROUND: any
+    OUT_SLIDE_CACHE: StageOutSlideCache
+    BACKGROUND: StageBackground
     MEDIA: { path: string; value: string }
     SHOW_DATA: { id: string; show: Show }
-    EVENTS: any
-    TIMERS: any
-    VARIABLES: any
-    ACTIVE_TIMERS: any[]
+    EVENTS: { [id: string]: Event }
+    TIMERS: { [id: string]: Timer }
+    VARIABLES: { [id: string]: Variable }
+    ACTIVE_TIMERS: { [id: string]: Timer }[]
     REQUEST_PROGRESS: StageProgress
     DATA: { timeFormat?: "12" | "24" }
     /** push-driven frames, keyed per output id by the client */

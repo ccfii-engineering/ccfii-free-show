@@ -67,8 +67,8 @@ export const receiver: WebReceiverTable<StageResponses> = {
         let outputId = data?.id
         if (outputId) send("REQUEST_PROGRESS", { outputId })
     },
-    OUT_SLIDE_CACHE: (data: any) => outputSlideCache.set(data),
-    BACKGROUND: (data: any) => _set("background", data),
+    OUT_SLIDE_CACHE: (data: StageResponses["OUT_SLIDE_CACHE"]) => outputSlideCache.set(data),
+    BACKGROUND: (data: StageResponses["BACKGROUND"]) => _set("background", data),
     MEDIA: (data: any) => _update("media", data.path, data.value),
 
     SHOW_DATA: (data: { id: string; show: Show }) => {
@@ -76,10 +76,10 @@ export const receiver: WebReceiverTable<StageResponses> = {
         _update("showsCache", data.id, data.show)
     },
 
-    EVENTS: (data: any) => events.set(data),
-    TIMERS: (data: any) => timers.set(data),
-    VARIABLES: (data: any) => variables.set(data),
-    ACTIVE_TIMERS: (data: any) => activeTimers.set(data),
+    EVENTS: (data: StageResponses["EVENTS"]) => events.set(data),
+    TIMERS: (data: StageResponses["TIMERS"]) => timers.set(data),
+    VARIABLES: (data: StageResponses["VARIABLES"]) => variables.set(data),
+    ACTIVE_TIMERS: (data: StageResponses["ACTIVE_TIMERS"]) => activeTimers.set(data),
     REQUEST_PROGRESS: (data: any) => progressData.set(data),
     DATA: (data: any) => {
         if (data.timeFormat) timeFormat.set(data.timeFormat)
