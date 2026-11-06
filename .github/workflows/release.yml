@@ -33,6 +33,9 @@ jobs:
             - name: Download Electron binary (Electron 42+ does not fetch it on install)
               run: node node_modules/electron/install.js
 
+            - name: Build and verify @discordjs/opus for Electron (install-app-deps skips N-API add-ons)
+              run: node scripts/build/ensureOpusBinary.js
+
             - name: Validate bundled PowerPoint renderer
               run: node scripts/tests/runPowerpointRendererElectron.mjs
 
@@ -86,6 +89,9 @@ jobs:
 
             - name: Download Electron binary (Electron 42+ does not fetch it on install)
               run: node node_modules/electron/install.js
+
+            - name: Build and verify @discordjs/opus for Electron (install-app-deps skips N-API add-ons)
+              run: node scripts/build/ensureOpusBinary.js --arch=x64,arm64
 
             - name: Validate bundled PowerPoint renderer
               run: node scripts/tests/runPowerpointRendererElectron.mjs

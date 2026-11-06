@@ -33,6 +33,27 @@ const checks = [
         }
     },
     {
+        // music-metadata 12 is ESM-only: the CommonJS main process loads it through require(esm) (module-sync export)
+        name: "music-metadata (ESM via require)",
+        required: true,
+        run() {
+            const { parseFile, parseBuffer } = requireFromProject("music-metadata")
+            if (typeof parseFile !== "function" || typeof parseBuffer !== "function") throw new Error("missing exports")
+            return "exports ok"
+        }
+    },
+    {
+        name: "@googleapis/drive",
+        required: true,
+        run() {
+            const { drive, auth } = requireFromProject("@googleapis/drive")
+            if (typeof drive !== "function" || typeof auth?.GoogleAuth !== "function") throw new Error("missing exports")
+            const client = drive({ version: "v3" })
+            if (typeof client.files?.list !== "function") throw new Error("files.list missing")
+            return "client ok"
+        }
+    },
+    {
         name: "libltc-wrapper",
         required: true,
         run() {

@@ -33,7 +33,7 @@ export async function setPlayingState(data: NowPlayingData) {
     // create album art cover BEFORE converting dynamic values
     const filePathCover = join(audioFolder, fileNameImage)
     const cover = metadata?.picture?.[0]
-    const buffer = cover?.data
+    const buffer = cover?.data ? Buffer.from(cover.data) : undefined
     let coverBuffer: Buffer | undefined
     if (!buffer) {
         if (doesPathExist(filePathCover)) {

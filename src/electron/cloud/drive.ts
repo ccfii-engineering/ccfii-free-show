@@ -1,5 +1,4 @@
 import { auth, drive, type drive_v3 } from "@googleapis/drive"
-import type { GaxiosResponse } from "gaxios"
 import path from "path"
 import { isProd } from ".."
 import { Main } from "../../types/IPC/Main"
@@ -10,6 +9,9 @@ import { sendMain } from "../IPC/main"
 import { deleteFile, doesPathExist, getDataFolderPath, getFileStats, loadShows, readFileAsync, writeFile } from "../utils/files"
 import { trimShow } from "../utils/shows"
 import type { BibleCategories } from "./../../types/Tabs"
+
+// only the fields read from googleapis responses (gaxios response types differ across client majors)
+type DriveResponse<T> = { data: T; status: number }
 
 let driveClient: drive_v3.Drive | null = null
 const DEBUG = !isProd
@@ -37,7 +39,7 @@ export async function authenticate(keysFilePath: string) {
 export async function listFolders(pageSize = 20, sort = "modified") {
     if (!driveClient) return
 
-    let res: GaxiosResponse<drive_v3.Schema$FileList>
+    let res: DriveResponse<drive_v3.Schema$FileList>
     try {
         res = await driveClient.files.list({
             pageSize,
@@ -67,7 +69,7 @@ export async function listFiles(pageSize = 50, query = "") {
     // let q = "mimeType!='application/vnd.google-apps.folder'"
     // if (query) q += " and " + query
 
-    let res: GaxiosResponse<drive_v3.Schema$FileList>
+    let res: DriveResponse<drive_v3.Schema$FileList>
     try {
         res = await driveClient.files.list({
             pageSize,
@@ -114,7 +116,7 @@ export async function getFile(id: string) {
     if (id) data.fileId = id
     // if (q) data.q = q
 
-    let file: GaxiosResponse<drive_v3.Schema$File>
+    let file: DriveResponse<drive_v3.Schema$File>
     try {
         file = await driveClient.files.get(data)
     } catch (err) {
@@ -130,7 +132,7 @@ export async function uploadFile(data: any, updateId = "") {
     if (!driveClient) return null
 
     // const isFolder = data.resource.mimeType === types.folder
-    let response: GaxiosResponse<drive_v3.Schema$FileList | drive_v3.Schema$File> | null
+    let response: DriveResponse<drive_v3.Schema$FileList | drive_v3.Schema$File> | null
     let error
 
     try {
@@ -533,7 +535,7 @@ export async function syncDataDrive(data: DriveData) {
 
 const TEN_SECONDS_MS = 10 * 1000
 let lastLocalTimestamp = 0
-function getNewest({ driveFile, localPath }: { driveFile: GaxiosResponse<drive_v3.Schema$File> | null; localPath: string }) {
+function getNewest({ driveFile, localPath }: { driveFile: DriveResponse<drive_v3.Schema$File> | null; localPath: string }) {
     const storeInfo = getFileStats(localPath, true)?.stat
 
     const driveModified = driveFile?.data?.modifiedTime ? new Date(driveFile.data.modifiedTime).getTime() : 0

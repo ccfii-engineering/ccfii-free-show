@@ -1,5 +1,5 @@
 import type { ExifData } from "exif"
-import type { ICommonTagsResult } from "music-metadata/lib/type"
+import type { ICommonTagsResult } from "music-metadata"
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist"
 import { get } from "svelte/store"
 import { OUTPUT } from "../../../types/Channels"

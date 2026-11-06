@@ -2,6 +2,7 @@ module.exports = {
     appId: "app.freeshow",
     productName: "FreeShow - CCFII Edition",
     artifactName: "FreeShow-CCFII-${version}-${arch}.${ext}",
+    afterPack: "scripts/build/afterPackOpus.js",
     extraMetadata: {
         internalBuild: true
     },
@@ -21,10 +22,10 @@ module.exports = {
     win: {
         target: "NSIS",
         icon: "build/public/icon.png",
-        asarUnpack: ["**/node_modules/macadam/**/*.node"]
+        asarUnpack: ["**/node_modules/macadam/**/*.node", "**/node_modules/@discordjs/opus/**/*.node"]
     },
     linux: {
-        asarUnpack: ["**/node_modules/grandiose/**", "**/node_modules/macadam/**/*.node", "**/node_modules/libltc-wrapper/**/*"],
+        asarUnpack: ["**/node_modules/grandiose/**", "**/node_modules/macadam/**/*.node", "**/node_modules/@discordjs/opus/**/*.node", "**/node_modules/libltc-wrapper/**/*"],
         category: "AudioVideo",
         target: ["AppImage", "deb", "rpm"],
         icon: "build/public"
@@ -34,7 +35,7 @@ module.exports = {
     },
     mac: {
         icon: "build/public/icon.png",
-        asarUnpack: ["**/node_modules/macadam/**/*.node"],
+        asarUnpack: ["**/node_modules/macadam/**/*.node", "**/node_modules/@discordjs/opus/**/*.node"],
         target: [
             {
                 target: "dmg",
