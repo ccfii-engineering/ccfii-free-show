@@ -179,8 +179,8 @@ test("all active server shells expose branded metadata and fresh CCFII assets in
             if (appId === "remote" || appId === "stage") await assertCcfiiAssets(page, baseUrl)
 
             if (appId === "controller") {
-                await expect(page.locator(".operator-brand .brand-copy")).toContainText("FreeShow")
-                await expect(page.locator(".operator-brand .brand-edition")).toHaveText("CCFII Edition")
+                await expect(page.locator(".brand .brand-copy")).toContainText("FreeShow")
+                await expect(page.locator(".brand .brand-edition")).toHaveText("CCFII Edition")
                 await expect(page.locator("button")).toHaveCount(5)
                 await assertCcfiiAssets(page, baseUrl)
                 if (environment === "prod") await page.screenshot({ path: "/tmp/ccfii-brand-controller-desktop.png" })
@@ -282,7 +282,7 @@ test("the production service worker removes only its own legacy caches", async (
 
     const cacheNames = await page.evaluate(() => caches.keys())
     expect(cacheNames).toContain("unrelated-app-cache")
-    expect(cacheNames).toContain("freeshow-ccfii-1.0.1-fundamentals")
+    expect(cacheNames).toContain("freeshow-ccfii-1.0.3-fundamentals")
     expect(cacheNames).not.toContain("1.0.0fundamentals")
     expect(cacheNames).not.toContain("1.0.0pages")
     expect(cacheNames).not.toContain("freeshow-ccfii-1.0.0-fundamentals")

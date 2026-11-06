@@ -114,8 +114,8 @@ test("real desktop remote media and ControlShow socket flow", async () => {
 
         remotePage = await browser.newPage({ viewport: { width: 390, height: 844 } })
         await remotePage.goto(`http://127.0.0.1:${remotePort}`)
-        await expect(remotePage.locator(".tabs button[title='Media']")).toBeVisible({ timeout: 20_000 })
-        await remotePage.locator(".tabs button[title='Media']").click()
+        await expect(remotePage.locator(".bottom-tabs button[title='Media']")).toBeVisible({ timeout: 20_000 })
+        await remotePage.locator(".bottom-tabs button[title='Media']").click()
         const mediaRoot = remotePage.locator(".media-entry").filter({ hasText: "Fixture media" })
         await expect(mediaRoot).toBeVisible({ timeout: 5_000 })
         await mediaRoot.click()
@@ -132,21 +132,31 @@ test("real desktop remote media and ControlShow socket flow", async () => {
         await expect(controllerPage.locator(".presenter-notes p")).toContainText("Desktop note two")
         await expect(controllerPage.locator(".preview-panel .item img").first()).toHaveAttribute("src", /^data:image\//)
 
+        const backgroundBeforeSelect = (await queryAPI(apiUrl, "get_output"))?.background?.path
         await remotePage
             .locator(".media-entry")
             .filter({ hasText: path.basename(imagePath) })
             .click()
+        await expect(remotePage.locator(".remote-media-page h2")).toHaveText(path.basename(imagePath))
+        expect((await queryAPI(apiUrl, "get_output"))?.background?.path).toBe(backgroundBeforeSelect)
+        await remotePage.getByRole("button", { name: "Show on output" }).click()
         await expect.poll(async () => (await queryAPI(apiUrl, "get_output"))?.background?.path).toBe(imagePath)
+        await remotePage.getByRole("button", { name: "Back to media" }).click()
         await remotePage
             .locator(".media-entry")
             .filter({ hasText: path.basename(videoPath) })
             .click()
+        await expect(remotePage.locator(".remote-media-page h2")).toHaveText(path.basename(videoPath))
+        await remotePage.getByRole("button", { name: "Play on output" }).click()
         await expect.poll(async () => (await queryAPI(apiUrl, "get_output"))?.background?.path).toBe(videoPath)
+        await remotePage.getByRole("button", { name: "Back to media" }).click()
         await remotePage
             .locator(".media-entry")
             .filter({ hasText: path.basename(audioPath) })
             .click()
-        await expect(remotePage.locator(".media-library [role='status']")).toHaveText("Sent to the output.")
+        await expect(remotePage.locator(".remote-media-page h2")).toHaveText(path.basename(audioPath))
+        await remotePage.getByRole("button", { name: "Play on output" }).click()
+        await expect(remotePage.locator(".remote-media-page [role='status']")).toContainText("Sent to output")
     } finally {
         await remotePage?.close().catch(() => undefined)
         await controllerPage?.close().catch(() => undefined)

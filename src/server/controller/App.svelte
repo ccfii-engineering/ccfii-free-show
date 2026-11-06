@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { ControllerPresenterPreview, ControllerPresenterSnapshot } from "../../types/remote/control"
+    import { MAX_THUMBNAIL_BYTES, type ControllerPresenterPreview, type ControllerPresenterSnapshot } from "../../types/remote/control"
     import "../common/brand.css"
     import { io } from "socket.io-client"
     import Brand from "../common/components/Brand.svelte"
@@ -9,33 +9,59 @@
 
     type PreviewData = ControllerPresenterPreview & { assets?: Record<string, string> }
     type PresenterState = Omit<ControllerPresenterSnapshot, "current" | "next"> & { current: PreviewData | null; next: PreviewData | null }
+    type ConnectionState = "connecting" | "connected" | "reconnecting" | "disconnected"
 
-    let socket = io()
+    const socket = io()
+    const tools = ["Focus", "Pointer", "Zoom", "Particles", "Paint"]
 
-    console.log(socket)
-
-    let outputId: string = ""
+    let connectionState: ConnectionState = "connecting"
+    let hasConnected = false
+    let presenterConnectionEpoch = 0
+    let awaitingPresenterState = true
+    let outputId = ""
     let presenterState: PresenterState | null = null
     let presenterThumbnails: Record<string, string> = {}
     let assetRevision = -1
     let assetQueue: string[] = []
-    let pendingAssets = new Set<string>()
+    let pendingAssets = new Map<string, { revision: number; connectionEpoch: number }>()
     let thumbnailBytes = 0
-    const MAX_THUMBNAIL_BYTES = 8 * 1024 * 1024
+    let aspectRatio = 16 / 9
+    let thumbnailBackground = ""
+    let thumbnailInterval: ReturnType<typeof setInterval> | null = null
+    let frameReceived = true
+    let justCleared: ReturnType<typeof setTimeout> | null = null
+    let draw = false
+    let pointerDown = false
+    let padElem: HTMLElement | undefined
+    let tool = "Focus"
 
     $: presenterNotes = presenterState ? htmlToPlainText(presenterState.notes) : ""
+    $: connected = connectionState === "connected"
+    $: connectionLabel = connectionState[0].toUpperCase() + connectionState.slice(1)
+    $: if (draw && connected && !thumbnailInterval) thumbnailInterval = setInterval(requestThumbnail, 800)
+    else if ((!draw || !connected) && thumbnailInterval) {
+        clearInterval(thumbnailInterval)
+        thumbnailInterval = null
+    }
 
     socket.on("connect", () => {
-        // id = socket.id
+        hasConnected = true
+        presenterConnectionEpoch += 1
+        awaitingPresenterState = true
+        connectionState = "connected"
         socket.emit("CONTROLLER", { channel: "GET_OUTPUT_ID" })
         socket.emit("CONTROLLER", { channel: "PRESENTER_SUBSCRIBE" })
     })
 
-    let aspectRatio = 16 / 9
-    let thumbnailBackground: string = ""
+    socket.io.on("reconnect_attempt", () => {
+        connectionState = "reconnecting"
+    })
+
+    socket.on("connect_error", () => {
+        connectionState = hasConnected ? "reconnecting" : "connecting"
+    })
 
     socket.on("CONTROLLER", (msg) => {
-        if (msg.channel !== "OUTPUT_FRAME") console.log("MESSAGE:", msg)
         switch (msg.channel) {
             case "OUTPUT_FRAME":
                 thumbnailBackground = msg.data.frame || ""
@@ -54,21 +80,27 @@
         }
     })
 
-    socket.on("disconnect", () => {
+    socket.on("disconnect", (reason) => {
+        connectionState = reason === "io server disconnect" ? "disconnected" : hasConnected ? "reconnecting" : "connecting"
         outputId = ""
-        presenterState = null
-        presenterThumbnails = {}
-        assetQueue = []
+        awaitingPresenterState = true
+        presenterConnectionEpoch += 1
+        pointerDown = false
         pendingAssets.clear()
-        thumbnailBytes = 0
-        assetRevision = -1
+        assetQueue = presenterState ? [presenterState.current, presenterState.next].flatMap((preview) => Object.values(preview?.assets || {})) : []
     })
 
     function updatePresenterState(data: PresenterState) {
-        if (presenterState && data.revision < presenterState.revision) return
+        if (!connected) return
+        const isFirstStateInConnection = awaitingPresenterState
+        if (!isFirstStateInConnection && presenterState && data.revision < presenterState.revision) return
         presenterState = data
         outputId = data.outputId || outputId
-        if (assetRevision === data.revision) return
+        awaitingPresenterState = false
+        if (!isFirstStateInConnection && assetRevision === data.revision) {
+            flushPresenterThumbnails()
+            return
+        }
 
         assetRevision = data.revision
         presenterThumbnails = {}
@@ -80,10 +112,10 @@
     }
 
     function flushPresenterThumbnails() {
-        while (presenterState && pendingAssets.size < 2 && assetQueue.length) {
+        while (connected && presenterState && pendingAssets.size < 2 && assetQueue.length) {
             const assetId = assetQueue.shift()!
             if (pendingAssets.has(assetId) || presenterThumbnails[assetId] !== undefined) continue
-            pendingAssets.add(assetId)
+            pendingAssets.set(assetId, { revision: presenterState.revision, connectionEpoch: presenterConnectionEpoch })
             socket.emit("CONTROLLER", {
                 channel: "PRESENTER_THUMBNAIL",
                 data: { revision: presenterState.revision, assetId }
@@ -92,7 +124,8 @@
     }
 
     function receivePresenterThumbnail(data: { revision: number; assetId: string; thumbnail: string }) {
-        if (!presenterState || data.revision !== presenterState.revision || !pendingAssets.has(data.assetId)) return
+        const pendingAsset = pendingAssets.get(data.assetId)
+        if (awaitingPresenterState || !presenterState || data.revision !== presenterState.revision || !pendingAsset || pendingAsset.revision !== data.revision || pendingAsset.connectionEpoch !== presenterConnectionEpoch) return
         pendingAssets.delete(data.assetId)
         const size = data.thumbnail?.length || 0
         if (size && thumbnailBytes + size <= MAX_THUMBNAIL_BYTES) {
@@ -104,21 +137,14 @@
         flushPresenterThumbnails()
     }
 
-    let thumbnailInterval: any = null
-    let frameReceived = true
-    $: if (draw && !thumbnailInterval) thumbnailInterval = setInterval(requestThumbnail, 800)
-    else if (thumbnailInterval) {
-        clearInterval(thumbnailInterval)
-        thumbnailInterval = null
-    }
-
     function requestThumbnail() {
-        if (!outputId || !frameReceived) return
+        if (!connected || !outputId || !frameReceived) return
         frameReceived = false
         socket.emit("CONTROLLER", { channel: "OUTPUT_FRAME", data: { outputId } })
     }
 
     function sendAction(id: string) {
+        if (!connected) return
         socket.emit("CONTROLLER", { channel: "ACTION", data: { id } })
 
         if (justCleared) {
@@ -129,548 +155,761 @@
         }
     }
 
-    let justCleared: any = null
-
-    let draw = false
-    let mouseDown = false
-    function mousedown() {
-        mouseDown = true
+    function startDrawing(event: PointerEvent) {
+        if (!connected || event.button !== 0) return
+        pointerDown = true
     }
-    function mouseup() {
-        if (!mouseDown) return
-        mouseDown = false
 
-        let data: any = { offset: null }
+    function stopDrawing() {
+        if (!pointerDown) return
+        pointerDown = false
+        if (!connected) return
+
+        const data: { offset: { x: number; y: number } | null; tool?: string | null } = { offset: null }
         if (tool === "Zoom") data.tool = null
-
-        socket.emit("CONTROLLER", {
-            channel: "FOCUS",
-            data
-        })
+        socket.emit("CONTROLLER", { channel: "FOCUS", data })
     }
 
-    let padElem: HTMLElement | undefined
-    function mousemove(e: any) {
-        if (!mouseDown || !padElem) return
+    function moveDrawing(event: PointerEvent) {
+        if (!pointerDown || !connected || !padElem) return
 
-        var elemRect = padElem.getBoundingClientRect()
-        var x = (e.pageX ?? e.targetTouches[0].pageX) - elemRect.left
-        var y = (e.pageY ?? e.targetTouches[0].pageY) - elemRect.top
-
-        let offset = { x: x / elemRect.width, y: y / elemRect.height }
-        offset = {
-            x: Math.max(0, Math.min(offset.x, 1)),
-            y: Math.max(0, Math.min(offset.y, 1))
+        const rect = padElem.getBoundingClientRect()
+        const offset = {
+            x: Math.max(0, Math.min((event.clientX - rect.left) / rect.width, 1)),
+            y: Math.max(0, Math.min((event.clientY - rect.top) / rect.height, 1))
         }
-
         socket.emit("CONTROLLER", {
             channel: "FOCUS",
             data: { offset, tool: tool.toLowerCase() }
         })
     }
 
-    const tools: string[] = ["Focus", "Pointer", "Zoom", "Particles", "Paint"]
-    let tool = "Focus"
-    function changeTool(e: any) {
-        tool = e.target.value
+    function changeTool(event: Event) {
+        tool = (event.currentTarget as HTMLSelectElement).value
     }
 
-    // keyboard shortcuts
-    function keydown(e: KeyboardEvent) {
-        if ([" ", "Arrow", "Page"].includes(e.key)) e.preventDefault()
+    function keydown(event: KeyboardEvent) {
+        if (event.defaultPrevented || isEditingTarget(event.target)) return
+        const target = event.target as HTMLElement | null
+        const nativeActionTarget = target?.closest("button, a[href], [role='button']")
+        if (nativeActionTarget && (event.key === " " || event.key === "Enter")) return
 
-        if ([" ", "ArrowRight", "PageDown"].includes(e.key)) sendAction("next")
-        else if (["ArrowLeft", "PageUp"].includes(e.key)) sendAction("previous")
-        else if (e.key === "Escape") sendAction("clear")
+        const actions: Record<string, string> = {
+            " ": "next",
+            ArrowRight: "next",
+            PageDown: "next",
+            ArrowLeft: "previous",
+            PageUp: "previous",
+            Escape: "clear"
+        }
+        const action = actions[event.key]
+        if (!action) return
+        if (event.key === " " || event.key.startsWith("Arrow") || event.key.startsWith("Page")) event.preventDefault()
+        sendAction(action)
     }
 
-    let windowHeight: number = 0
+    function isEditingTarget(target: EventTarget | null) {
+        if (!(target instanceof HTMLElement)) return false
+        return target.isContentEditable || !!target.closest("input, textarea, select, [contenteditable='true']")
+    }
+
+    function previewContext(preview: PreviewData | null | undefined, fallbackName?: string) {
+        if (!preview) return fallbackName || ""
+        const showName = preview.showName || fallbackName
+        const slideNumber = preview.index + 1
+        return showName ? `${showName}, slide ${slideNumber}` : `Slide ${slideNumber}`
+    }
+
+    function toggleDraw(enabled: boolean) {
+        draw = enabled
+        pointerDown = false
+    }
 </script>
 
-<svelte:window bind:innerHeight={windowHeight} on:keydown={keydown} on:mouseup={mouseup} on:touchend={mouseup} on:mousemove={mousemove} on:touchmove={mousemove} />
+<svelte:window on:keydown={keydown} on:pointerup={stopDrawing} on:pointercancel={stopDrawing} on:pointermove={moveDrawing} />
 
-<div class="operator-brand">
-    <Brand role="Controller" compact />
-</div>
-
-<section class="presenter-context" aria-label="Presenter view">
-    <div class="preview-grid">
-        <section class="preview-panel">
-            <div class="preview-heading"><strong>Current</strong><span>{presenterState?.showName || (presenterState?.status === "cleared" ? "Output cleared" : "On screen")}</span></div>
-            {#if presenterState?.current}
-                <PresenterPreview preview={presenterState.current} thumbnails={presenterThumbnails} />
-            {:else}
-                <div class="preview-frame preview-empty">{presenterState?.status === "cleared" ? "Output cleared" : "No active slide"}</div>
-            {/if}
-        </section>
-        <section class="preview-panel">
-            <div class="preview-heading"><strong>Next</strong><span>{presenterState?.next?.showName || "Coming up"}</span></div>
-            {#if presenterState?.next}
-                <PresenterPreview preview={presenterState.next} thumbnails={presenterThumbnails} />
-            {:else}
-                <div class="preview-frame preview-empty">{presenterState?.atEnd ? "End of show" : "No next slide"}</div>
-            {/if}
-        </section>
-    </div>
-    <section class="presenter-notes" aria-label="Current slide notes">
-        <strong>Notes</strong>
-        <p>{presenterNotes || "No notes for this slide."}</p>
-    </section>
-</section>
-
-{#if draw}
-    <div class="draw">
-        <select name="tools" value={tool} on:change={changeTool}>
-            {#each tools as toolKey}
-                <option value={toolKey}>{toolKey}</option>
-            {/each}
-        </select>
-
-        <div bind:this={padElem} class="pad" style="aspect-ratio: {thumbnailBackground ? aspectRatio : 1};" on:mousedown={mousedown} on:touchstart={mousedown}>
-            {#if thumbnailBackground}
-                <div class="thumbnail">
-                    <!-- object-fit: {thumbnailBackground.mediaStyle?.fit || 'contain'}; -->
-                    <img src={thumbnailBackground} alt="" style="width: 100%;height: 100%;object-fit: fill;opacity: 0.5;" />
-                </div>
+<div class="controller-app">
+    <header class="app-header">
+        <div class="brand"><Brand role="Controller" compact /></div>
+        <div class="header-status">
+            <div class="connection" class:connected aria-live="polite" role="status">
+                <span class="connection-dot" aria-hidden="true"></span>
+                <span>{connectionLabel}</span>
+            </div>
+            {#if !connected || awaitingPresenterState}
+                <p class="connection-message" class:stale={presenterState}>
+                    {#if connectionState === "connecting"}
+                        Connecting to the presentation controller.
+                    {:else if connectionState === "reconnecting"}
+                        Reconnecting. Controls are unavailable until the connection returns.
+                    {:else if awaitingPresenterState && connected}
+                        Connected. Waiting for fresh slide data.
+                    {:else}
+                        Disconnected. Controls are unavailable.
+                    {/if}
+                    {#if presenterState}<span> The last preview may be out of date.</span>{/if}
+                </p>
             {/if}
         </div>
+    </header>
 
-        {#if tool === "Paint"}
-            <button on:click={() => sendAction("clear_painting")} title="Clear painting">
-                <Icon id="clear" size={2} white right />
-            </button>
+    <main class="workspace" class:offline={!connected}>
+        <section class="preview-grid" aria-label="Current and next slides">
+            <section class="preview-panel" aria-labelledby="current-heading">
+                <div class="preview-heading">
+                    <h2 id="current-heading">Current</h2>
+                    <span>{previewContext(presenterState?.current, presenterState?.showName) || (presenterState?.status === "cleared" ? "Output cleared" : "On screen")}</span>
+                </div>
+                {#if presenterState?.current}
+                    <PresenterPreview preview={presenterState.current} thumbnails={presenterThumbnails} />
+                {:else}
+                    <div class="preview-frame preview-empty" role="img" aria-label={presenterState?.status === "cleared" ? "Output cleared" : "No active slide"}>
+                        {presenterState?.status === "cleared" ? "Output cleared" : "No active slide"}
+                    </div>
+                {/if}
+            </section>
+            <section class="preview-panel" aria-labelledby="next-heading">
+                <div class="preview-heading">
+                    <h2 id="next-heading">Next</h2>
+                    <span>{previewContext(presenterState?.next, presenterState?.showName) || (presenterState?.atEnd ? "End of show" : "No next slide preview")}</span>
+                </div>
+                {#if presenterState?.next}
+                    <PresenterPreview preview={presenterState.next} thumbnails={presenterThumbnails} />
+                {:else}
+                    <div class="preview-frame preview-empty" role="img" aria-label={presenterState?.atEnd ? "End of show" : "No next slide preview"}>
+                        {presenterState?.atEnd ? "End of show" : "No next slide preview"}
+                    </div>
+                {/if}
+            </section>
+        </section>
+
+        <section class="presenter-notes" aria-labelledby="notes-heading">
+            <h2 id="notes-heading">Notes</h2>
+            <p>{presenterNotes || "No notes for this slide."}</p>
+        </section>
+
+        {#if draw}
+            <section class="draw-panel" aria-label="Drawing tools">
+                <div class="draw-toolbar">
+                    <label for="drawing-tool">Drawing tool</label>
+                    <select id="drawing-tool" name="tools" value={tool} on:change={changeTool}>
+                        {#each tools as toolKey}
+                            <option value={toolKey}>{toolKey}</option>
+                        {/each}
+                    </select>
+                    {#if tool === "Paint"}
+                        <button class="utility-button" disabled={!connected} on:click={() => sendAction("clear_painting")}>Clear drawing</button>
+                    {/if}
+                </div>
+                <div bind:this={padElem} class="draw-surface" style={`--draw-aspect-ratio: ${thumbnailBackground ? aspectRatio : 16 / 9}`} aria-label={`Drawing surface. Selected tool: ${tool}. ${thumbnailBackground ? "Output preview available." : "Output preview unavailable."}`} on:pointerdown={startDrawing}>
+                    {#if thumbnailBackground}
+                        <img src={thumbnailBackground} alt="Current output behind the drawing surface" draggable="false" />
+                    {:else}
+                        <span>Output preview unavailable. Drawing tools remain available.</span>
+                    {/if}
+                </div>
+            </section>
         {/if}
-    </div>
-{:else}
-    <div class="controller">
-        <button class="quart" aria-label="Previous slide" on:click={() => sendAction("previous")}>
-            <Icon id="previous" size={4} />
-        </button>
-        <button class="quart" aria-label="Next slide" on:click={() => sendAction("next")}>
-            <Icon id="next" size={4} />
-        </button>
-        <!-- <button class="quart" />
-  <button class="quart" /> -->
-        <button class="center" class:red={justCleared} aria-label="Clear output" on:click={() => sendAction("clear")}>
-            <Icon id="clear" size={4} white />
-            <!-- <Icon id={justCleared ? "clear" : "slide"} size={4} white /> -->
-        </button>
-    </div>
-{/if}
+    </main>
 
-{#if windowHeight < 300}
-    <div class="toggle-single">
-        <button on:click={() => (draw = !draw)} title="Toggle draw mode">
-            <Icon id={draw ? "pad" : "draw"} size={2} white />
-        </button>
-    </div>
-{:else}
-    <div class="toggles">
-        <button on:click={() => (draw = false)} class="noright" style={draw ? "background-color: var(--primary-darker);" : ""}>
-            <Icon id="pad" size={2.5} white={draw === true} />
-        </button>
-        <button on:click={() => (draw = true)} class="noleft" style={draw ? "" : "background-color: var(--primary-darker);"}>
-            <Icon id="draw" size={2.5} white={draw === false} />
-        </button>
-    </div>
-{/if}
+    <footer class="control-footer" aria-label="Presentation controls">
+        <div class="action-row">
+            <button class="action secondary" disabled={!connected} on:click={() => sendAction("previous")}>
+                <Icon id="previous" size={1.25} />
+                <span>Previous</span>
+            </button>
+            <button class="action primary" disabled={!connected} on:click={() => sendAction("next")}>
+                <span>Next</span>
+                <Icon id="next" size={1.25} />
+            </button>
+            <button class="action clear" class:recent={justCleared !== null} disabled={!connected} on:click={() => sendAction("clear")}>
+                <Icon id="clear" size={1.15} />
+                <span>Clear output</span>
+            </button>
+        </div>
+        <div class="mode-row" role="group" aria-label="Controller mode">
+            <button class:active={!draw} aria-pressed={!draw} on:click={() => toggleDraw(false)}>Show controls</button>
+            <button class:active={draw} aria-pressed={draw} on:click={() => toggleDraw(true)}>Draw mode</button>
+        </div>
+    </footer>
+</div>
 
 <style>
     :global(*) {
-        margin: 0;
-        padding: 0;
         box-sizing: border-box;
-        user-select: none;
-
-        outline-offset: -4px;
-        outline-color: var(--accent);
     }
 
     :global(html) {
-        height: 100%;
+        min-width: 320px;
+        min-height: 100%;
+        background: var(--operator-canvas, #171513);
     }
 
     :global(body) {
-        background-color: var(--primary);
-        color: var(--text);
-        /* transition: background-color 0.5s; */
+        min-width: 320px;
+        min-height: 100%;
+        margin: 0;
+        color: var(--operator-text, #f4f1ed);
+        background: var(--operator-canvas, #171513);
+        font-family:
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
+        font-size: 16px;
         -webkit-tap-highlight-color: transparent;
-
-        font-family: var(--font-family);
-        font-size: 1.5em;
-
-        height: 100%;
-        /* width: 100vw;
-  height: 100vh; */
+        -webkit-font-smoothing: antialiased;
     }
 
-    :root {
-        /* --navigation-width: 18vw; */
-        --navigation-width: 300px;
+    :global(::selection) {
+        color: var(--operator-canvas, #171513);
+        background: var(--operator-amber, #faa739);
     }
 
-    .operator-brand {
-        position: absolute;
-        top: 12px;
-        left: 12px;
-        z-index: 20;
-        pointer-events: none;
+    :global(button),
+    :global(select) {
+        font: inherit;
     }
 
-    .presenter-context {
-        position: absolute;
-        z-index: 1;
-        top: 58px;
-        right: 12px;
-        left: 12px;
+    .controller-app {
+        --pad-inline: 16px;
+        width: min(100%, 1440px);
+        height: 100vh;
+        height: 100dvh;
+        min-height: 480px;
+        margin: 0 auto;
+        padding: 14px var(--pad-inline) max(12px, env(safe-area-inset-bottom));
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        gap: 12px;
+    }
+
+    .app-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 46px;
+        gap: 16px;
+    }
+
+    .brand {
+        min-width: 0;
+    }
+
+    .header-status {
         display: flex;
         flex-direction: column;
-        max-width: 840px;
-        margin: 0 auto;
-        gap: 6px;
-        pointer-events: none;
+        align-items: flex-end;
+        min-width: 0;
+        gap: 2px;
+    }
+
+    .connection {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 40px;
+        flex: 0 0 auto;
+        color: var(--operator-muted, rgb(244 241 237 / 72%));
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+
+    .connection-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--operator-muted, rgb(244 241 237 / 72%));
+    }
+
+    .connection.connected .connection-dot {
+        background: var(--operator-amber, #faa739);
+    }
+
+    .connection-message {
+        max-width: 300px;
+        margin: 0;
+        padding: 0;
+        color: var(--operator-amber, #faa739);
+        font-size: 0.75rem;
+        line-height: 1.4;
+        text-align: right;
+    }
+
+    .connection-message.stale {
+        color: var(--operator-muted, rgb(244 241 237 / 72%));
+    }
+
+    .workspace {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-height: 0;
+        overflow: auto;
+        scrollbar-color: var(--operator-raised, #2c2824) transparent;
+        scrollbar-width: thin;
     }
 
     .preview-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 8px;
+        gap: 12px;
     }
 
     .preview-panel {
         min-width: 0;
-        overflow: hidden;
-        padding: 6px;
-        border: 1px solid var(--primary-lighter);
-        border-radius: 8px;
-        background: var(--primary-darker);
+        padding: 10px;
+        border: 1px solid var(--operator-border, rgb(244 241 237 / 14%));
+        border-radius: 12px;
+        background: var(--operator-surface, #211e1b);
     }
 
     .preview-heading {
         display: flex;
-        align-items: center;
+        align-items: baseline;
         justify-content: space-between;
-        gap: 8px;
-        padding: 0 2px 5px;
-        font-size: 0.72rem;
+        min-height: 30px;
+        gap: 12px;
     }
 
-    .preview-heading strong,
-    .presenter-notes strong {
-        color: var(--accent);
-        font-size: 0.68rem;
-        text-transform: uppercase;
+    .preview-heading h2,
+    .presenter-notes h2 {
+        margin: 0;
+        color: var(--operator-text, #f4f1ed);
+        font-size: 0.95rem;
+        font-weight: 650;
     }
 
     .preview-heading span {
+        min-width: 0;
         overflow: hidden;
-        color: var(--text);
+        color: var(--operator-muted, rgb(244 241 237 / 72%));
+        font-size: 0.82rem;
+        text-align: right;
         text-overflow: ellipsis;
         white-space: nowrap;
     }
 
-    .presenter-context :global(.preview-frame) {
+    .preview-panel :global(.preview-frame) {
         width: 100%;
         aspect-ratio: 16 / 9;
         overflow: hidden;
-        border-radius: 5px;
-        background: #000;
+        border-radius: 7px;
+        background: var(--operator-preview, #070707);
     }
 
-    .presenter-context .preview-empty {
+    .preview-panel .preview-empty {
         display: grid;
         place-items: center;
-        color: #c5b5b5;
-        font-size: 0.78rem;
+        padding: 16px;
+        color: var(--operator-muted, rgb(244 241 237 / 72%));
+        font-size: 0.9rem;
+        text-align: center;
     }
 
     .presenter-notes {
+        flex: 1 1 110px;
+        min-height: 88px;
         overflow: auto;
-        min-height: 86px;
-        max-height: 128px;
-        flex: 0 0 auto;
-        padding: 5px 8px;
-        border: 1px solid var(--primary-lighter);
-        border-radius: 7px;
-        color: var(--text);
-        background: var(--primary-darker);
-        font-size: 0.74rem;
-        pointer-events: auto;
+        padding: 12px 14px;
+        border: 1px solid var(--operator-border, rgb(244 241 237 / 14%));
+        border-radius: 12px;
+        background: var(--operator-surface, #211e1b);
+        scrollbar-color: var(--operator-raised, #2c2824) transparent;
+        scrollbar-width: thin;
+    }
+
+    .presenter-notes h2 {
+        margin-bottom: 6px;
+        color: var(--operator-amber, #faa739);
     }
 
     .presenter-notes p {
-        margin: 2px 0 0;
+        max-width: 75ch;
+        margin: 0;
         overflow-wrap: anywhere;
+        color: var(--operator-text, #f4f1ed);
+        font-size: 0.95rem;
+        line-height: 1.45;
         white-space: pre-wrap;
-        line-height: 1.25;
+        user-select: text;
     }
 
-    :global(svg.white) {
-        fill: var(--text) !important;
-    }
-
-    /* toggle */
-    .toggle-single {
-        position: absolute;
-        bottom: 10px;
-        left: 10px;
-        z-index: 10;
-    }
-    .toggle-single button {
-        width: 35px;
-        height: 35px;
-        padding: 5px;
-        border-radius: 5px;
-        background-color: var(--primary-darkest);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .toggles {
-        position: absolute;
-        bottom: 50px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 80vw;
-        display: flex;
-        /* gap: 10px; */
-    }
-    .toggles button,
-    select {
+    .draw-panel {
+        display: grid;
+        gap: 8px;
         padding: 10px;
-        color: var(--text);
-        width: 100%;
-        text-transform: uppercase;
-        font-size: 0.8em;
-        border-radius: 5px;
-        display: flex;
-        justify-content: center;
-    }
-    select {
-        width: 80vw;
-        background-color: var(--primary-darkest);
-        border: none;
-        text-align: center;
-        font-weight: bold;
+        border: 1px solid var(--operator-border, rgb(244 241 237 / 14%));
+        border-radius: 12px;
+        background: var(--operator-surface, #211e1b);
     }
 
-    .toggles .noleft {
-        border-top-left-radius: 0;
-        border-bottom-left-radius: 0;
-    }
-    .toggles .noright {
-        border-top-right-radius: 0;
-        border-bottom-right-radius: 0;
-    }
-
-    /* pad */
-    .draw {
-        position: absolute;
-        top: 60%;
-        left: 50%;
-        transform: translate(-50%, -50%);
+    .draw-toolbar {
         display: flex;
-        flex-direction: column;
         align-items: center;
-        gap: 10px;
+        flex-wrap: wrap;
+        gap: 8px;
     }
 
-    .pad {
-        height: min(55vw, 42vh);
-        /* width: 80vw; */
-        border-radius: 5px;
-        background-color: var(--primary-darkest);
-        touch-action: none;
-        align-self: center;
+    .draw-toolbar label {
+        color: var(--operator-muted, rgb(244 241 237 / 72%));
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
 
+    .draw-toolbar select,
+    .utility-button {
+        min-height: 44px;
+        padding: 0 12px;
+        border: 1px solid var(--operator-border, rgb(244 241 237 / 14%));
+        border-radius: 8px;
+        color: var(--operator-text, #f4f1ed);
+        background: var(--operator-raised, #2c2824);
+    }
+
+    .draw-toolbar select {
+        min-width: 140px;
+    }
+
+    .utility-button {
+        cursor: pointer;
+    }
+
+    .draw-surface {
         position: relative;
+        display: grid;
+        width: min(100%, 920px, calc(50dvh * var(--draw-aspect-ratio)));
+        aspect-ratio: var(--draw-aspect-ratio);
+        max-height: 50dvh;
+        margin: 0 auto;
+        overflow: hidden;
+        place-items: center;
+        border-radius: 8px;
+        background: var(--operator-preview, #070707);
+        touch-action: none;
+        user-select: none;
     }
 
-    .thumbnail {
-        pointer-events: none;
+    .draw-surface img {
         position: absolute;
-        top: 0;
-        left: 0;
         width: 100%;
         height: 100%;
+        object-fit: fill;
+        opacity: 0.56;
+        pointer-events: none;
     }
 
-    /* controller */
-    .controller {
-        position: absolute;
-        top: 74%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        /* transform: translate(-50%, -50%) rotate(45deg); */
-
-        height: min(34vw, 32vh, 300px);
-        width: min(34vw, 32vh, 300px);
-        border-radius: 50%;
-        overflow: hidden;
+    .draw-surface span {
+        z-index: 1;
+        padding: 20px;
+        color: var(--operator-muted, rgb(244 241 237 / 72%));
+        text-align: center;
     }
 
-    @media only screen and (max-width: 550px) {
-        .presenter-context {
-            max-width: 420px;
+    .control-footer {
+        width: min(100%, 1240px);
+        margin: 0 auto;
+        padding: 10px;
+        border: 1px solid var(--operator-border, rgb(244 241 237 / 14%));
+        border-radius: 14px;
+        background: var(--operator-surface, #211e1b);
+    }
+
+    .action-row,
+    .mode-row {
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+    }
+
+    .mode-row {
+        margin-top: 8px;
+    }
+
+    .action,
+    .mode-row button {
+        min-width: 0;
+        min-height: 48px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        padding: 0 18px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        color: var(--operator-text, #f4f1ed);
+        font-size: 0.94rem;
+        font-weight: 650;
+        cursor: pointer;
+        touch-action: manipulation;
+        transition:
+            background-color 120ms ease,
+            border-color 120ms ease,
+            color 120ms ease;
+    }
+
+    .action {
+        flex: 1 1 0;
+        max-width: 245px;
+    }
+
+    .action.secondary {
+        border-color: var(--operator-border, rgb(244 241 237 / 14%));
+        background: var(--operator-raised, #2c2824);
+    }
+
+    .action.primary {
+        color: var(--operator-on-amber, #211506);
+        background: var(--operator-amber, #faa739);
+    }
+
+    .action.clear {
+        border-color: var(--operator-crimson, #810e0e);
+        background: var(--operator-crimson, #810e0e);
+    }
+
+    .action.clear.recent {
+        background: var(--operator-crimson-strong, #9b2424);
+    }
+
+    .mode-row button {
+        min-height: 44px;
+        flex: 0 1 240px;
+        border-color: var(--operator-border, rgb(244 241 237 / 14%));
+        color: var(--operator-muted, rgb(244 241 237 / 72%));
+        background: transparent;
+        font-size: 0.875rem;
+        font-weight: 550;
+    }
+
+    .mode-row button.active {
+        border-color: var(--operator-amber, #faa739);
+        color: var(--operator-text, #f4f1ed);
+        background: var(--operator-raised, #2c2824);
+    }
+
+    button:disabled {
+        opacity: 0.48;
+        cursor: not-allowed;
+    }
+
+    button:focus-visible,
+    select:focus-visible {
+        outline: 3px solid var(--operator-amber, #faa739);
+        outline-offset: 2px;
+    }
+
+    button:not(:disabled):hover {
+        border-color: var(--operator-amber, #faa739);
+    }
+
+    button:not(:disabled):active {
+        transform: translateY(1px);
+    }
+
+    @media (min-width: 768px) {
+        .controller-app {
+            --pad-inline: 24px;
+            padding-top: 20px;
+            padding-bottom: max(18px, env(safe-area-inset-bottom));
+            gap: 16px;
         }
+
+        .preview-panel {
+            padding: 12px;
+        }
+
+        .preview-heading {
+            min-height: 34px;
+        }
+
+        .presenter-notes {
+            min-height: 96px;
+            max-height: min(180px, 24vh);
+            padding: 14px 18px;
+        }
+
+        .control-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 10px 12px;
+        }
+
+        .action-row {
+            flex: 1 1 auto;
+        }
+
+        .mode-row {
+            flex: 0 0 auto;
+            margin-top: 0;
+        }
+
+        .mode-row button {
+            min-width: 132px;
+        }
+    }
+
+    @media (max-width: 600px) {
+        .controller-app {
+            --pad-inline: 12px;
+            min-height: 560px;
+            gap: 8px;
+            padding-top: 8px;
+        }
+
+        .app-header {
+            min-height: 42px;
+        }
+
         .preview-grid {
             grid-template-columns: minmax(0, 1fr);
+            gap: 8px;
         }
+
+        .preview-panel {
+            padding: 8px;
+            border-radius: 10px;
+        }
+
+        .preview-heading {
+            min-height: 27px;
+        }
+
+        .preview-heading h2,
+        .presenter-notes h2 {
+            font-size: 0.92rem;
+        }
+
+        .preview-heading span {
+            font-size: 0.78rem;
+        }
+
         .presenter-notes {
+            flex: 0 1 auto;
             min-height: 76px;
-            max-height: 92px;
+            max-height: 120px;
+            padding: 10px 12px;
         }
-        .controller {
-            top: 82%;
-            height: min(38vw, 18vh, 160px);
-            width: min(38vw, 18vh, 160px);
+
+        .presenter-notes p {
+            font-size: 0.9rem;
         }
-        .toggles {
-            bottom: 12px;
+
+        .control-footer {
+            padding: 8px;
+            border-radius: 12px;
         }
-    }
-    @media only screen and (min-width: 620px) {
-        .pad {
-            height: 55vh;
-            /* width: 55vh; */
+
+        .action-row,
+        .mode-row {
+            gap: 8px;
         }
-    }
-    @media (max-height: 700px) {
-        .controller {
-            top: 76%;
-            height: min(34vw, 28vh, 260px);
-            width: min(34vw, 28vh, 260px);
+
+        .action {
+            min-height: 48px;
+            flex-direction: column;
+            gap: 1px;
+            padding: 4px 4px;
+            font-size: 0.76rem;
         }
-        .controller :global(svg) {
-            width: 2.5rem !important;
-            height: 2.5rem !important;
-            min-width: 2.5rem !important;
+
+        .action :global(svg) {
+            width: 18px !important;
+            height: 18px !important;
+            min-width: 18px !important;
         }
-        .draw {
-            top: 62%;
+
+        .mode-row button {
+            min-height: 44px;
+            flex: 1 1 0;
+            padding: 0 8px;
+            font-size: 0.82rem;
         }
-        .pad {
-            height: 40vh;
+
+        .draw-toolbar {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
         }
-        .toggles {
-            bottom: 20px;
-            height: 35px;
-            width: 80vw;
+
+        .draw-toolbar select {
+            min-width: 0;
+            width: 100%;
         }
-        .toggles button,
-        select {
-            padding: 5px;
-            font-size: 0.7em;
-        }
-        .toggles :global(svg) {
-            height: 1.5rem;
-            width: 1.5rem !important;
-            min-width: 1.5rem !important;
+
+        .utility-button {
+            padding: 0 9px;
+            font-size: 0.82rem;
         }
     }
 
-    /* (orientation: landscape) for wider devices */
-    @media (min-width: 600px) and (max-height: 700px) {
-        .controller {
-            height: min(30vw, 25vh, 240px);
-            width: min(30vw, 25vh, 240px);
+    @media (max-height: 680px) and (min-width: 601px) {
+        .controller-app {
+            min-height: 0;
+            padding-top: 8px;
+            padding-bottom: max(8px, env(safe-area-inset-bottom));
+            gap: 8px;
         }
-        .controller :global(svg) {
-            width: 3.5rem !important;
-            height: 3.5rem !important;
-            min-width: 3.5rem !important;
-        }
-        .pad {
-            height: 45vh;
-        }
-        .toggles {
-            width: 60vw;
-        }
-    }
 
-    @media (max-height: 299px) {
-        .controller {
-            top: 50%;
-            height: min(34vw, 48vh, 180px);
-            width: min(34vw, 48vh, 180px);
+        .preview-panel {
+            padding: 8px;
         }
-        .controller :global(svg) {
-            width: 3rem !important;
-            height: 3rem !important;
-            min-width: 3rem !important;
-        }
-        .draw {
-            top: 50%;
-        }
-    }
 
-    @media only screen and (min-width: 551px) {
         .presenter-notes {
-            min-height: 92px;
+            flex: 1 1 68px;
+            min-height: 68px;
+            max-height: none;
+            padding: 8px 12px;
+        }
+
+        .preview-panel :global(.preview-frame) {
+            width: min(100%, calc(50svh * 16 / 9));
+            margin-inline: auto;
+        }
+
+        .control-footer {
+            padding: 6px 8px;
+        }
+
+        .action,
+        .mode-row button {
+            min-height: 44px;
+        }
+
+        .mode-row {
+            margin-top: 0;
         }
     }
 
-    .quart {
-        position: absolute;
-        /* height: 50%; */
-        height: 100%;
-        width: 50%;
-        /* transition: all 0.4s; */
-    }
-    .quart:nth-child(1) {
-        top: 0;
-        left: 0;
-        border-inline-end: 5px solid var(--primary);
-    }
-    .quart:nth-child(1) :global(svg) {
-        transform: translate(-40%);
-    }
-    .quart:nth-child(2) {
-        top: 0;
-        left: 50%;
-        border-inline-start: 5px solid var(--primary);
-    }
-    .quart:nth-child(2) :global(svg) {
-        transform: translate(40%);
-    }
-    /* .quart:nth-child(3) {
-    top: 50%;
-    left: 0;
-  }
-  .quart:nth-child(4) {
-    top: 50%;
-    left: 50%;
-  } */
-    .center {
-        height: 40%;
-        width: 40%;
-        position: absolute;
-        top: 30%;
-        inset-inline-start: 30%;
-        border-radius: 50%;
-        text-align: center;
-        border: 10px solid var(--primary);
+    @media (max-height: 430px) and (min-width: 601px) {
+        .preview-heading {
+            min-height: 32px;
+        }
+
+        .preview-panel :global(.preview-frame) {
+            width: min(100%, calc(30svh * 16 / 9));
+        }
+
+        .presenter-notes {
+            min-height: 80px;
+        }
+
+        .presenter-notes p {
+            font-size: 0.88rem;
+            line-height: 1.3;
+        }
     }
 
-    button {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-
-        border: none;
-        cursor: pointer;
-        padding: 5px;
-        border-radius: 5px;
-        background-color: var(--primary-darkest);
-
-        transition: background-color 0.1s;
-    }
-    button:active {
-        background: var(--primary-lighter);
-    }
-
-    button.red {
-        background-color: var(--secondary);
+    @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+            scroll-behavior: auto !important;
+            transition-duration: 0.01ms !important;
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+        }
     }
 </style>

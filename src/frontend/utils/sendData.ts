@@ -2,6 +2,7 @@ import { get } from "svelte/store"
 import { CONTROLLER, REMOTE, STAGE } from "../../types/Channels"
 import { Main } from "../../types/IPC/Main"
 import type { ClientMessage, Clients } from "../../types/Socket"
+import type { RemoteMediaPlayRequest } from "../../types/remote/control"
 import { API_ACTIONS } from "../components/actions/api"
 import { checkWindowCapture } from "../components/helpers/output"
 import { connections, outLocked, remotePassword, shows } from "../stores"
@@ -154,16 +155,21 @@ async function fetchRemoteMediaThumbnail(msg: any, connectionId: string) {
 }
 
 async function playRemoteMedia(msg: any, connectionId: string) {
-    const requestId = msg.data?.requestId
-    const result = await requestMainResult(Main.REMOTE_MEDIA_RESOLVE, { connectionId, path: msg.data?.path })
+    const request = msg.data as RemoteMediaPlayRequest
+    const result = await requestMainResult(Main.REMOTE_MEDIA_RESOLVE, { connectionId, path: request?.path })
     if (result.status !== "success" || !isRemoteConnectionAuthorized(connectionId)) {
-        return { id: connectionId, channel: "MEDIA_PLAY_RESULT", data: { requestId, ok: false, code: mediaIPCErrorCode(result) } }
+        return { id: connectionId, channel: "MEDIA_PLAY_RESULT", data: { requestId: request?.requestId, ok: false, code: mediaIPCErrorCode(result) } }
     }
-    if (get(outLocked)) return { id: connectionId, channel: "MEDIA_PLAY_RESULT", data: { requestId, ok: false, code: "unavailable" } }
+    if (get(outLocked)) return { id: connectionId, channel: "MEDIA_PLAY_RESULT", data: { requestId: request?.requestId, ok: false, code: "unavailable" } }
 
-    const action = result.data.kind === "audio" ? API_ACTIONS.play_audio : API_ACTIONS.play_media
-    await action({ path: result.data.path })
-    return { id: connectionId, channel: "MEDIA_PLAY_RESULT", data: { requestId, ok: true } }
+    if (result.data.kind === "audio") await API_ACTIONS.play_audio({ path: result.data.path })
+    else {
+        const playbackData: { type: string; loop?: boolean; muted?: boolean } = { type: result.data.kind }
+        if (typeof request.loop === "boolean") playbackData.loop = request.loop
+        if (typeof request.muted === "boolean") playbackData.muted = request.muted
+        await API_ACTIONS.play_media({ path: result.data.path, data: playbackData })
+    }
+    return { id: connectionId, channel: "MEDIA_PLAY_RESULT", data: { requestId: request?.requestId, ok: true } }
 }
 
 function isRemoteConnectionAuthorized(connectionId: string | undefined): boolean {

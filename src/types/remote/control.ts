@@ -11,11 +11,35 @@ export interface RemoteMediaItem {
     modifiedAt: number
 }
 
+export const MAX_THUMBNAIL_BYTES = 8 * 1024 * 1024
+
+export interface RemoteMediaBreadcrumb {
+    path: string
+    name: string
+}
+
+export interface RemoteMediaSelection {
+    item: RemoteMediaItem
+    location: string
+    breadcrumbs: RemoteMediaBreadcrumb[]
+    currentPath: string
+    thumbnail: string
+    loop: boolean
+    muted: boolean
+}
+
 export interface RemoteMediaPageRequest {
     requestId: string
     path: string
     page: number
     cursor?: string
+}
+
+export interface RemoteMediaPlayRequest {
+    requestId: string
+    path: string
+    loop?: boolean
+    muted?: boolean
 }
 
 export interface RemoteMediaPageIPCRequest extends RemoteMediaPageRequest {

@@ -143,3 +143,4 @@ Full audit at `docs/superpowers/audits/2026-04-09-performance-audit.md` with pri
 ## Code Navigation
 
 Start with [`docs/agents/code-navigation.md`](docs/agents/code-navigation.md) for current IPC, Presentation Output, video controls/observations, media scans, PowerPoint imports, Serena/Graphify, and graph-refresh guidance. The repo's Serena config is `.serena/project.yml`; its selected memories are `project_overview` and `code_navigation`. On Serena, read `initial_instructions`, then load relevant memories with `list_memories` and `read_memory`.
+For Remote media or Controller presentation UI changes, use root [`PRODUCT.md`](PRODUCT.md) for the behavior contract and [`DESIGN.md`](DESIGN.md) for the visual authority and scope.

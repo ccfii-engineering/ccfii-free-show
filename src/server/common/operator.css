@@ -1,0 +1,44 @@
+:root {
+    --operator-canvas: #171513;
+    --operator-surface: #211e1b;
+    --operator-raised: #2c2824;
+    --operator-text: #f4f1ed;
+    --operator-crimson: #810e0e;
+    --operator-amber: #faa739;
+    --operator-crimson-strong: #9b2424;
+    --operator-on-amber: #211506;
+    --operator-preview: #070707;
+    --operator-muted: rgb(244 241 237 / 72%);
+    --operator-border: rgb(244 241 237 / 14%);
+    --operator-focus: var(--operator-amber);
+}
+
+.tabletMode {
+    --primary: var(--operator-surface);
+    --primary-lighter: var(--operator-raised);
+    --primary-darker: var(--operator-canvas);
+    --primary-darkest: var(--operator-canvas);
+    --text: var(--operator-text);
+    --textInvert: var(--operator-canvas);
+}
+
+::selection {
+    color: var(--operator-canvas);
+    background: var(--operator-amber);
+}
+
+:focus-visible {
+    outline: 2px solid var(--operator-focus);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

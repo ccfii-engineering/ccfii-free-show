@@ -14,7 +14,7 @@
 var urlsToPrefetch = ["/", "styles.css", "client.js", "icon.png", "ccfii-icon.png", "ccfii-logo.png", "index.html"]
 
 var cachePrefix = "freeshow-ccfii-"
-var version = cachePrefix + "1.0.2-"
+var version = cachePrefix + "1.0.3-"
 
 self.addEventListener("install", function (event) {
     console.log("WORKER: install event in progress.")

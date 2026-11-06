@@ -336,7 +336,9 @@
         "submit": "Submit",
         "password": "Password",
         "wrong_password": "Wrong password",
-        "quick_play": "Quick play"
+        "quick_play": "Quick play",
+        "control": "Control",
+        "back_to_shows": "Back to shows"
     },
     "error": {
         "no_show": "Could not find show",

@@ -96,3 +96,4 @@ All configs live under `config/`:
 ## Code Navigation
 
 For symbol lookups, cross-layer control/output flows, or navigation setup, start with [`docs/agents/code-navigation.md`](docs/agents/code-navigation.md).
+For Remote media or Controller presentation UI changes, also use root [`PRODUCT.md`](PRODUCT.md) for the behavior contract and [`DESIGN.md`](DESIGN.md) for the visual authority and scope.

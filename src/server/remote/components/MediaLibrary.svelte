@@ -1,18 +1,19 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
-    import type { RemoteMediaErrorCode, RemoteMediaItem, RemoteMediaPage } from "../../../types/remote/control"
+    import { MAX_THUMBNAIL_BYTES, type RemoteMediaBreadcrumb, type RemoteMediaErrorCode, type RemoteMediaItem, type RemoteMediaPage, type RemoteMediaSelection } from "../../../types/remote/control"
     import Icon from "../../common/components/Icon.svelte"
     import { onResponse, send } from "../util/socket"
-    import { isConnected } from "../util/stores"
+    import { active as activeContent, activeTab, isConnected } from "../util/stores"
 
     export let active = true
+    export let tablet = false
 
     type PageRequest = { path: string; page: number; generation: number }
     type ThumbnailRequest = { path: string; generation: number }
-    const MAX_THUMBNAIL_BYTES = 8 * 1024 * 1024
+    type Breadcrumb = RemoteMediaBreadcrumb
 
     let currentPath = ""
-    let parentPath = ""
+    let breadcrumbs: Breadcrumb[] = [{ path: "", name: "Media" }]
     let currentPage = 0
     let pages = new Map<number, RemoteMediaPage>()
     let loading = false
@@ -28,11 +29,8 @@
     let requestedThumbnails = new Set<string>()
     let pendingThumbnails = new Map<string, ThumbnailRequest>()
     let thumbnailBytes = 0
-    let pendingPlay = new Map<string, { path: string; generation: number }>()
-    let playingPath = ""
-    let resultError = ""
-
     $: pageData = pages.get(currentPage)
+    $: selectedPath = $activeContent?.data?.remoteMedia?.item?.path || ""
 
     function makeRequestId() {
         requestCounter += 1
@@ -53,19 +51,21 @@
         thumbnailBytes = 0
     }
 
-    function openFolder(path: string) {
+    function openFolder(path: string, name?: string) {
         cancelBrowse()
         cancelThumbnails()
         generation += 1
         currentPath = path
-        parentPath = ""
+        if (!path) breadcrumbs = [{ path: "", name: "Media" }]
+        else {
+            const existing = breadcrumbs.findIndex((breadcrumb) => breadcrumb.path === path)
+            if (existing >= 0) breadcrumbs = breadcrumbs.slice(0, existing + 1)
+            else breadcrumbs = [...breadcrumbs, { path, name: name || displayName(path) }]
+        }
         currentPage = 0
         pages = new Map()
         errorMessage = ""
         actionMessage = ""
-        resultError = ""
-        pendingPlay.clear()
-        playingPath = ""
         requestPage(0)
     }
 
@@ -78,7 +78,11 @@
             return
         }
 
-        const requestId = makeRequestId()
+        const requestId = page === 0 ? makeRequestId() : lastBrowseRequestId
+        if (!requestId) {
+            errorMessage = "This folder listing expired. Restart this folder to continue."
+            return
+        }
         pendingBrowse.set(requestId, { path: currentPath, page, generation })
         lastBrowseRequestId = requestId
         loading = true
@@ -92,8 +96,6 @@
             cancelThumbnails()
             currentPage = page
             errorMessage = ""
-            pendingPlay.clear()
-            playingPath = ""
             return
         }
         requestPage(page)
@@ -107,12 +109,17 @@
     function handlePage(data: RemoteMediaPage) {
         const request = pendingBrowse.get(data.requestId)
         if (!request) return
+        if (request.generation !== generation || request.path !== currentPath) {
+            pendingBrowse.delete(data.requestId)
+            return
+        }
+        // Pages in one cursor session share a request ID. Keep the current
+        // operation pending if a late reply for a different page arrives.
+        if (request.path !== data.path || request.page !== data.page) return
         pendingBrowse.delete(data.requestId)
-        if (request.generation !== generation || request.path !== currentPath || request.page !== data.page) return
 
         loading = false
         lastBrowseRequestId = data.requestId
-        parentPath = data.parentPath || ""
         const nextPages = new Map(pages)
         nextPages.set(data.page, data)
         while (nextPages.size > 6) nextPages.delete(Math.min(...nextPages.keys()))
@@ -157,14 +164,6 @@
             if (data.code === "thumbnail_busy") actionMessage = describeError(data.code)
             return
         }
-
-        if (pendingPlay.has(data.requestId)) {
-            const request = pendingPlay.get(data.requestId)!
-            pendingPlay.delete(data.requestId)
-            if (request.generation !== generation) return
-            playingPath = ""
-            resultError = describeError(data.code)
-        }
     }
 
     function queueThumbnail(path: string) {
@@ -204,24 +203,31 @@
         return { destroy: () => observer.disconnect() }
     }
 
-    function play(item: RemoteMediaItem) {
-        if (playingPath) return
-        const requestId = makeRequestId()
-        pendingPlay.set(requestId, { path: item.path, generation })
-        playingPath = item.path
-        resultError = ""
-        actionMessage = ""
-        send("MEDIA_PLAY", { requestId, path: item.path })
+    function selectMedia(item: RemoteMediaItem) {
+        if (item.kind === "folder") return
+        const previous = $activeContent?.data?.remoteMedia as RemoteMediaSelection | undefined
+        const sameItem = previous?.item?.path === item.path
+        const selection: RemoteMediaSelection = {
+            item,
+            location: breadcrumbs.map((breadcrumb) => breadcrumb.name).join(" / "),
+            breadcrumbs,
+            currentPath,
+            thumbnail: thumbnails[item.path] || "",
+            loop: sameItem ? previous.loop : false,
+            muted: sameItem ? previous.muted : false
+        }
+        activeContent.set({
+            id: item.path,
+            type: item.kind,
+            name: item.name,
+            data: { remoteMedia: selection }
+        })
+        if (!tablet) activeTab.set("show")
     }
 
-    function handlePlay(data: { requestId: string; ok: boolean }) {
-        const request = pendingPlay.get(data.requestId)
-        if (!request) return
-        pendingPlay.delete(data.requestId)
-        if (request.generation !== generation) return
-        playingPath = ""
-        if (!data.ok) resultError = "This media could not be started."
-        else actionMessage = "Sent to the output."
+    function openBreadcrumb(index: number) {
+        const breadcrumb = breadcrumbs[index]
+        if (breadcrumb) openFolder(breadcrumb.path)
     }
 
     function formatSize(size: number) {
@@ -232,7 +238,7 @@
     }
 
     function displayName(path: string) {
-        return path.split(/[\\/]/).filter(Boolean).pop() || "Media roots"
+        return path.split(/[\\/]/).filter(Boolean).pop() || "Media"
     }
 
     const unsubscribers: (() => void)[] = []
@@ -259,11 +265,15 @@
             })
         )
         unsubscribers.push(onResponse("MEDIA_ERROR", handleError))
-        unsubscribers.push(onResponse("MEDIA_PLAY_RESULT", handlePlay))
     })
 
     $: if (active && $isConnected && !started) {
         started = true
+        const remoteMedia = $activeContent?.data?.remoteMedia as RemoteMediaSelection | undefined
+        if (remoteMedia?.currentPath && Array.isArray(remoteMedia.breadcrumbs)) {
+            currentPath = remoteMedia.currentPath
+            breadcrumbs = remoteMedia.breadcrumbs
+        }
         openFolder(currentPath)
     }
 
@@ -273,8 +283,6 @@
         cancelBrowse()
         cancelThumbnails()
         if (!$isConnected) pendingThumbnails.clear()
-        pendingPlay.clear()
-        playingPath = ""
     }
 
     onDestroy(() => {
@@ -286,26 +294,26 @@
 
 <section class="media-library" aria-label="Media library">
     <header class="library-header">
-        <div class="location">
-            {#if currentPath}
-                <button class="back-button" type="button" on:click={() => openFolder(parentPath)} disabled={loading} aria-label="Go to parent folder" title="Go to parent folder">
-                    <Icon id="back" size={1.25} />
-                </button>
-            {/if}
-            <h2>{displayName(currentPath)}</h2>
-            {#if currentPath}
-                <button class="roots-button" type="button" on:click={() => openFolder("")} disabled={loading}>Media roots</button>
-            {/if}
-        </div>
+        <h2>Media</h2>
+        {#if !$isConnected}<span class="connection-state">Offline</span>{/if}
     </header>
 
-    {#if actionMessage || resultError}
-        <p class="message" role="status">{resultError || actionMessage}</p>
+    <nav class="breadcrumbs" aria-label="Media location">
+        {#each breadcrumbs as breadcrumb, index (breadcrumb.path)}
+            {#if index > 0}<span class="crumb-separator" aria-hidden="true">/</span>{/if}
+            <button type="button" on:click={() => openBreadcrumb(index)} disabled={loading || index === breadcrumbs.length - 1} aria-current={index === breadcrumbs.length - 1 ? "location" : undefined}>
+                {breadcrumb.name}
+            </button>
+        {/each}
+    </nav>
+
+    {#if actionMessage}
+        <p class="message" role="status">{actionMessage}</p>
     {/if}
     {#if errorMessage}
         <div class="error-state" role="alert">
             <p>{errorMessage}</p>
-            <button type="button" on:click={() => requestPage(currentPage)} disabled={loading}>Try again</button>
+            <button type="button" on:click={() => requestPage(currentPage)} disabled={loading || !$isConnected}>Try again</button>
         </div>
     {/if}
 
@@ -315,7 +323,7 @@
         {:else if pageData?.items.length}
             <div class="media-list">
                 {#each pageData.items as item (item.path)}
-                    <button class="media-entry" class:folder={item.kind === "folder"} type="button" use:observeMedia={item} on:click={() => (item.kind === "folder" ? openFolder(item.path) : play(item))} disabled={loading || (!!playingPath && playingPath !== item.path)}>
+                    <button class="media-entry" class:folder={item.kind === "folder"} class:selected={selectedPath === item.path} type="button" use:observeMedia={item} on:click={() => (item.kind === "folder" ? openFolder(item.path, item.name) : selectMedia(item))} disabled={loading} aria-label={item.kind === "folder" ? `Open folder ${item.name}` : `Preview ${item.name}`} aria-pressed={item.kind !== "folder" && selectedPath === item.path}>
                         <span class="media-thumb">
                             {#if thumbnails[item.path]}
                                 <img src={thumbnails[item.path]} alt="" loading="lazy" />
@@ -330,13 +338,15 @@
                                 {#if item.size > 0}<span aria-hidden="true"> · </span>{formatSize(item.size)}{/if}</span
                             >
                         </span>
-                        <span class="entry-action" aria-hidden="true">
+                        <span class="entry-action">
                             {#if item.kind === "folder"}
                                 <Icon id="next" size={1.2} />
-                            {:else if playingPath === item.path}
-                                <span class="spinner"></span>
+                                <span>Open</span>
+                            {:else if selectedPath === item.path}
+                                <Icon id="check" size={1.1} />
+                                <span>Previewing</span>
                             {:else}
-                                <Icon id="play" size={1.2} />
+                                <span>Preview</span>
                             {/if}
                         </span>
                     </button>
@@ -347,25 +357,25 @@
                 {#if pageData.hasMore}
                     No supported media files on this page. Continue to scan the folder.
                 {:else if currentPath}
-                    This folder is empty.
+                    This folder has no supported media files.
                 {:else}
-                    No media folders are configured.
+                    No media folders are available.
                 {/if}
             </p>
         {:else if !$isConnected}
             <p class="empty-state">Connect to the presentation computer to browse media.</p>
         {:else if !loading && !errorMessage}
-            <p class="empty-state">No media folders are configured.</p>
+            <p class="empty-state">No media folders are available.</p>
         {/if}
     </div>
 
     {#if pageData}
         <footer class="page-controls">
-            <button type="button" on:click={() => goToPage(currentPage - 1)} disabled={loading || currentPage === 0}>
+            <button type="button" on:click={() => goToPage(currentPage - 1)} disabled={loading || currentPage === 0 || !$isConnected}>
                 <Icon id="previous" size={1.1} /> Previous
             </button>
             <span>Page {currentPage + 1}</span>
-            <button type="button" on:click={() => goToPage(currentPage + 1)} disabled={loading || !pageData.hasMore}>
+            <button type="button" on:click={() => goToPage(currentPage + 1)} disabled={loading || !pageData.hasMore || !$isConnected}>
                 Next <Icon id="next" size={1.1} />
             </button>
         </footer>
@@ -378,8 +388,8 @@
         flex-direction: column;
         flex: 1;
         min-height: 0;
-        background: var(--primary-darkest);
-        color: var(--text);
+        color: var(--operator-text);
+        background: var(--operator-canvas);
     }
 
     .library-header {
@@ -387,63 +397,69 @@
         align-items: center;
         justify-content: space-between;
         gap: 12px;
-        padding: 12px 14px;
-        background: var(--primary-darker);
-    }
-
-    .location {
-        display: flex;
-        align-items: center;
-        min-width: 0;
-        gap: 8px;
+        padding: 12px 16px 8px;
     }
 
     h2 {
-        overflow: hidden;
         margin: 0;
-        font-size: 1.05rem;
+        font-size: 1.2rem;
         font-weight: 650;
-        text-overflow: ellipsis;
-        white-space: nowrap;
     }
 
-    button {
+    .media-library button {
         font: inherit;
-    }
-
-    button {
-        color: var(--text);
-    }
-
-    .back-button,
-    .roots-button,
-    .page-controls button,
-    .error-state button {
-        border: 1px solid var(--primary-lighter);
-        border-radius: 7px;
-        background: var(--primary);
-        cursor: pointer;
-    }
-
-    .back-button,
-    .roots-button {
-        min-height: 36px;
-        padding: 0 9px;
-    }
-
-    .back-button {
-        display: grid;
-        place-items: center;
-        width: 36px;
-        padding: 0;
+        color: inherit;
     }
 
     :global(.media-library button:focus-visible) {
-        outline: 2px solid var(--accent);
+        outline: 2px solid var(--operator-focus);
         outline-offset: 2px;
     }
 
-    button:disabled {
+    .connection-state {
+        padding: 4px 8px;
+        border-radius: 999px;
+        color: var(--operator-text);
+        background: var(--operator-raised);
+        font-size: 0.82rem;
+    }
+
+    .breadcrumbs {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 2px 4px;
+        padding: 0 12px 10px;
+    }
+
+    .breadcrumbs button {
+        min-height: 40px;
+        padding: 4px 6px;
+        border: 0;
+        border-radius: 6px;
+        color: var(--operator-muted);
+        background: transparent;
+        font-size: 0.88rem;
+        text-align: left;
+        overflow-wrap: anywhere;
+    }
+
+    .breadcrumbs button[aria-current="location"] {
+        color: var(--operator-text);
+        font-weight: 600;
+    }
+
+    .breadcrumbs button:not(:disabled):hover {
+        background: var(--operator-raised);
+        color: var(--operator-text);
+    }
+
+    .crumb-separator {
+        color: var(--operator-muted);
+        font-size: 0.85rem;
+    }
+
+    .media-library button:disabled {
         cursor: default;
         opacity: 0.52;
     }
@@ -453,51 +469,53 @@
         flex: 1;
         min-height: 0;
         overflow: auto;
+        overscroll-behavior: contain;
     }
 
     .media-list {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
         align-content: start;
         gap: 8px;
         width: 100%;
-        padding: 12px;
+        padding: 4px 12px 16px;
+        box-sizing: border-box;
     }
 
     .media-entry {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 12px;
         min-width: 0;
-        min-height: 68px;
-        padding: 8px 10px;
-        border: 1px solid var(--primary-lighter);
-        border-radius: 8px;
-        color: var(--text);
+        min-height: 72px;
+        padding: 8px 12px;
+        border: 1px solid var(--operator-border);
+        border-radius: 10px;
+        color: var(--operator-text);
         text-align: left;
-        background: var(--primary-darkest);
+        background: var(--operator-surface);
         cursor: pointer;
     }
 
     .media-entry:hover:not(:disabled) {
-        border-color: var(--accent);
-        background: var(--hover);
+        background: var(--operator-raised);
     }
 
-    .media-entry.folder {
-        background: var(--primary-darker);
+    .media-entry.selected {
+        border-color: var(--operator-amber);
+        background: var(--operator-raised);
     }
 
     .media-thumb {
         display: grid;
-        flex: 0 0 52px;
-        width: 52px;
-        height: 48px;
+        flex: 0 0 56px;
+        width: 56px;
+        height: 52px;
         overflow: hidden;
         place-items: center;
-        border-radius: 5px;
-        color: var(--accent);
-        background: var(--primary);
+        border-radius: 6px;
+        color: var(--operator-amber);
+        background: var(--operator-raised);
     }
 
     .media-thumb img {
@@ -522,34 +540,43 @@
     }
 
     .entry-detail {
-        color: #c5b5b5;
-        font-size: 0.78rem;
+        color: var(--operator-muted);
+        font-size: 0.875rem;
         text-transform: capitalize;
     }
 
     .entry-action {
-        display: grid;
-        flex: 0 0 26px;
-        place-items: center;
-        color: var(--accent);
+        display: flex;
+        flex: 0 0 auto;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 5px;
+        min-width: 70px;
+        color: var(--operator-muted);
+        font-size: 0.82rem;
+        text-align: right;
+    }
+
+    .media-entry.selected .entry-action {
+        color: var(--operator-amber);
     }
 
     .empty-state {
         width: 100%;
         align-self: center;
         margin: 0;
-        padding: 28px 16px;
-        color: #c5b5b5;
+        padding: 32px 20px;
+        color: var(--operator-muted);
         text-align: center;
     }
 
     .message,
     .error-state {
         margin: 0;
-        padding: 9px 14px;
-        color: var(--text);
-        background: var(--primary);
-        font-size: 0.88rem;
+        padding: 10px 16px;
+        color: var(--operator-text);
+        background: var(--operator-surface);
+        font-size: 0.9rem;
     }
 
     .error-state {
@@ -557,8 +584,8 @@
         align-items: center;
         justify-content: space-between;
         gap: 12px;
-        color: #fff0e2;
-        background: #5f2727;
+        color: var(--operator-text);
+        background: var(--operator-crimson);
     }
 
     .error-state p {
@@ -567,49 +594,59 @@
 
     .error-state button {
         flex: 0 0 auto;
-        padding: 6px 10px;
+        min-height: 44px;
+        padding: 0 12px;
+        border: 1px solid var(--operator-border);
+        border-radius: 8px;
+        background: var(--operator-raised);
     }
 
     .page-controls {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        min-height: 48px;
-        padding: 6px 12px;
-        border-top: 1px solid var(--primary-lighter);
-        background: var(--primary-darker);
-        font-size: 0.85rem;
+        min-height: 56px;
+        padding: 6px 12px max(6px, env(safe-area-inset-bottom));
+        border-top: 1px solid var(--operator-border);
+        background: var(--operator-surface);
+        font-size: 0.9rem;
         font-variant-numeric: tabular-nums;
     }
 
     .page-controls button {
         display: flex;
         align-items: center;
-        gap: 5px;
-        min-height: 34px;
+        gap: 6px;
+        min-width: 104px;
+        min-height: 44px;
+        justify-content: center;
         padding: 0 10px;
-    }
-
-    .spinner {
-        width: 15px;
-        height: 15px;
-        border: 2px solid var(--primary-lighter);
-        border-top-color: var(--accent);
-        border-radius: 50%;
-        animation: spin 0.7s linear infinite;
-    }
-
-    @keyframes spin {
-        to {
-            transform: rotate(360deg);
-        }
+        border: 1px solid var(--operator-border);
+        border-radius: 8px;
+        background: var(--operator-raised);
+        cursor: pointer;
     }
 
     @media (max-width: 560px) {
+        .breadcrumbs {
+            gap: 0 2px;
+            padding-inline: 10px;
+        }
+
         .media-list {
             grid-template-columns: 1fr;
-            gap: 6px;
-            padding: 8px;
+            gap: 8px;
+            padding: 4px 10px 12px;
+        }
+
+        .media-entry {
+            min-height: 68px;
+            gap: 10px;
+            padding-inline: 10px;
+        }
+
+        .entry-action {
+            min-width: 66px;
         }
     }
 </style>

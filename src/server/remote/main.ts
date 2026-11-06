@@ -1,3 +1,4 @@
+import "../common/operator.css"
 import App from "./App.svelte"
 
 const app = new App({

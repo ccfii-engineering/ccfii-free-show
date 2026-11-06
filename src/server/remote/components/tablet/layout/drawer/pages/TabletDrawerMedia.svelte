@@ -4,4 +4,4 @@
     export let active = false
 </script>
 
-<MediaLibrary {active} />
+<MediaLibrary {active} tablet />
