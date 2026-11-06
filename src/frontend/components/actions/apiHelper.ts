@@ -6,6 +6,7 @@ import type { DropData, Selected, Variable } from "../../../types/Main"
 import { clearAudio } from "../../audio/audioFading"
 import { AudioPlayer } from "../../audio/audioPlayer"
 import { AudioPlaylist } from "../../audio/audioPlaylist"
+import { updateOutputs } from "../../outputState/outputs.svelte"
 import { activeDrawerTab, activeEdit, activePage, activeProject, activeShow, activeTimers, audioChannelsData, audioPlaylists, draw, drawSettings, drawTool, folders, groupNumbers, groups, media, openScripture, outLocked, outputs, overlays, pdfImports, playingAudio, playingMetronome, projects, refreshEditSlide, selected, shows, showsCache, sortedShowsList, special, styles, timers, variables } from "../../stores"
 import { newToast } from "../../utils/common"
 import { send } from "../../utils/request"
@@ -290,7 +291,7 @@ export function toggleLock(data: API_output_lock) {
 }
 // similar to PreviewOutputs.svelte
 function toggleOutputLock(outputId: string, value: boolean) {
-    outputs.update((a) => {
+    updateOutputs((a) => {
         if (!a[outputId]?.enabled) return a
 
         a[outputId].active = value

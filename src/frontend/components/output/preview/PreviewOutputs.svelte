@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { ClickEvent } from "../../../../types/Main"
     import type { Output } from "../../../../types/Output"
+    import { updateOutputs } from "../../../outputState/outputs.svelte"
     import { dictionary, ndiData, outputs, outputState } from "../../../stores"
     import { newToast } from "../../../utils/common"
     import { translateText } from "../../../utils/language"
@@ -17,7 +18,7 @@
     function toggleOutput(e: ClickEvent, id: string) {
         if (outs.length <= 1) return
 
-        outputs.update((a) => {
+        updateOutputs((a) => {
             if (e.detail.ctrl) {
                 let newState = false
                 let getAllActive = Object.values(a).filter((a) => !a.stageOutput && a.active)

@@ -3,6 +3,7 @@
     import { OUTPUT } from "../../../types/Channels"
     import { Main } from "../../../types/IPC/Main"
     import { requestMain } from "../../IPC/main"
+    import { updateOutputs } from "../../outputState/outputs.svelte"
     import { activePopup, alertMessage, currentOutputSettings, outputs, styles } from "../../stores"
     import { triggerClickOnEnterSpace } from "../../utils/clickable"
     import { send } from "../../utils/request"
@@ -34,7 +35,7 @@
     $: if (!currentScreen.screen && screens.length) {
         let match = screens.find((screen) => JSON.stringify(screen.bounds) === JSON.stringify(currentScreen.bounds))
         if (match?.id) {
-            outputs.update((a: any) => {
+            updateOutputs((a: any) => {
                 a[screenId!].screen = match.id.toString()
                 return a
             })
@@ -116,7 +117,7 @@
         let alreadySelected = $outputs[screenId]?.screen === e.detail.id.toString()
 
         let bounds = e.detail.bounds
-        outputs.update((a) => {
+        updateOutputs((a) => {
             if (!a[screenId]) return a
 
             a[screenId].bounds = { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }
@@ -143,7 +144,7 @@
     function lockScreen() {
         if (!screenId) return
 
-        outputs.update((a) => {
+        updateOutputs((a) => {
             if (!a[screenId]) return a
 
             a[screenId].boundsLocked = !a[screenId].boundsLocked
@@ -162,7 +163,7 @@
     function updateCropping(value: string | number, side: string) {
         if (!screenId) return
 
-        outputs.update((a) => {
+        updateOutputs((a) => {
             if (!a[screenId].cropping) {
                 if (currentScreen.style && $styles[currentScreen.style]?.cropping) a[screenId].cropping = clone($styles[currentScreen.style].cropping)
                 else a[screenId].cropping = { top: 0, right: 0, bottom: 0, left: 0 }
@@ -185,7 +186,7 @@
     function updateBlending(value: string | number, side: string) {
         if (!screenId) return
 
-        outputs.update((a) => {
+        updateOutputs((a) => {
             if (!a[screenId].blending) a[screenId].blending = { left: 0, right: 0, rotate: 90, opacity: 50, centered: false, offset: 0 }
             a[screenId].blending![side] = Number(value)
             return a

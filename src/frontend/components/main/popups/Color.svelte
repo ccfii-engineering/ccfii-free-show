@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte"
+    import { updateOutputs } from "../../../outputState/outputs.svelte"
     import { activePopup, activeProject, activeShow, audioRouting, editingProjectTemplate, effects, globalTags, outputs, overlays, profiles, projects, projectTemplates, selected, showsCache, templates } from "../../../stores"
     import { history } from "../../helpers/history"
     import { getLayoutRef } from "../../helpers/show"
@@ -65,7 +66,7 @@
             })
         },
         output: () => {
-            outputs.update((a) => {
+            updateOutputs((a) => {
                 selection.data.forEach(({ id }) => {
                     a[id].color = value
                 })

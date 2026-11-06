@@ -9,6 +9,7 @@ import { getOutputLineWindow, getRevealLineWindow } from "../../../common/output
 import { AudioAnalyser } from "../../audio/audioAnalyser"
 import { fadeinAllPlayingAudio, fadeoutAllPlayingAudio } from "../../audio/audioFading"
 import { requestMain, sendMain } from "../../IPC/main"
+import { updateOutputs } from "../../outputState/outputs.svelte"
 import { actions, activeProject, activeRename, activeTimers, allOutputs, categories, connections, currentOutputSettings, customMessageCredits, disabledServers, effects, lockedOverlays, media, outputDisplay, outputs, outputSlideCache, outputState, overlays, overlayTimers, playingVideos, projects, scriptures, scriptureSettings, serverData, showsCache, special, stageShows, styles, templates, theme, themes, transitionData, usageLog } from "../../stores"
 import { trackScriptureUsage } from "../../utils/analytics"
 import { isMainWindow, isOutputWindow, newToast } from "../../utils/common"
@@ -93,7 +94,7 @@ export function setOutput(type: string, data: any, toggle = false, outputId = ""
         if (groupId) customActionActivation("group_start", groupId)
     }
 
-    outputs.update((a) => {
+    updateOutputs((a) => {
         const bindings = data?.bindings || (data?.layout ? ref[data.index]?.data?.bindings || [] : [])
         const allOutputIds = bindings.length ? bindings : getActiveOutputs(a, true, false, true)
         const outs = outputId ? [outputId] : allOutputIds
@@ -349,7 +350,7 @@ export function getAllEnabledOutputs() {
     const outputsList = getAllOutputs()
     const enabled = outputsList.filter((a) => a.enabled)
     if (!enabled.length && isMainWindow()) {
-        outputs.update((a) => updateMappedEntries(a, [Object.keys(a)[0]], (entry) => ({ ...entry, enabled: true })))
+        updateOutputs((a) => updateMappedEntries(a, [Object.keys(a)[0]], (entry) => ({ ...entry, enabled: true })))
         return [outputsList[0]]
     }
     return enabled
@@ -377,7 +378,7 @@ export function getAllActiveOutputs() {
     const outputsList = getAllNormalOutputs()
     const active = outputsList.filter((a) => a.active)
     if (!active.length && isMainWindow()) {
-        outputs.update((a) => updateMappedEntries(a, [Object.keys(a)[0]], (entry) => ({ ...entry, active: true })))
+        updateOutputs((a) => updateMappedEntries(a, [Object.keys(a)[0]], (entry) => ({ ...entry, active: true })))
         return [outputsList[0]]
     }
     return active
@@ -455,7 +456,7 @@ export function allOutputsHasStyleTemplate(isScripture: boolean = false) {
 }
 
 export function refreshOut(refresh = true) {
-    outputs.update((a) =>
+    updateOutputs((a) =>
         updateMappedEntries(
             a,
             getAllActiveOutputs().map(({ id }) => id),
@@ -697,7 +698,7 @@ export const defaultOutput: Output = {
 export function addOutput(onlyFirst = false, styleId = "") {
     if (onlyFirst && get(outputs).length) return
 
-    outputs.update((output) => {
+    updateOutputs((output) => {
         const id = uid()
         if (get(themes)[get(theme)]?.colors?.secondary) defaultOutput.color = get(themes)[get(theme)].colors.secondary!
         output[id] = clone(defaultOutput)
@@ -725,7 +726,7 @@ export function enableStageOutput(options: any = {}) {
     const bounds = getFirstActiveOutput()?.bounds || { x: 0, y: 0, width: 100, height: 100 }
     const id = uid()
 
-    outputs.update((a) => {
+    updateOutputs((a) => {
         a[id] = {
             enabled: true,
             active: true,
@@ -751,7 +752,7 @@ export function changeStageOutputLayout(data: API_stage_output_layout) {
 
     const outputIds = data.outputId ? [data.outputId] : Object.keys(get(outputs))
 
-    outputs.update((a) => {
+    updateOutputs((a) => {
         return updateMappedEntries(a, outputIds, (entry) => {
             if (!entry?.stageOutput) return entry
             return { ...entry, stageOutput: data.stageLayoutId }
@@ -762,7 +763,7 @@ export function changeStageOutputLayout(data: API_stage_output_layout) {
 export function deleteOutput(outputId: string) {
     if (Object.keys(get(outputs)).length <= 1) return
 
-    outputs.update((a) => {
+    updateOutputs((a) => {
         send(OUTPUT, ["REMOVE"], { id: outputId })
         delete a[outputId]
 
@@ -1130,7 +1131,7 @@ export function updateOutputWebrtcData(outputId: string, key: string, value: any
     if (!output) return null
     const newData = { ...(output.webrtcData || {}), [key]: value }
     if (key === "streaming" && (!output.webrtc || !output.webrtcData?.url)) return null
-    outputs.update((allOutputs: any) => {
+    updateOutputs((allOutputs: any) => {
         if (allOutputs[outputId]) allOutputs[outputId].webrtcData = newData
         return allOutputs
     })
@@ -1155,7 +1156,7 @@ export function updateOutputRtmpData(outputId: string, key: string, value: any) 
     if (!output) return null
     const newData = { ...(output.rtmpData || {}), [key]: value }
     if (key === "streaming" && (!output.rtmp || !hasStreamableDestination(newData))) return null
-    outputs.update((allOutputs: any) => {
+    updateOutputs((allOutputs: any) => {
         if (allOutputs[outputId]) allOutputs[outputId].rtmpData = newData
         return allOutputs
     })

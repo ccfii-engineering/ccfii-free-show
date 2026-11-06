@@ -10,6 +10,7 @@ import { markItemsAsPlayed } from "../../converters/project"
 import { sendMain } from "../../IPC/main"
 import { cameraManager } from "../../media/cameraManager"
 import { changeSlideGroups, mergeSlides, mergeTextboxes, splitItemInTwo, VIRTUAL_BREAK_CHAR } from "../../show/slides"
+import { updateOutputs } from "../../outputState/outputs.svelte"
 import {
     $,
     actions,
@@ -844,7 +845,7 @@ const clickActions = {
         const outputId = obj.contextElem?.id || ""
         toggleOutputEnabled.set(true) // disable preview output transitions (to prevent visual svelte bug)
         setTimeout(() => {
-            outputs.update((output) => {
+            updateOutputs((output) => {
                 // should match the outputs list in MultiOutputs.svelte
                 const showingOutputsList = Object.values(output).filter((a) => a.enabled && !a.hideFromPreview)
                 const newValue = !output[outputId].hideFromPreview
@@ -1300,7 +1301,7 @@ const clickActions = {
             popupData.set({
                 active: output.stageOutput,
                 trigger: (stageId: string) => {
-                    outputs.update((a) => {
+                    updateOutputs((a) => {
                         a[outputId].stageOutput = stageId
                         return a
                     })
@@ -1317,7 +1318,7 @@ const clickActions = {
         popupData.set({
             active: output.style,
             trigger: (styleId: string) => {
-                outputs.update((a) => {
+                updateOutputs((a) => {
                     a[outputId].style = styleId
                     return a
                 })

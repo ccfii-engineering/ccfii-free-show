@@ -119,6 +119,17 @@ describe("createRuneRecordStore", () => {
         stop()
     })
 
+    it("select(id) does not lose a write that lands before the first effect run", () => {
+        const store = seeded()
+        const run = vi.fn()
+        const stop = store.select("a").subscribe(run)
+        store.patch("a", { name: "early" })
+        flushSync()
+        expect(run).toHaveBeenLastCalledWith(expect.objectContaining({ name: "early" }))
+        expect(run).toHaveBeenCalledTimes(2)
+        stop()
+    })
+
     it("select(id) reports undefined after removal", () => {
         const store = seeded()
         const run = vi.fn()

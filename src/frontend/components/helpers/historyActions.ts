@@ -583,7 +583,7 @@ export const historyActions = ({ obj, undo = null }: any) => {
                     // TODO: not working when child outputted and added
                     // TODO: drag groups! -- ?????
                     // console.log(count)
-                    // outputs.update((a) => {
+                    // updateOutputs((a) => {
                     //   Object.keys(a).forEach((id: string) => {
                     //     let currentIndex = a[id].out?.slide?.index
                     //     console.log(currentIndex)

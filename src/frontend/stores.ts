@@ -21,6 +21,7 @@ import type { BibleCategories, Categories, DrawerTabs, EditMode, SettingsTabs, T
 import type { AudioChannel, AudioChannelData, AudioStream, Playlist } from "./../types/Audio"
 import type { OutputStateHealth } from "../types/OutputState"
 import type { Outputs, RtmpStatus } from "./../types/Output"
+import { writableOutputs } from "./outputState/outputs.svelte"
 import type { DrawerTabIds } from "./../types/Tabs"
 import type { EQBand, EqualizerConfig } from "./audio/audioEqualizer"
 import type { AudioData } from "./audio/audioPlayer"
@@ -385,8 +386,8 @@ export const themes: Writable<{ [key: string]: Themes }> = writable({}) // {defa
 // STYLES
 export const styles: Writable<{ [key: string]: Styles }> = writable({}) // {}
 
-// OUTPUTS
-export const outputs: Writable<Outputs> = writable({}) // {default}
+// OUTPUTS: state lives in the outputs domain module (read-only store here, writes go through its functions)
+export { outputs } from "./outputState/outputs.svelte"
 export const outLocked: Writable<boolean> = writable(false) // false
 
 // PROFILES
@@ -504,7 +505,7 @@ export const $ = {
     splitLines,
     theme,
     themes,
-    outputs,
+    outputs: writableOutputs,
     styles,
     customMetadata,
     customMessageCredits,

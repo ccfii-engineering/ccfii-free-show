@@ -126,15 +126,15 @@ export function createRuneRecordStore<T>(initial: RecordOf<T> = {}): RuneRecordS
         select(id) {
             return {
                 subscribe(run) {
-                    run(record[id])
-                    let initialRun = true
+                    let last: T | undefined = record[id]
+                    run(last)
+                    // the effect's first run happens after subscribe returns; comparing with `last` keeps a write that lands
+                    // in between from being swallowed, and drops runs where the value did not change
                     return $effect.root(() => {
                         $effect(() => {
                             const value = entries.get(id)
-                            if (initialRun) {
-                                initialRun = false
-                                return
-                            }
+                            if (value === last) return
+                            last = value
                             run(value)
                         })
                     })

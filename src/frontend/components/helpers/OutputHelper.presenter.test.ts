@@ -18,7 +18,8 @@ vi.mock("./showActions", () => ({
 vi.mock("../actions/actions", () => ({ runActionId: vi.fn() }))
 
 import { OutputHelper } from "./OutputHelper"
-import { activeFocus, activeProject, activeShow, focusMode, outLocked, outputs, outputSlideCache, projects, showsCache, special, styles } from "../../stores"
+import { setOutputs, updateOutputs } from "../../outputState/outputs.svelte"
+import { activeFocus, activeProject, activeShow, focusMode, outLocked, outputSlideCache, projects, showsCache, special, styles } from "../../stores"
 
 function show(id: string) {
     return {
@@ -41,7 +42,7 @@ describe("presenter next follows OutputHelper navigation", () => {
         mocks.outputLines = 0
         mocks.slideLines = 0
         ;(globalThis as any).document = { activeElement: null }
-        outputs.set({
+        setOutputs({
             output: {
                 id: "output",
                 name: "Main",
@@ -87,7 +88,7 @@ describe("presenter next follows OutputHelper navigation", () => {
 
     it("previews the next line window selected by the active output style", async () => {
         await new Promise((resolve) => setTimeout(resolve, 55))
-        outputs.update((all) => ({ ...all, output: { ...all.output, style: "style" } }))
+        updateOutputs((all) => ({ ...all, output: { ...all.output, style: "style" } }))
         activeShow.set({ id: "show-b", index: 1 })
         mocks.outputLines = 2
         mocks.slideLines = 4

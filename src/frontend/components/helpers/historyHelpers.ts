@@ -2,6 +2,7 @@ import { get } from "svelte/store"
 import { uid } from "uid"
 import { REMOTE } from "../../../types/Channels"
 import { ShowObj } from "../../classes/Show"
+import { updateOutputs } from "../../outputState/outputs.svelte"
 import { actions, activeDrawerTab, activeEdit, activeProject, activeRename, activeShow, activeStage, activeTagFilter, audioPlaylists, currentOutputSettings, dictionary, drawerTabsData, editingProjectTemplate, effects, events, focusMode, folders, globalTags, groups, interactions, notFound, openedFolders, overlays, playerVideos, profiles, projects, projectTemplates, projectView, shows, showsCache, special, stageShows, styles, theme, themes } from "../../stores"
 import { translateText } from "../../utils/language"
 import { updateThemeValues } from "../../utils/updateSettings"
@@ -54,7 +55,7 @@ export const _updaters = {
             if (!stageOutput) return
 
             // set to new stage output
-            outputs.update((a) => {
+            updateOutputs((a) => {
                 a[outputId].stageOutput = stageOutput.id
                 return a
             })
@@ -563,7 +564,7 @@ export const _updaters = {
                     // enable if no enabled
                     const allEnabled = allNormalOutputs.filter((id) => get(outputs)[id].enabled)
                     if (!allEnabled.length) {
-                        outputs.update((a) => {
+                        updateOutputs((a) => {
                             a[allNormalOutputs[0]].enabled = true
                             return a
                         })
@@ -572,7 +573,7 @@ export const _updaters = {
                 }
 
                 // create output if no normal outputs (in case stage outputs are still active)
-                outputs.update((a) => {
+                updateOutputs((a) => {
                     a.default = { enabled: true, active: true, name: translateText("theme.primary"), color: "#F0008C", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, screen: null, style: "default", show: {} }
                     return a
                 })
@@ -724,7 +725,7 @@ export function getProjectName(updater = get(special)) {
 
 function clearOverlayOutput(slideId: string) {
     if (!isOutCleared("overlays")) {
-        outputs.update((a) => {
+        updateOutputs((a) => {
             Object.entries(a).forEach(([id, output]) => {
                 if (output.out?.overlays?.includes(slideId)) {
                     a[id].out!.overlays = a[id].out!.overlays!.filter((overlayId) => overlayId !== slideId)

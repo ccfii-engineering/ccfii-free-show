@@ -14,6 +14,7 @@ import { clearBackground } from "../components/output/clear"
 import { receiveMainGlobal } from "../IPC/main"
 import { updateMappedEntries } from "./mapStoreEntries"
 import { getOutputReceiverSignature } from "./outputSignatures"
+import { setOutputs, updateOutputs } from "../outputState/outputs.svelte"
 import {
     actions,
     activePopup,
@@ -115,7 +116,7 @@ const receiveOUTPUTasMAIN: any = {
             return a
         })
     },
-    OUTPUTS: (a: any) => outputs.set(a),
+    OUTPUTS: (a: any) => setOutputs(a),
     RESTART: ({ id }) => restartOutputs(id),
     // DISPLAY: (a: any) => outputDisplay.set(a.enabled),
     OUTPUT_STATE: (newStates: { id: string; active: boolean | "invisible" }[]) => {
@@ -142,13 +143,13 @@ const receiveOUTPUTasMAIN: any = {
         }
     },
     MOVE: (data) => {
-        outputs.update((a) => {
+        updateOutputs((a) => {
             if (!a[data.id] || a[data.id].boundsLocked) return a
             return updateMappedEntries(a, [data.id], (entry) => ({ ...entry, bounds: data.bounds }))
         })
     },
     UPDATE_OUTPUTS_DATA: ({ key, value, id, autoSave }) => {
-        outputs.update((a) => {
+        updateOutputs((a) => {
             const ids = id ? [id] : Object.keys(get(outputs))
             return updateMappedEntries(a, ids, (entry) => ({ ...entry, [key]: value }))
         })
@@ -241,7 +242,7 @@ export const receiveOUTPUTasOUTPUT: any = {
         // output.ts - only current output data is sent
         const id = Object.keys(a)[0]
         if (!id) {
-            outputs.set(a)
+            setOutputs(a)
             return
         }
 
@@ -249,7 +250,7 @@ export const receiveOUTPUTasOUTPUT: any = {
         const newOutputs = getOutputReceiverSignature(a, id)
         if (previousOutputs === newOutputs) return
 
-        outputs.set(a)
+        setOutputs(a)
         previousOutputs = newOutputs
     },
     ALL_OUTPUTS: (a: any) => {

@@ -22,6 +22,7 @@ import { getCurrentTimerValue, getTimeUntilClock, playPauseGlobal } from "../dra
 import { getDynamicValue } from "../edit/scripts/itemHelpers"
 import { getTextLines } from "../edit/scripts/textStyle"
 import { clearBackground, clearOverlays, clearTimers } from "../output/clear"
+import { updateOutputs } from "../../outputState/outputs.svelte"
 import {
     activeEdit,
     activeFocus,
@@ -554,7 +555,7 @@ export function changeOutputStyle(data: API_output_style) {
             if (type === "specific") outputStyle = outputsList[outputId]
             if (!outputStyle) return
 
-            outputs.update((a) => {
+            updateOutputs((a) => {
                 a[outputId].style = outputStyle
                 return a
             })
@@ -565,7 +566,7 @@ export function changeOutputStyle(data: API_output_style) {
     }
 
     const outputIds = data.outputId ? [data.outputId] : getAllNormalOutputs().map((a) => a.id)
-    outputs.update((a) => {
+    updateOutputs((a) => {
         outputIds.forEach((outputId) => {
             if (!a[outputId]) return
             a[outputId].style = data.styleId || ""

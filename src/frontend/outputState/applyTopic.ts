@@ -1,45 +1,6 @@
 import { setEqualizerEnabled, updateEqualizerBands } from "../audio/audioEqualizer"
-import {
-    activeProject,
-    activeTimers,
-    audioChannelsData,
-    categories,
-    colorbars,
-    customMessageCredits,
-    customMetadata,
-    draw,
-    drawSettings,
-    drawTool,
-    effects,
-    equalizerConfig,
-    events,
-    gain,
-    groups,
-    livePrepare,
-    media,
-    metronome,
-    metronomeTimer,
-    outputSlideCache,
-    outputs,
-    overlays,
-    playerVideos,
-    playingAudioPaths,
-    projects,
-    shows,
-    showsCache,
-    slideTimelineSpeedMultiplier,
-    special,
-    stageShows,
-    styles,
-    templates,
-    timeFormat,
-    timers,
-    transitionData,
-    variables,
-    videosData,
-    videosTime,
-    volume
-} from "../stores"
+import { setOutputs } from "./outputs.svelte"
+import { activeProject, activeTimers, audioChannelsData, categories, colorbars, customMessageCredits, customMetadata, draw, drawSettings, drawTool, effects, equalizerConfig, events, gain, groups, livePrepare, media, metronome, metronomeTimer, outputSlideCache, overlays, playerVideos, playingAudioPaths, projects, shows, showsCache, slideTimelineSpeedMultiplier, special, stageShows, styles, templates, timeFormat, timers, transitionData, variables, videosData, videosTime, volume } from "../stores"
 import { setLanguage } from "../utils/language"
 import type { OutputTopicSnapshot } from "../../types/OutputState"
 
@@ -48,7 +9,7 @@ export async function applyOutputTopicSnapshot(snapshot: OutputTopicSnapshot, ou
 
     switch (snapshot.topic) {
         case "output":
-            outputs.set({ [outputId]: payload })
+            setOutputs({ [outputId]: payload })
             return
         case "language":
             setLanguage(payload)

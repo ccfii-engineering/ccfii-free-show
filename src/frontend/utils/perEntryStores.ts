@@ -16,7 +16,10 @@
 //   $: entry = mediaEntry(path)
 //   $: mediaStyle = getMediaStyle($entry, currentStyle)
 
-import { media, outputs, showsCache, styles, templates } from "../stores"
+import { readable, type Readable } from "svelte/store"
+import type { Output } from "../../types/Output"
+import { selectOutput } from "../outputState/outputs.svelte"
+import { media, showsCache, styles, templates } from "../stores"
 import { createEntryAccessor, createRefEntryAccessor } from "./perEntryStoresFactory"
 
 export { createEntryAccessor, createRefEntryAccessor } from "./perEntryStoresFactory"
@@ -30,11 +33,27 @@ export { createEntryAccessor, createRefEntryAccessor } from "./perEntryStoresFac
 /** Subscribe to a single entry in $media by path. */
 export const mediaEntry = createEntryAccessor(media)
 
-/** Subscribe to a single entry in $outputs by output id. */
-export const outputEntry = createEntryAccessor(outputs)
+// Outputs are backed by the rune record store (outputState/outputs.svelte.ts): each output has its own signal,
+// so these readables wake only for that output, with no per-write JSON gate. Missing/empty ids emit null like
+// the other accessors.
+const noOutput: Readable<Output> = readable(null as unknown as Output)
+const outputReadables = new Map<string, Readable<Output>>()
+function outputEntryReadable(id: string): Readable<Output> {
+    if (!id) return noOutput
+    let entry = outputReadables.get(id)
+    if (!entry) {
+        const source = selectOutput(id)
+        entry = { subscribe: (run) => source.subscribe((output) => run((output ?? null) as unknown as Output)) }
+        outputReadables.set(id, entry)
+    }
+    return entry
+}
 
-/** Subscribe to a single output entry using reference changes only. */
-export const outputEntryRef = createRefEntryAccessor(outputs)
+/** Subscribe to a single entry in $outputs by output id. */
+export const outputEntry = outputEntryReadable
+
+/** Subscribe to a single output entry using reference changes only (same readable: entries are replaced, never mutated). */
+export const outputEntryRef = outputEntryReadable
 
 /** Subscribe to a single entry in $showsCache by show id. */
 export const showEntry = createEntryAccessor(showsCache)
