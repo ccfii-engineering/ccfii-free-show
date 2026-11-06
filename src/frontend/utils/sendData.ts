@@ -2,6 +2,8 @@ import { get } from "svelte/store"
 import { CONTROLLER, REMOTE, STAGE } from "../../types/Channels"
 import { Main } from "../../types/IPC/Main"
 import type { ClientMessage, Clients } from "../../types/Socket"
+import { isControllerRequestKey } from "../../types/controller/protocol"
+import { isStageRequestKey } from "../../types/stage/protocol"
 import { isRemoteRequestKey, REMOTE_MEDIA_REQUEST_KEYS, REMOTE_PRE_AUTH_KEYS } from "../../types/remote/protocol"
 import { API_ACTIONS } from "../components/actions/api"
 import { checkWindowCapture } from "../components/helpers/output"
@@ -121,14 +123,14 @@ export async function sendData(id: Clients, msg: ClientMessage, check = false) {
         // the wire message is untyped; each handler narrows it to its protocol request
         msg = (await (receiveREMOTE[channel] as (request: ClientMessage) => Promise<ClientMessage | void>)(msg)) as ClientMessage
     } else if (id === STAGE) {
-        if (!receiveSTAGE[channel]) return console.info("UNKNOWN CHANNEL:", channel)
-        msg.data = receiveSTAGE[channel](msg.data, connectionId)
-
-        if (msg.data === undefined) msg.data = null
-        if (msg.data?.channel === "ERROR") msg = { ...msg, channel: "ERROR", data: msg.data?.data }
+        if (!isStageRequestKey(channel) || !receiveSTAGE[channel]) return console.info("UNKNOWN CHANNEL:", channel)
+        // the wire message is untyped; each handler narrows it to its protocol request. It answers the connection
+        // that asked (or the first one for app-internal requests); the reply keeps the original id and listenerId.
+        const reply = await (receiveSTAGE[channel] as (request: ClientMessage) => ClientMessage | void | Promise<ClientMessage | void>)({ ...msg, id: connectionId })
+        msg = (reply ? { ...msg, channel: reply.channel, data: reply.data ?? null } : undefined) as ClientMessage
     } else if (id === CONTROLLER) {
-        if (!receiveCONTROLLER[channel]) return console.info("UNKNOWN CHANNEL:", channel)
-        msg = await receiveCONTROLLER[channel](msg)
+        if (!isControllerRequestKey(channel) || !receiveCONTROLLER[channel]) return console.info("UNKNOWN CHANNEL:", channel)
+        msg = (await (receiveCONTROLLER[channel] as (request: ClientMessage) => Promise<ClientMessage | void>)(msg)) as ClientMessage
     }
 
     if (id === REMOTE && msg && !isPreAuthRemoteChannel(msg.channel) && !isRemoteConnectionAuthorized(msg.id || connectionId)) return

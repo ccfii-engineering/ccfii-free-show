@@ -1,6 +1,8 @@
 import { get } from "svelte/store"
 import { uid } from "uid"
 import { CONTROLLER } from "../../types/Channels"
+import type { ControllerProtocol } from "../../types/controller/protocol"
+import type { WebHandlerTable } from "../../types/WebProtocol"
 import { Main } from "../../types/IPC/Main"
 import type { ControllerPresenterPreview, ControllerPresenterSnapshot } from "../../types/remote/control"
 import type { OutSlide, Show, Slide } from "../../types/Show"
@@ -22,7 +24,7 @@ let presenterAssetPaths = new Map<string, string>()
 let lastPublishedPresenterRevision = 0
 let presenterUpdateTimeout: NodeJS.Timeout | null = null
 
-export const receiveCONTROLLER = {
+export const receiveCONTROLLER: WebHandlerTable<ControllerProtocol> = {
     ACTION: ({ data }) => {
         const actions = {
             next: () => OutputHelper.advanceOutputs("next"),

@@ -240,5 +240,11 @@ export const REMOTE_MEDIA_REQUEST_KEYS: readonly string[] = ["MEDIA_LIST", "MEDI
 /** requests and responses allowed before the connection is authorized */
 export const REMOTE_PRE_AUTH_KEYS: readonly string[] = ["PASSWORD", "ACCESS", "ERROR", "LANGUAGE"]
 
+/** data requests the Remote re-issues after a reconnect, once access is granted again (live actions are never replayed) */
+export function isRemoteReplayRequest(channel: string, data: unknown): boolean {
+    if (channel === "OUT") return data === null || data === undefined
+    return ["SHOW", "OUT_DATA", "GET_FUNCTIONS", "GET_OVERLAYS", "GET_TEMPLATES"].includes(channel)
+}
+
 /** Compile-time check that RemoteProtocol satisfies the generic protocol constraint. */
 export type RemoteProtocolCheck = WebProtocolDef<RemoteProtocol>

@@ -1,12 +1,13 @@
 import type { Output } from "../../../types/Output"
 import type { Show } from "../../../types/Show"
-import type { StageLayout } from "../../../types/Stage"
+import type { StageResponses } from "../../../types/stage/protocol"
+import type { WebReceiverTable } from "../../../types/WebProtocol"
 import { lastAttemptedLayoutId, lastAttemptedPassword, openLayout, setError, translate } from "./helpers"
-import { send } from "./socket"
+import { markReady, send } from "./socket"
 import { _, _get, _set, _update, activeTimers, events, outputSlideCache, progressData, stream, timeFormat, timers, variables } from "./stores"
 
-export type ReceiverKey = keyof typeof receiver
-export const receiver = {
+export type ReceiverKey = keyof StageResponses
+export const receiver: WebReceiverTable<StageResponses> = {
     LAYOUTS: (data: { id: string; name: string; password: boolean }[]) => {
         _set("layouts", data)
         if (!data.length) return
@@ -40,7 +41,7 @@ export const receiver = {
             return
         }
     },
-    LAYOUT: (data: StageLayout & { id?: string }) => {
+    LAYOUT: (data) => {
         if (data.disabled) {
             _set("selectedLayout", "")
             return
@@ -54,6 +55,9 @@ export const receiver = {
 
         _set("passwordRequiredLayout", null)
         _set("stageLayout", data)
+
+        // the app opened this layout for this connection: re-issue the requests made before a reconnect
+        markReady()
     },
     SWITCH: (data: { id: string }) => openLayout(data.id),
 
