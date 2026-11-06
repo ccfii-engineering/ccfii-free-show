@@ -238,12 +238,14 @@ test("ordinary output media playback across supported formats", async () => {
         const toggleDuration = await queryAPI(apiUrl, "get_playing_video_duration")
         expect(toggleDuration, "clip is long enough to observe a restart").toBeGreaterThan(1.6)
         {
-            let lowestAfterToggle = Infinity
-            for (let attempt = 0; attempt < 9; attempt++) {
+            const samplesAfterToggle: number[] = []
+            // observe past the 600ms mark, but stop well before the 2s clip ends (loop turned off at the end clears the output)
+            const toggledAt = Date.now()
+            while (Date.now() - toggledAt < 1100) {
                 await delay(100)
-                lowestAfterToggle = Math.min(lowestAfterToggle, await queryAPI(apiUrl, "get_playing_video_time"))
+                samplesAfterToggle.push(await queryAPI(apiUrl, "get_playing_video_time"))
             }
-            expect(lowestAfterToggle, "operator loop toggle keeps the playback position").toBeGreaterThan(0.25)
+            expect(Math.min(...samplesAfterToggle), `operator loop toggle keeps the playback position; samples: ${samplesAfterToggle.join(", ")}`).toBeGreaterThan(0.25)
         }
         await expect.poll(async () => (await queryAPI(apiUrl, "get_playing_video_state")).loop, { message: "operator loop reaches the active video" }).toBe(!operatorLoopBefore)
         await expect(operatorLoop).toHaveAttribute("data-title", operatorLoopBefore ? "Loop" : "Loop: Enabled")

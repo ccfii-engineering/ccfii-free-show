@@ -17,7 +17,6 @@
     import { VideoPlayer } from "../../media/video/videoPlayer"
     import { videoSync } from "../../media/video/videoSync"
     import VideoSlider from "../VideoSlider.svelte"
-    import { backgroundWithToggle } from "./mediaControlsBackground"
 
     export let currentOutput: Output | null
     export let outputId: string
@@ -116,7 +115,7 @@
 
         const loop = !videoData.loop
         videoData.loop = loop
-        if (background && getActiveSnapshot()) setOutput("background", backgroundWithToggle(background, { loop }), false, outputId)
+        // Only the running video changes. Writing the background back to the output store restarts playback.
         VideoPlayer.setLoop(path, outputId, loop)
     }
 
