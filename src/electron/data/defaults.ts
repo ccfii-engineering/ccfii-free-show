@@ -50,6 +50,7 @@ export const defaultSettings: { [key in SaveListSettings]: any } = {
     },
     slidesOptions: { columns: 4, mode: "grid" },
     mediaOptions: { columns: 5, mode: "grid" },
+    recentFonts: [],
     drawerTabsData: {},
     drawer: { height: 300, stored: null },
     language: null,
