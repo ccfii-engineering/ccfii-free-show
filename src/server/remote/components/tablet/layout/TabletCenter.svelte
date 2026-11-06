@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { _set, active, activeProject, activeShow, createShow, dictionary, outShow, outSlide, project, projectsOpened, textCache } from "../../../util/stores"
+    import { _set, active, activeDrawerTab, activeProject, activeShow, createShow, dictionary, outShow, outSlide, project, projectsOpened, selectedSlides, templateScope, textCache } from "../../../util/stores"
     import { uid } from "uid"
     import { translate, throttle } from "../../../util/helpers"
     import { GetLayout } from "../../../util/output"
@@ -78,8 +78,22 @@
         return name || "—"
     }
 
+    // the Templates drawer's "Selected slides" scope turns a tap on a slide into a pick instead of a play
+    $: picking = $activeDrawerTab === "templates" && $templateScope === "slides"
+    // picks belong to one show
+    let pickShowId = ""
+    $: if (($activeShow?.id || "") !== pickShowId) {
+        pickShowId = $activeShow?.id || ""
+        selectedSlides.set([])
+    }
+
+    function toggleSlide(index: number) {
+        selectedSlides.update((a) => (a.includes(index) ? a.filter((i) => i !== index) : [...a, index].sort((x, y) => x - y)))
+    }
+
     function playSlide(index: number) {
         if (!$activeShow) return
+        if (picking) return toggleSlide(index)
 
         const showId = $activeShow.id
         const layoutId = $activeShow.settings.activeLayout
@@ -201,7 +215,7 @@
                         {#if slideView === "lyrics"}
                             {#each layoutSlides as layoutSlide, i (layoutSlide.id)}
                                 {#if !layoutSlide.disabled}
-                                    <span style="padding: 5px;{$outShow?.id === $activeShow.id && outNumber === i ? 'background-color: rgba(0 0 0 / 0.6);' : ''}" role="button" tabindex="0" on:click={() => playSlide(i)} on:keydown={(e) => (e.key === "Enter" ? playSlide(i) : null)}>
+                                    <span style="padding: 5px;{$outShow?.id === $activeShow.id && outNumber === i ? 'background-color: rgba(0 0 0 / 0.6);' : ''}" class:picked={picking && $selectedSlides.includes(i)} aria-pressed={picking ? $selectedSlides.includes(i) : undefined} role="button" tabindex="0" on:click={() => playSlide(i)} on:keydown={(e) => (e.key === "Enter" ? playSlide(i) : null)}>
                                         <span class="group" style="opacity: 0.6;font-size: 0.8em;display: flex;justify-content: center;position: relative;">
                                             <span style="left: 0;position: absolute;">{i + 1}</span>
                                             <span>{$activeShow.slides[layoutSlide.id].group === null ? "" : getName($activeShow.slides[layoutSlide.id].group || "", layoutSlide.id, i)}</span>
@@ -225,7 +239,7 @@
                                 {/if}
                             {/each}
                         {:else}
-                            <Slides {dictionary} {scrollElem} on:click={(e) => playSlide(e.detail)} outSlide={outNumber} columns={3} />
+                            <Slides {dictionary} {scrollElem} on:click={(e) => playSlide(e.detail)} outSlide={outNumber} columns={3} {picking} picked={$selectedSlides} />
                         {/if}
                     </div>
                 {/if}
@@ -313,6 +327,11 @@
         min-width: 0;
         overflow: hidden;
         background-color: var(--primary-darkest);
+    }
+
+    .scroll span.picked {
+        outline: 3px solid var(--operator-amber, var(--accent));
+        outline-offset: -3px;
     }
 
     /* lyric spacing inside scroll */

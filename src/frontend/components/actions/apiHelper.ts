@@ -1,6 +1,7 @@
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist"
 import { get } from "svelte/store"
 import { STAGE } from "../../../types/Channels"
+import type { RemoteTemplateRequest, RemoteTemplateResult } from "../../../types/remote/protocol"
 import type { History } from "../../../types/History"
 import type { DropData, Selected, Variable } from "../../../types/Main"
 import { clearAudio } from "../../audio/audioFading"
@@ -10,6 +11,7 @@ import { updateOutputs } from "../../outputState/outputs.svelte"
 import { updateShowsCache } from "../../showsCacheState/showsCache.svelte"
 import { activeDrawerTab, activeEdit, activePage, activeProject, activeShow, activeTimers, audioChannelsData, audioPlaylists, draw, drawSettings, drawTool, folders, groupNumbers, groups, media, openScripture, outLocked, outputs, overlays, pdfImports, playingAudio, playingMetronome, projects, refreshEditSlide, selected, shows, showsCache, sortedShowsList, special, styles, timers, variables } from "../../stores"
 import { newToast } from "../../utils/common"
+import { applyRemoteTemplate } from "../../utils/remoteTemplate"
 import { send } from "../../utils/request"
 import { getDynamicValue } from "../edit/scripts/itemHelpers"
 import { keysToID, removeDeleted, sortByName } from "../helpers/array"
@@ -593,18 +595,10 @@ export function setNextSlideTimer(time: number) {
     history({ id: "SHOW_LAYOUT", newData: { key: "end", data: !!value, indexes: [indexes[indexes.length - 1]] }, location: { page: "show", override: "change_slide_action_loop" } })
 }
 
-export function setTemplate(templateId: string) {
-    const showId = get(activeShow)?.id
-    if (!showId) {
-        // newToast("empty.show")
-        return
-    }
-    if (_show(showId).get("locked")) {
-        newToast("show.locked")
-        return
-    }
-
-    history({ id: "TEMPLATE", newData: { id: templateId, data: { createItems: true } }, location: { page: "none", override: "show#" + showId } })
+export async function setTemplate(data: RemoteTemplateRequest): Promise<RemoteTemplateResult> {
+    const result = await applyRemoteTemplate(data)
+    if (result.status === "blocked" && result.reason === "show_locked") newToast("show.locked")
+    return result
 }
 
 // PRESENTATION

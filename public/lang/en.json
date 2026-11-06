@@ -43,7 +43,19 @@
         "select_slides_hint": "Select slides first",
         "in_use_badge": "In use",
         "warn_category": "Category \"$1\" sets the template \"$2\", so whole-show applies are blocked. To change it: Shows drawer, right-click the category, Category template.",
-        "warn_style": "The output style template \"$1\" overrides what is shown on screen."
+        "warn_style": "The output style template \"$1\" overrides what is shown on screen.",
+        "pick_slides_hint": "Tap slides in the show to select them",
+        "no_show_hint": "Open a show to apply a template",
+        "offline": "Offline. Templates can't be applied until the connection is back.",
+        "applied_show": "Template applied to the whole show.",
+        "applied_slides": "Template applied to $1 slides.",
+        "applied_one_slide": "Template applied to 1 slide.",
+        "blocked_show_locked": "Not applied: this show is locked.",
+        "blocked_read_only": "Not applied: the profile on the main app is read-only for this show.",
+        "blocked_category_template": "Not applied: the show's category sets its own template.",
+        "blocked_no_show": "Not applied: the show was not found on the main app.",
+        "blocked_unknown_template": "Not applied: that template no longer exists.",
+        "blocked_no_slides": "Not applied: none of the selected slides can take a template (they may be locked)."
     },
     "text_scope": {
         "apply_to": "Apply changes to:",

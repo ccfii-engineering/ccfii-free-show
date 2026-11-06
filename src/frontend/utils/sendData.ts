@@ -148,7 +148,7 @@ export async function sendData(id: Clients, msg: ClientMessage, check = false) {
 
 function requiresRemoteEntry(channel: string, apiId: string | undefined) {
     if (REMOTE_MEDIA_REQUEST_KEYS.includes(channel)) return true
-    return channel === "API" && ["get_thumbnail", "play_media", "play_audio"].includes(apiId || "")
+    return channel === "API" && ["get_thumbnail", "play_media", "play_audio", "set_template"].includes(apiId || "")
 }
 
 function isPreAuthRemoteChannel(channel: string) {

@@ -93,6 +93,12 @@ export let activeOverlayCategory: Writable<string> = writable("all")
 export let templates: Writable<{ [key: string]: any }> = writable({})
 export let templateCategories: Writable<{ [key: string]: any }> = writable({})
 export let activeTemplateCategory: Writable<string> = writable("all")
+/** template of the first output's style: it overrides what is shown on screen */
+export let outputStyleTemplate: Writable<string | null> = writable(null)
+/** what a template tap changes: the whole show, or the slides picked in the show grid */
+export let templateScope: Writable<"show" | "slides"> = writable("show")
+/** layout slide indexes picked for "Selected slides" */
+export let selectedSlides: Writable<number[]> = writable([])
 
 export let mediaCache: Writable<any> = writable({})
 export let textCache: Writable<any> = writable({})
@@ -154,6 +160,9 @@ export const _ = {
     templates,
     templateCategories,
     activeTemplateCategory,
+    outputStyleTemplate,
+    templateScope,
+    selectedSlides,
     mediaCache,
     textCache,
     groupsCache,

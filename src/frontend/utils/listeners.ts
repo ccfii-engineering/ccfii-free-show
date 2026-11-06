@@ -3,10 +3,10 @@ import { OUTPUT, REMOTE, STAGE } from "../../types/Channels"
 import { midiInListen } from "../components/actions/midi"
 import { loadShows } from "../components/helpers/setShow"
 import { getShowCacheId, updateCachedShow, updateCachedShows, updateShowsList } from "../components/helpers/show"
-import { $, actions, actionTags, activeProject, activeScripture, activeShow, activeTimers, audioChannelsData, audioData, cachedShowsData, driveKeys, events, folders, groups, openedFolders, outputs, outputSlideCache, overlayCategories, overlays, projects, refreshSlideThumbnails, runningActions, scriptures, shows, showsCache, stageShows, templateCategories, templates, timeFormat, timers, triggers, variables, variableTags, volume } from "../stores"
+import { $, actions, actionTags, activeProject, activeScripture, activeShow, activeTimers, audioChannelsData, audioData, cachedShowsData, driveKeys, events, folders, groups, openedFolders, outputs, outputSlideCache, overlayCategories, overlays, projects, refreshSlideThumbnails, runningActions, scriptures, shows, showsCache, special, stageShows, styles, templateCategories, templates, timeFormat, timers, triggers, variables, variableTags, volume } from "../stores"
 import { hasNewerUpdate } from "./common"
 import { driveConnect } from "./drive"
-import { convertBackgrounds } from "./remoteTalk"
+import { convertBackgrounds, getOutputStyleTemplateId } from "./remoteTalk"
 import { send } from "./request"
 import { arrayToObject, eachConnection, filterObjectArray, sendData, timedout } from "./sendData"
 
@@ -72,6 +72,15 @@ export function storeSubscriber() {
         //     if (get(showsCache)[id]?.settings?.template === id) // set false
         // });
     })
+    // the output style template overrides what is shown on screen: the Remote warns about it before a template tap
+    const sendOutputStyleTemplate = async () => {
+        if (await hasNewerUpdate("LISTENER_OUTPUT_STYLE_TEMPLATE", 50)) return
+
+        send(REMOTE, ["OUTPUT_STYLE_TEMPLATE"], getOutputStyleTemplateId())
+    }
+    outputs.subscribe(sendOutputStyleTemplate)
+    styles.subscribe(sendOutputStyleTemplate)
+    special.subscribe(sendOutputStyleTemplate)
     templateCategories.subscribe(async (data) => {
         if (await hasNewerUpdate("LISTENER_TEMPLATE_CATEGORIES", 50)) return
 

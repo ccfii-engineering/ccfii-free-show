@@ -265,6 +265,9 @@ export const receiver: WebReceiverTable<RemoteResponses> = {
     TEMPLATE_CATEGORIES: (data) => {
         _set("templateCategories", data)
     },
+    OUTPUT_STYLE_TEMPLATE: (data) => {
+        _set("outputStyleTemplate", data || null)
+    },
     ACTIONS: (data) => {
         _set("actions", data)
     },
@@ -297,6 +300,7 @@ export const receiver: WebReceiverTable<RemoteResponses> = {
     GET_TEMPLATES: (data) => {
         _set("templates", data.templates)
         _set("templateCategories", data.categories)
+        _set("outputStyleTemplate", data.outputStyleTemplate || null)
     },
     GET_FUNCTIONS: (data) => {
         _set("actions", data.actions)

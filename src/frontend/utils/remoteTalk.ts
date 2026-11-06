@@ -17,7 +17,7 @@ import { _show } from "../components/helpers/shows"
 import { API_ACTIONS } from "../components/actions/api"
 import { clearAll } from "../components/output/clear"
 import { REMOTE } from "./../../types/Channels"
-import { actions, actionTags, activePage, activeProject, activeShow, activeTimers, categories, connections, dictionary, folders, language, openedFolders, outLocked, overlayCategories, overlays, playerVideos, projects, remotePassword, runningActions, scriptures, shows, showsCache, styles, templateCategories, templates, timers, variables, variableTags } from "./../stores"
+import { actions, actionTags, activePage, activeProject, activeShow, activeTimers, categories, connections, dictionary, folders, language, openedFolders, outLocked, overlayCategories, overlays, playerVideos, projects, remotePassword, runningActions, scriptures, shows, showsCache, special, styles, templateCategories, templates, timers, variables, variableTags } from "./../stores"
 import { lastClickTime } from "./common"
 import { translateText } from "./language"
 import { requestMainResult, sendMain } from "../IPC/main"
@@ -290,7 +290,7 @@ export const receiveREMOTE: WebHandlerTable<RemoteProtocol> = {
         }
     },
     GET_OVERLAYS: (msg) => ({ id: msg.id, channel: "GET_OVERLAYS", data: { overlays: get(overlays), categories: get(overlayCategories) } }),
-    GET_TEMPLATES: (msg) => ({ id: msg.id, channel: "GET_TEMPLATES", data: { templates: get(templates), categories: get(templateCategories) } }),
+    GET_TEMPLATES: (msg) => ({ id: msg.id, channel: "GET_TEMPLATES", data: { templates: get(templates), categories: get(templateCategories), outputStyleTemplate: getOutputStyleTemplateId() } }),
     MEDIA_LIST: async (msg) => {
         const connectionId = msg.id || ""
         const data = msg.data
@@ -459,6 +459,13 @@ function openShow(id: string) {
     if (Date.now() - lastClickTime < 20000) return
 
     activeShow.set({ id })
+}
+
+/** the template set on the first active output's style, which overrides the template on screen (null when none or when the preview is off) */
+export function getOutputStyleTemplateId(): string | null {
+    if (get(special).styleTemplatePreview === false) return null
+    const style = getFirstActiveOutput()?.style
+    return (style && get(styles)[style]?.template) || null
 }
 
 export function closeRemoteMediaConnection(connectionId: string, requestId?: string) {

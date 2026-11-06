@@ -11,6 +11,9 @@
     export let outSlide: number | null
     export let dictionary: any
     export let columns: number = 2
+    /** slide picking for the Templates drawer: taps select slides, `picked` holds the chosen indexes */
+    export let picking: boolean = false
+    export let picked: number[] = []
     let resolution: Resolution = $styleRes || { width: 1920, height: 1080 }
 
     // $: id = $activeShow!.id
@@ -211,6 +214,8 @@
                     index={entry.index}
                     color={entry.slide.color}
                     active={isActive}
+                    {picking}
+                    picked={picking && picked.includes(entry.index)}
                     renderItems={!useLightMode}
                     {columns}
                     on:click={() => {

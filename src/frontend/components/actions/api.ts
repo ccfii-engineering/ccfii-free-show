@@ -1,5 +1,6 @@
 import { Main } from "../../../types/IPC/Main"
 import type { MidiValues, TransitionType } from "../../../types/Show"
+import type { RemoteTemplateRequest } from "../../../types/remote/protocol"
 import { clearAudio } from "../../audio/audioFading"
 import { AudioPlayer } from "../../audio/audioPlayer"
 import { AudioPlaylist } from "../../audio/audioPlaylist"
@@ -218,7 +219,7 @@ export const API_ACTIONS = {
     set_show: (data: API_id_value) => setShowAPI(data.id, data.value),
     rearrange_groups: (data: API_rearrange) => rearrangeGroups(data),
     add_group: (data: API_group) => addGroup(data),
-    set_template: (data: API_id) => setTemplate(data.id),
+    set_template: (data: RemoteTemplateRequest) => setTemplate(data),
     set_next_slide_timer: (data: API_numval) => setNextSlideTimer(data.value),
     change_slide_timeline_speed: (data: API_numval) => slideTimelineSpeedMultiplier.set(data.value ?? 1),
     transpose_show_up: (data: API_id) => formatText(transposeText(getPlainEditorText(data.id), 1), data.id),
