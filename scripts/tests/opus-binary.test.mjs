@@ -56,3 +56,14 @@ test("release workflow builds and checks opus for both desktop jobs", () => {
     const workflow = readFileSync(".github/workflows/release.yml", "utf8")
     assert.equal(workflow.match(/node scripts\/build\/ensureOpusBinary\.js/g)?.length, 2)
 })
+
+test("build workflow mirrors release validation steps and never publishes", () => {
+    const workflow = readFileSync(".github/workflows/build.yml", "utf8")
+    for (const step of ["npm run build", "node node_modules/electron/install.js", "node scripts/build/ensureOpusBinary.js", "node scripts/tests/runPowerpointRendererElectron.mjs", "npm run dist:internal"]) {
+        assert.ok(workflow.includes(step), `build.yml runs ${step}`)
+    }
+    assert.ok(workflow.indexOf("npm run build") < workflow.indexOf("npm run dist:internal"), "app is built before packaging")
+    assert.ok(!/npm run release/.test(workflow), "build.yml must not call the publishing release scripts")
+    const pkg = JSON.parse(readFileSync("package.json", "utf8"))
+    assert.match(pkg.scripts["dist:internal"], /--publish never/)
+})
