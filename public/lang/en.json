@@ -36,7 +36,14 @@
         "source_category": "category",
         "source_show": "show",
         "style_override": "Output style template overrides on screen: $1",
-        "own_template": "This slide has its own template"
+        "own_template": "This slide has its own template",
+        "apply_to": "Apply to:",
+        "one_selected_slide": "1 selected slide",
+        "n_selected_slides": "$1 selected slides",
+        "select_slides_hint": "Select slides first",
+        "in_use_badge": "In use",
+        "warn_category": "Category \"$1\" sets the template \"$2\", so whole-show applies are blocked. To change it: Shows drawer, right-click the category, Category template.",
+        "warn_style": "The output style template \"$1\" overrides what is shown on screen."
     },
     "guide": {
         "start": "Quick start guide",

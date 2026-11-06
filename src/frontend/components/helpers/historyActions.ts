@@ -711,7 +711,13 @@ export const historyActions = ({ obj, undo = null }: any) => {
                 data.previousData = clone({ template: previousTemplateId, slides })
                 const templateId: string = data.id
 
-                if (templateId && !slideId && previousTemplateId !== templateId) _show(data.remember.showId).set({ key: "settings.template", value: slideId ? null : templateId })
+                if (templateId && !slideId && previousTemplateId !== templateId) {
+                    _show(data.remember.showId).set({ key: "settings.template", value: slideId ? null : templateId })
+
+                    // the cache hands out copies, so read the show again or the write-back below restores the old template id
+                    show = get(showsCache)[data.remember.showId] || show
+                    slides = show.slides || {}
+                }
 
                 const template = clone(get(templates)[templateId])
                 const maxLines = template?.settings?.maxLinesPerSlide
