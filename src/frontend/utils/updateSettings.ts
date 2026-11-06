@@ -11,6 +11,7 @@ import { checkFFmpeg, checkWindowCapture, setOutput, toggleOutputs } from "../co
 import { migrateOutputsRtmp } from "../components/helpers/rtmpDestinations"
 import { defaultThemes } from "../components/settings/tabs/defaultThemes"
 import { sendMain } from "../IPC/main"
+import { setOutputs } from "../outputState/outputs.svelte"
 import {
     actionTags,
     actions,
@@ -317,7 +318,7 @@ const updateList: { [key in SaveListSettings | SaveListSyncedSettings]: any } = 
             if (v[id].rtmpData?.streaming) v[id].rtmpData.streaming = false
         })
         migrateOutputsRtmp(v)
-        outputs.set(v)
+        setOutputs(v)
 
         // RTMP check
         if (Object.values(v).some((out: any) => out.enabled && out.rtmp)) checkFFmpeg()

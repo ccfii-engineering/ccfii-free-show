@@ -2,6 +2,7 @@
     import { uid } from "uid"
     import type { ClickEvent } from "../../../types/Main"
     import { changeSlidesView } from "../../show/slides"
+    import { updateShowsCache } from "../../showsCacheState/showsCache.svelte"
     import { actions, activePopup, activeProject, activeShow, alertMessage, editingProjectTemplate, labelsDisabled, projects, projectTemplates, showsCache, slidesOptions } from "../../stores"
     import { translateText } from "../../utils/language"
     import { getAccess } from "../../utils/profile"
@@ -87,7 +88,7 @@
     function setLayout(id: string, layoutInfo) {
         if (!$showsCache[showId]) return
 
-        showsCache.update((a) => {
+        updateShowsCache((a) => {
             if (a[showId]) {
                 if (!a[showId].settings) a[showId].settings = { activeLayout: "", template: null }
                 a[showId].settings.activeLayout = id

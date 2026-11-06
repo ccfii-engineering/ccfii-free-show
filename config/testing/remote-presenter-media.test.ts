@@ -483,7 +483,7 @@ test("remote media browsing and controller previews work through a fixture Socke
     await expect.poll(() => controllerMessages.filter((message) => message?.channel === "PRESENTER_THUMBNAIL").length).toBeGreaterThan(0)
     await expect(controller.locator(".preview-panel .item img").first()).toHaveAttribute("src", /^data:image\/svg\+xml,/)
     const currentBackground = controller.locator(".preview-panel .background-image").first()
-    await expect(currentBackground).toHaveAttribute("style", /width:1024px;height:768px/)
+    await expect(currentBackground).toHaveAttribute("style", /width:\s*1024px;\s*height:\s*768px/)
     await expect(controller.locator(".preview-panel .item img").first()).toHaveCSS("object-fit", "cover")
     const backgroundBounds = await currentBackground.boundingBox()
     const slideBounds = await controller.locator(".preview-panel .slide").first().boundingBox()

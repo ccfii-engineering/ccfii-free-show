@@ -2,6 +2,7 @@
     import { fade } from "svelte/transition"
     import { Main } from "../../../types/IPC/Main"
     import { sendMain } from "../../IPC/main"
+    import { updateShowsCache } from "../../showsCacheState/showsCache.svelte"
     import { activePopup, openToolsTab, outputs, showNotesActive, shows, showsCache, special, styles, templates } from "../../stores"
     import { translateText } from "../../utils/language"
     import Icon from "../helpers/Icon.svelte"
@@ -55,7 +56,7 @@
     function toggleShowLock() {
         const shouldBeLocked = !currentShow?.locked
 
-        showsCache.update((a) => {
+        updateShowsCache((a) => {
             if (!a[showId]) return a
             a[showId].locked = shouldBeLocked
 

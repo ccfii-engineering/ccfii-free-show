@@ -27,11 +27,11 @@
     export let hideOverflow = true
     export let customZoom = 1
     export let cropping: Cropping | undefined = { top: 0, right: 0, bottom: 0, left: 0 }
-    export let resolution: Resolution = getResolution(null, { $outputs, $styles }, false, outputId)
-    $: if (!isStage) resolution = getResolution(resolution, { $outputs, $styles }, false, outputId)
+    export let resolution: Resolution = getResolution(null, { outputs: $outputs, styles: $styles }, outputId)
+    $: if (!isStage) resolution = getResolution(resolution, { outputs: $outputs, styles: $styles }, outputId)
     $: outputRes = isStage ? resolution : getOutputResolution(outputId, $outputs)
 
-    $: stylesRatio = getResolution(null, $styles, false, outputId)
+    $: stylesRatio = getResolution(null, { styles: $styles }, outputId)
     $: styleAspectRatio = stylesRatio.width / stylesRatio.height
     const defaultRatio = DEFAULT_BOUNDS.width / DEFAULT_BOUNDS.height
 

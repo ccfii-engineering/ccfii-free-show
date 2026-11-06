@@ -14,7 +14,7 @@
 
     export let searchValue = ""
 
-    $: resolution = getResolution(null, { $outputs, $styles })
+    $: resolution = getResolution(null, { outputs: $outputs, styles: $styles })
     let filteredEffects: any[] = []
     $: filteredEffects = sortByName(keysToID($effects))
 

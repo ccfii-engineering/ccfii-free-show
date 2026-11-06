@@ -183,7 +183,7 @@
     }
 
     // slide?.settings?.resolution
-    $: resolution = getResolution(null, { $outputs, $styles })
+    $: resolution = getResolution(null, { outputs: $outputs, styles: $styles })
 
     $: currentOutput = getFirstActiveOutput($outputs)
     $: transparentOutput = !!currentOutput?.transparent

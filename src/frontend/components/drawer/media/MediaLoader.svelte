@@ -72,7 +72,7 @@
         if (videoExtensions.includes(extension)) type = "video"
     }
 
-    $: customResolution = resolution || getResolution(null, { $outputs, $styles })
+    $: customResolution = resolution || getResolution(null, { outputs: $outputs, styles: $styles })
 
     $: if (mediaStyle.speed && videoElem) videoElem.playbackRate = Number(mediaStyle.speed || 0)
 

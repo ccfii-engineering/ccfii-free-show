@@ -2,7 +2,8 @@
     import { onMount } from "svelte"
     import { Main } from "../../../../types/IPC/Main"
     import { requestMain, sendMain } from "../../../IPC/main"
-    import { activePopup, popupData, showsCache } from "../../../stores"
+    import { setShowsCache } from "../../../showsCacheState/showsCache.svelte"
+    import { activePopup, popupData } from "../../../stores"
     import { translateText } from "../../../utils/language"
     import Icon from "../../helpers/Icon.svelte"
     import T from "../../helpers/T.svelte"
@@ -18,7 +19,7 @@
     })
 
     function restoreCustom() {
-        showsCache.set({})
+        setShowsCache({})
         sendMain(Main.RESTORE)
     }
 

@@ -11,16 +11,19 @@ import type { Event } from "../types/Calendar"
 import type { Draw, DrawLine, DrawSettings, DrawTools } from "../types/Draw"
 import type { Effects } from "../types/Effects"
 import type { History, HistoryNew } from "../types/History"
-import type { ActiveEdit, Clipboard, Interaction, Media, MediaOptions, NumberObject, OS, Popups, Profiles, Selected, SlidesOptions, Trigger, Variable } from "../types/Main"
+import type { ActiveEdit, Clipboard, Interaction, MediaOptions, NumberObject, OS, Popups, Profiles, Selected, SlidesOptions, Trigger, Variable } from "../types/Main"
 import type { Folders, Projects, ShowRef } from "../types/Projects"
 import type { Dictionary, Styles, Themes } from "../types/Settings"
-import type { Action, Emitter, ID, Overlays, ShowGroups, ShowList, Shows, ShowType, SlideTimer, Tag, Templates, Timer, Transition, TrimmedShows } from "../types/Show"
+import type { Action, Emitter, ID, Overlays, ShowGroups, ShowList, ShowType, SlideTimer, Tag, Templates, Timer, Transition, TrimmedShows } from "../types/Show"
 import type { ServerData } from "../types/Socket"
 import type { ActiveStage, StageLayouts } from "../types/Stage"
 import type { BibleCategories, Categories, DrawerTabs, EditMode, SettingsTabs, TopViews } from "../types/Tabs"
 import type { AudioChannel, AudioChannelData, AudioStream, Playlist } from "./../types/Audio"
 import type { OutputStateHealth } from "../types/OutputState"
 import type { Outputs, RtmpStatus } from "./../types/Output"
+import { writableMedia } from "./mediaState/media.svelte"
+import { writableOutputs } from "./outputState/outputs.svelte"
+import { writableShowsCache } from "./showsCacheState/showsCache.svelte"
 import type { DrawerTabIds } from "./../types/Tabs"
 import type { EQBand, EqualizerConfig } from "./audio/audioEqualizer"
 import type { AudioData } from "./audio/audioPlayer"
@@ -248,7 +251,8 @@ export const usageLog: Writable<any> = writable({ all: [] })
 
 // SHOW
 export const shows: Writable<TrimmedShows> = writable({}) // {default}
-export const showsCache: Writable<Shows> = writable({}) // {default}
+// showsCache: state lives in the shows cache domain module (read-only store re-exported below)
+export { showsCache } from "./showsCacheState/showsCache.svelte"
 export const textCache: Writable<any> = writable({}) // {}
 export const groups: Writable<ShowGroups> = writable({}) // {default}
 export const categories: Writable<Categories> = writable({}) // {default}
@@ -276,7 +280,8 @@ export const variables: Writable<{ [key: string]: Variable }> = writable({}) // 
 export const triggers: Writable<{ [key: string]: Trigger }> = writable({}) // {}
 
 // MEDIA
-export const media: Writable<Media> = writable({}) // {}
+// media: state lives in the media domain module (read-only store re-exported below)
+export { media } from "./mediaState/media.svelte"
 export const mediaFolders: Writable<Categories> = writable({}) // {default}
 export const videoMarkers: Writable<{ [key: string]: { name: string; time: number }[] }> = writable({}) // {}
 export const effects: Writable<Effects> = writable({}) // {default}
@@ -385,8 +390,8 @@ export const themes: Writable<{ [key: string]: Themes }> = writable({}) // {defa
 // STYLES
 export const styles: Writable<{ [key: string]: Styles }> = writable({}) // {}
 
-// OUTPUTS
-export const outputs: Writable<Outputs> = writable({}) // {default}
+// OUTPUTS: state lives in the outputs domain module (read-only store here, writes go through its functions)
+export { outputs } from "./outputState/outputs.svelte"
 export const outLocked: Writable<boolean> = writable(false) // false
 
 // PROFILES
@@ -458,7 +463,7 @@ export const $ = {
     undoHistory,
     redoHistory,
     shows,
-    showsCache,
+    showsCache: writableShowsCache,
     textCache,
     groups,
     categories,
@@ -471,7 +476,7 @@ export const $ = {
     timers,
     variables,
     triggers,
-    media,
+    media: writableMedia,
     mediaFolders,
     effects,
     overlayCategories,
@@ -504,7 +509,7 @@ export const $ = {
     splitLines,
     theme,
     themes,
-    outputs,
+    outputs: writableOutputs,
     styles,
     customMetadata,
     customMessageCredits,

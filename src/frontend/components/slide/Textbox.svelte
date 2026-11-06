@@ -3,6 +3,7 @@
     import { OUTPUT } from "../../../types/Channels"
     import type { Styles } from "../../../types/Settings"
     import type { Item, Slide, TemplateStyleOverride, Transition } from "../../../types/Show"
+    import { updateShowsCache } from "../../showsCacheState/showsCache.svelte"
     import { currentWindow, groups, outputs, overlays, scriptureSettings, showsCache, styles, templates, variables } from "../../stores"
     import { showEntry, templateEntry } from "../../utils/perEntryStores"
     import { wait } from "../../utils/common"
@@ -715,7 +716,7 @@
             const currentShows = $showsCache
             if (!currentShows[ref.showId]?.slides?.[ref.id]?.items?.[itemIndex] || currentShows[ref.showId].slides[ref.id].items[itemIndex].autoFontSize === fontSize) return
 
-            showsCache.update((a) => {
+            updateShowsCache((a) => {
                 a[ref.showId!].slides[ref.id].items[itemIndex].autoFontSize = fontSize
                 return a
             })
@@ -745,7 +746,7 @@
             const currentShows = $showsCache
             if (!currentShows[ref.showId]?.slides?.[ref.id]?.items?.[itemIndex] || currentShows[ref.showId].slides[ref.id].items[itemIndex].previewAutoFontSize === fontSize) return
 
-            showsCache.update((a) => {
+            updateShowsCache((a) => {
                 a[ref.showId!].slides[ref.id].items[itemIndex].previewAutoFontSize = fontSize
                 return a
             })
@@ -809,7 +810,7 @@
     let cssInterval = setInterval(() => updateTrigger++, 1000)
 
     // give CSS access to certain dynamic values
-    $: cssVariables = createCSSVariables($variables, $outputs, isStage ? "stage" : "default", updateTrigger)
+    $: cssVariables = createCSSVariables($variables, isStage ? "stage" : "default", { outSlide: outputSlide, tick: updateTrigger })
 
     // initialize default filter values to get the transition working (should use animation)
     // https://stackoverflow.com/questions/68632554/css-backdrop-filter-does-not-work-with-transition

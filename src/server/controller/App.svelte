@@ -1,7 +1,9 @@
 <script lang="ts">
     import { MAX_THUMBNAIL_BYTES, type ControllerPresenterPreview, type ControllerPresenterSnapshot } from "../../types/remote/control"
     import "../common/brand.css"
-    import { io } from "socket.io-client"
+    import type { DrawTools } from "../../types/Draw"
+    import type { ControllerClientProtocol, ControllerFocusRequest, ControllerResponses } from "../../types/controller/protocol"
+    import { createWebClient } from "../common/util/webClient"
     import Brand from "../common/components/Brand.svelte"
     import Icon from "../common/components/Icon.svelte"
     import PresenterPreview from "./components/PresenterPreview.svelte"
@@ -11,7 +13,6 @@
     type PresenterState = Omit<ControllerPresenterSnapshot, "current" | "next"> & { current: PreviewData | null; next: PreviewData | null }
     type ConnectionState = "connecting" | "connected" | "reconnecting" | "disconnected"
 
-    const socket = io()
     const tools = ["Focus", "Pointer", "Zoom", "Particles", "Paint"]
 
     let connectionState: ConnectionState = "connecting"
@@ -44,43 +45,41 @@
         thumbnailInterval = null
     }
 
-    socket.on("connect", () => {
-        hasConnected = true
-        presenterConnectionEpoch += 1
-        awaitingPresenterState = true
-        connectionState = "connected"
-        socket.emit("CONTROLLER", { channel: "GET_OUTPUT_ID" })
-        socket.emit("CONTROLLER", { channel: "PRESENTER_SUBSCRIBE" })
+    // The shared web client owns connect, reconnect and the offline rule: controls are never sent (or buffered)
+    // while disconnected, and every (re)connect asks for the output id and a fresh presenter snapshot again.
+    const client = createWebClient<ControllerClientProtocol, ControllerResponses>({
+        event: "CONTROLLER",
+        autoReady: true,
+        onConnect: () => {
+            hasConnected = true
+            presenterConnectionEpoch += 1
+            awaitingPresenterState = true
+            connectionState = "connected"
+            client.send("GET_OUTPUT_ID")
+            client.send("PRESENTER_SUBSCRIBE")
+        },
+        onReconnectAttempt: () => {
+            connectionState = "reconnecting"
+        },
+        onConnectError: () => {
+            connectionState = hasConnected ? "reconnecting" : "connecting"
+        },
+        onDisconnect: (reason) => onDisconnected(reason)
+    })
+    client.start({
+        OUTPUT_FRAME: (data) => {
+            thumbnailBackground = data.frame || ""
+            if (data.width && data.height) aspectRatio = data.width / data.height
+            frameReceived = true
+        },
+        GET_OUTPUT_ID: (data) => {
+            outputId = data || ""
+        },
+        PRESENTER_STATE: (data) => updatePresenterState(data as PresenterState),
+        PRESENTER_THUMBNAIL_RESULT: (data) => receivePresenterThumbnail(data)
     })
 
-    socket.io.on("reconnect_attempt", () => {
-        connectionState = "reconnecting"
-    })
-
-    socket.on("connect_error", () => {
-        connectionState = hasConnected ? "reconnecting" : "connecting"
-    })
-
-    socket.on("CONTROLLER", (msg) => {
-        switch (msg.channel) {
-            case "OUTPUT_FRAME":
-                thumbnailBackground = msg.data.frame || ""
-                if (msg.data.width && msg.data.height) aspectRatio = msg.data.width / msg.data.height
-                frameReceived = true
-                break
-            case "GET_OUTPUT_ID":
-                outputId = msg.data
-                break
-            case "PRESENTER_STATE":
-                updatePresenterState(msg.data)
-                break
-            case "PRESENTER_THUMBNAIL_RESULT":
-                receivePresenterThumbnail(msg.data)
-                break
-        }
-    })
-
-    socket.on("disconnect", (reason) => {
+    function onDisconnected(reason: string) {
         connectionState = reason === "io server disconnect" ? "disconnected" : hasConnected ? "reconnecting" : "connecting"
         outputId = ""
         awaitingPresenterState = true
@@ -88,7 +87,7 @@
         pointerDown = false
         pendingAssets.clear()
         assetQueue = presenterState ? [presenterState.current, presenterState.next].flatMap((preview) => Object.values(preview?.assets || {})) : []
-    })
+    }
 
     function updatePresenterState(data: PresenterState) {
         if (!connected) return
@@ -116,10 +115,7 @@
             const assetId = assetQueue.shift()!
             if (pendingAssets.has(assetId) || presenterThumbnails[assetId] !== undefined) continue
             pendingAssets.set(assetId, { revision: presenterState.revision, connectionEpoch: presenterConnectionEpoch })
-            socket.emit("CONTROLLER", {
-                channel: "PRESENTER_THUMBNAIL",
-                data: { revision: presenterState.revision, assetId }
-            })
+            client.send("PRESENTER_THUMBNAIL", { revision: presenterState.revision, assetId })
         }
     }
 
@@ -140,12 +136,12 @@
     function requestThumbnail() {
         if (!connected || !outputId || !frameReceived) return
         frameReceived = false
-        socket.emit("CONTROLLER", { channel: "OUTPUT_FRAME", data: { outputId } })
+        client.send("OUTPUT_FRAME", { outputId })
     }
 
     function sendAction(id: string) {
         if (!connected) return
-        socket.emit("CONTROLLER", { channel: "ACTION", data: { id } })
+        client.send("ACTION", { id })
 
         if (justCleared) {
             clearTimeout(justCleared)
@@ -165,9 +161,9 @@
         pointerDown = false
         if (!connected) return
 
-        const data: { offset: { x: number; y: number } | null; tool?: string | null } = { offset: null }
+        const data: ControllerFocusRequest = { offset: null }
         if (tool === "Zoom") data.tool = null
-        socket.emit("CONTROLLER", { channel: "FOCUS", data })
+        client.send("FOCUS", data)
     }
 
     function moveDrawing(event: PointerEvent) {
@@ -178,10 +174,7 @@
             x: Math.max(0, Math.min((event.clientX - rect.left) / rect.width, 1)),
             y: Math.max(0, Math.min((event.clientY - rect.top) / rect.height, 1))
         }
-        socket.emit("CONTROLLER", {
-            channel: "FOCUS",
-            data: { offset, tool: tool.toLowerCase() }
-        })
+        client.send("FOCUS", { offset, tool: tool.toLowerCase() as DrawTools })
     }
 
     function changeTool(event: Event) {

@@ -1,5 +1,8 @@
 import type { Item, Line, Slide } from "../../../../types/Show"
 import { replaceVirtualBreaks } from "../../../show/slides"
+import { getItemText } from "../../helpers/pureHelpers"
+
+export { getItemText }
 
 // add new style to text by selection
 export function addStyle(selection: { start: number; end: number }[], item: Item, style: string | any[]): Item {
@@ -304,25 +307,6 @@ export function getSlidesText(slides: { [key: string]: Slide }) {
 export function getSlideText(slide: Slide) {
     if (!slide?.items?.length) return ""
     return slide.items.reduce((value, item) => (value += getItemText(item)), "")
-}
-
-// get text of item.text...
-export function getItemText(item: Item | null): string {
-    let text = ""
-
-    const lines = item?.lines
-    if (Array.isArray(lines)) {
-        for (const line of lines) {
-            const textArr = line.text
-            if (Array.isArray(textArr)) {
-                for (const t of textArr) {
-                    if (t.value) text += t.value
-                }
-            }
-        }
-    }
-
-    return text
 }
 
 export function getItemTextArray(item: Item): string[] {

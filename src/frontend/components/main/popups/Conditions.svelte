@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
     import type { Condition, ConditionValue } from "../../../../types/Show"
+    import { updateShowsCache } from "../../../showsCacheState/showsCache.svelte"
     import { activeEdit, activeShow, activeStage, overlays, popupData, showsCache, stageShows, templates } from "../../../stores"
     import { translateText } from "../../../utils/language"
     import { checkConditionValue, isConditionMet } from "../../edit/scripts/itemHelpers"
@@ -125,7 +126,7 @@
                 return a
             })
         } else {
-            showsCache.update((a) => {
+            updateShowsCache((a) => {
                 if (!a[showId]?.slides?.[slideId]?.items?.[itemIndex]) return a
                 a[showId].slides[slideId].items[itemIndex].conditions = conditions
                 a[showId].timestamps.modified = Date.now()

@@ -28,7 +28,7 @@
     const profile = getAccess("overlays")
     $: readOnly = profile.global === "read" || profile[active || ""] === "read"
 
-    $: resolution = getResolution(null, { $outputs, $styles })
+    $: resolution = getResolution(null, { outputs: $outputs, styles: $styles })
 
     let filteredOverlays: (Overlay & { id: string })[] = []
     $: filteredOverlays = sortByName(keysToID($overlays).filter((s) => (active === "all" && !$overlayCategories[s?.category || ""]?.isArchive) || active === s.category || (active === "unlabeled" && (s.category === null || !$overlayCategories[s.category]))))

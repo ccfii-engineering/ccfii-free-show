@@ -2,7 +2,8 @@ import { get } from "svelte/store"
 import { uid } from "uid"
 import type { Item, Slide, SlideData, Template } from "../../../types/Show"
 import { breakLongLines, removeItemValues } from "../../show/slides"
-import { activeEdit, activePage, activePopup, activeProject, activeShow, alertMessage, cachedShowsData, deletedShows, groups, notFound, projects, refreshEditSlide, renamedShows, shows, showsCache, templates } from "../../stores"
+import { setShowsCache, updateShowsCache } from "../../showsCacheState/showsCache.svelte"
+import { activeEdit, activePage, activePopup, activeProject, activeShow, alertMessage, cachedShowsData, deletedShows, groups, notFound, overlays, projects, refreshEditSlide, renamedShows, scriptureSettings, shows, showsCache, templates } from "../../stores"
 import { save } from "../../utils/save"
 import { EMPTY_SHOW_SLIDE } from "../../values/empty"
 import { customActionActivation } from "../actions/actions"
@@ -12,7 +13,7 @@ import { history } from "./history"
 import { _updaters } from "./historyHelpers"
 import { applyReassignUpdate } from "./historyReassign"
 import { addToPos } from "./mover"
-import { getItemsCountByType, isEmptyOrSpecial, mergeWithTemplate, updateLayoutsFromTemplate, updateSlideFromTemplate } from "./output"
+import { getItemsCountByType, isEmptyOrSpecial, mergeWithTemplate, updateLayoutsFromTemplate, updateSlideFromTemplate } from "./slideTemplateMerge"
 import { loadShows, saveTextCache } from "./setShow"
 import { getShowCacheId } from "./show"
 import { getItemWithMostLines } from "./showActions"
@@ -243,7 +244,7 @@ export const historyActions = ({ obj, undo = null }: any) => {
                 )
             }
 
-            showsCache.update((a) => {
+            updateShowsCache((a) => {
                 showsList.forEach(({ show, id }, i: number) => {
                     if (deleting) {
                         if (replace && show) {
@@ -365,7 +366,7 @@ export const historyActions = ({ obj, undo = null }: any) => {
                 if (initializing) save()
                 // delete showsCache (to reduce lag)
                 setTimeout(() => {
-                    showsCache.set({})
+                    setShowsCache({})
                     activeShow.set(null)
                 }, 2000)
             }
@@ -454,7 +455,7 @@ export const historyActions = ({ obj, undo = null }: any) => {
 
                 if (deleting) {
                     // update layout
-                    showsCache.update((a) => {
+                    updateShowsCache((a) => {
                         if (!a[showId]?.layouts?.[layout]) return a
 
                         const layoutSlides = a[showId].layouts[layout].slides
@@ -583,7 +584,7 @@ export const historyActions = ({ obj, undo = null }: any) => {
                     // TODO: not working when child outputted and added
                     // TODO: drag groups! -- ?????
                     // console.log(count)
-                    // outputs.update((a) => {
+                    // updateOutputs((a) => {
                     //   Object.keys(a).forEach((id: string) => {
                     //     let currentIndex = a[id].out?.slide?.index
                     //     console.log(currentIndex)
@@ -860,7 +861,7 @@ export const historyActions = ({ obj, undo = null }: any) => {
                     const changeOverflowItems = !!(slide.settings?.template || createItems)
 
                     const mode = slideTemplate?.settings?.mode
-                    let newItems = mergeWithTemplate(slide.items, slideTemplate.items, changeOverflowItems, obj.save !== false, createItems, mode, slide.customDynamicValues)
+                    let newItems = mergeWithTemplate(slide.items, slideTemplate.items, changeOverflowItems, obj.save !== false, createItems, mode, slide.customDynamicValues, { scriptureNumberColor: get(scriptureSettings).numberColor })
 
                     // remove items if not in template (and textbox is empty)
                     if (changeOverflowItems) {
@@ -890,7 +891,7 @@ export const historyActions = ({ obj, undo = null }: any) => {
 
                     const isFirst = templateMode === "global" && id === firstLayoutSlideId
                     const firstTemplateForUpdate = isFirst && firstSlideTemplateId && (appliedFirstOverride || slide.settings?.template === firstSlideTemplateId) ? firstSlideTemplateId : undefined
-                    show.slides[id] = updateSlideFromTemplate(show.slides[id], slideTemplate, isFirst, changeOverflowItems, firstTemplateForUpdate)
+                    show.slides[id] = updateSlideFromTemplate(show.slides[id], slideTemplate, isFirst, changeOverflowItems, firstTemplateForUpdate, changeOverflowItems && slideTemplate.settings?.overlayId ? get(overlays)[slideTemplate.settings.overlayId]?.items || [] : [])
 
                     const slideRefs = ref.filter((a) => a.id === id)
                     const oldTemplate = get(templates)[previousTemplateId || ""] || {}
@@ -906,7 +907,7 @@ export const historyActions = ({ obj, undo = null }: any) => {
                 // don't update if show has not changed
                 if (obj.save === false && JSON.stringify(show) === previousShow) return
 
-                showsCache.update((a) => {
+                updateShowsCache((a) => {
                     a[data.remember.showId] = show
                     return a
                 })
@@ -940,7 +941,7 @@ export const historyActions = ({ obj, undo = null }: any) => {
             else obj.newData = clone(data)
 
             function updateLayoutSlides() {
-                showsCache.update((a) => {
+                updateShowsCache((a) => {
                     if (!a[data.remember.showId]) return a
                     const layoutSlides: SlideData[] = a[data.remember.showId].layouts?.[data.remember.layout].slides || []
 

@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onDestroy, setContext } from "svelte"
     import type { StageLayout } from "../../../types/Stage"
-    import { allOutputs, outputs, stageShows } from "../../stores"
+    import { allOutputs, currentWindow, outputs, stageShows } from "../../stores"
     import { triggerClickOnEnterSpace } from "../../utils/clickable"
     import { getAccess } from "../../utils/profile"
     import { getSortedStageItems, shouldItemBeShown } from "../edit/scripts/itemHelpers"
@@ -67,7 +67,7 @@
             <SelectElem id="stage" data={{ id }} {selectable}>
                 <Zoomed background={layout.items.length ? "black" : "transparent"} style="width: 100%;" {resolution} id={stageOutputId} isStage disableStyle center bind:ratio>
                     {#each stageItems as item}
-                        {#if (item.type || item.enabled !== false) && shouldItemBeShown(stageItemToItem(item), item.type === "slide_text" ? getSlideTextItems(layout, item, $outputs || $allOutputs) : [], { type: "stage" }, conditionsUpdater)}
+                        {#if (item.type || item.enabled !== false) && shouldItemBeShown(stageItemToItem(item), item.type === "slide_text" ? getSlideTextItems(layout, item, $currentWindow === "output" ? $allOutputs : $outputs) : [], { type: "stage" }, conditionsUpdater)}
                             <Stagebox id={item.id} item={clone(item)} {ratio} stageLayout={layout} disableStagePreview={true} />
                         {/if}
                     {/each}

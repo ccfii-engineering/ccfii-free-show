@@ -1,6 +1,10 @@
 {
-    "extends": "@tsconfig/svelte/tsconfig.json",
     "compilerOptions": {
+        // Inlined from @tsconfig/svelte 2 (its importsNotUsedAsValues/node10 options are removed in TS 6/7)
+        "moduleResolution": "bundler",
+        "skipLibCheck": true,
+        "noUncheckedSideEffectImports": false,
+        "forceConsistentCasingInFileNames": true,
         "types": ["node", "svelte"],
         "sourceMap": true,
         "target": "ESNext",

@@ -1,0 +1,4 @@
+{
+    "extends": "./tsconfig.svelte-preprocess.json",
+    "compilerOptions": { "sourceMap": false }
+}

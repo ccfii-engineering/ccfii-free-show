@@ -2,7 +2,7 @@
     import { createEventDispatcher } from "svelte"
     import { clearAudio } from "../../../audio/audioFading"
     import { activeTimers, dictionary, isFadingOut, isTimelinePlaying, labelsDisabled, outLocked, outputCache, outputs, overlayTimers, playingAudio, playingMetronome, timelineRecordingAction } from "../../../stores"
-    import { mediaEntry, outputEntryRef, styleEntryRef } from "../../../utils/perEntryStores"
+    import { mediaEntry, outputEntry, styleEntryRef } from "../../../utils/perEntryStores"
     import { presentationControllersKeysDisabled } from "../../../utils/shortcuts"
     import Icon from "../../helpers/Icon.svelte"
     import { getMediaLayerType } from "../../helpers/media"
@@ -69,7 +69,7 @@
 
     $: backgroundCleared = isOutCleared("background", $outputs)
     $: outputId = getActiveOutputs($outputs, true, true, true)[0] || ""
-    $: myOutput = outputEntryRef(outputId)
+    $: myOutput = outputEntry(outputId)
     $: output = $myOutput || {}
     $: myOutputStyle = styleEntryRef(output.style || "")
     $: outputStyle = $myOutputStyle || {}

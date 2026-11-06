@@ -228,9 +228,34 @@ test("ordinary output media playback across supported formats", async () => {
         await mainWindow.locator(`#previewArea button[data-title="${operatorMuteBefore ? "Mute" : "Unmute"}"]`).click()
         await expect.poll(async () => (await queryAPI(apiUrl, "get_playing_video_state")).muted, { message: "operator mute can be restored" }).toBe(operatorMuteBefore)
 
+        // Anchor away from the wrap boundary: turning loop off near the end of the clip legitimately
+        // clears the output (clear media on finish), which made this section depend on elapsed time.
+        await queryAPI(apiUrl, "video_seekto", { seconds: 0.1 })
+        // Start from loop off: the operator click then enables loop, so observing playback afterwards cannot run into the end of the clip.
+        if ((await queryAPI(apiUrl, "get_playing_video_state")).loop) {
+            await queryAPI(apiUrl, "toggle_media_loop")
+            await expect.poll(async () => (await queryAPI(apiUrl, "get_playing_video_state")).loop, { message: "loop is off before the operator toggle" }).toBe(false)
+            await queryAPI(apiUrl, "video_seekto", { seconds: 0.1 })
+        }
         const operatorLoopBefore = (await queryAPI(apiUrl, "get_playing_video_state")).loop
         const operatorLoop = mainWindow.locator('#previewArea button[data-title^="Loop"]')
         await operatorLoop.click()
+        // Toggling loop must keep the playback position. setOutput used to resend startAt (0) 600ms later and restart the video.
+        const toggleDuration = await queryAPI(apiUrl, "get_playing_video_duration")
+        expect(toggleDuration, "clip is long enough to observe a restart").toBeGreaterThan(1.6)
+        {
+            // setOutput resent startAt 600ms after the click: samples taken after that moment show the reset. Stop before the clip
+            // ends (turning loop off at the end clears the output).
+            const clickedAt = Date.now() - 50
+            const lateSamples: number[] = []
+            while (Date.now() - clickedAt < 850) {
+                await delay(100)
+                const sample = await queryAPI(apiUrl, "get_playing_video_time")
+                if (Date.now() - clickedAt > 700) lateSamples.push(sample)
+            }
+            expect(lateSamples.length, "observed playback after the 600ms mark").toBeGreaterThan(0)
+            expect(Math.min(...lateSamples), `operator loop toggle keeps the playback position; late samples: ${lateSamples.join(", ")}`).toBeGreaterThan(0.5)
+        }
         await expect.poll(async () => (await queryAPI(apiUrl, "get_playing_video_state")).loop, { message: "operator loop reaches the active video" }).toBe(!operatorLoopBefore)
         await expect(operatorLoop).toHaveAttribute("data-title", operatorLoopBefore ? "Loop" : "Loop: Enabled")
         await operatorLoop.click()
@@ -270,6 +295,8 @@ test("ordinary output media playback across supported formats", async () => {
 
         // SHUTDOWN: closing the Presentation Output releases playback ownership cleanly
         await playMediaCardUntil(mainWindow, apiUrl, primary.file, (s) => s.duration > 1)
+        // The operator button asks for a second click to confirm stopping a live output.
+        await outputButton.click()
         await outputButton.click() // toggle off
         let afterClose = -1
         for (let attempt = 0; attempt < 12 && afterClose !== 0; attempt++) {

@@ -1,7 +1,8 @@
 <script lang="ts">
     import { tick, onMount } from "svelte"
     import type { Item } from "../../../../types/Show"
-    import { activeEdit, showsCache } from "../../../stores"
+    import { updateShowsCache } from "../../../showsCacheState/showsCache.svelte"
+    import { activeEdit } from "../../../stores"
     import { clone } from "../../helpers/array"
     import { getStyles } from "../../helpers/style"
     import Icon from "../../helpers/Icon.svelte"
@@ -38,7 +39,7 @@
 
     function updateItem() {
         if (!ref?.showId || $activeEdit.slide === null) return
-        showsCache.update((cache) => {
+        updateShowsCache((cache) => {
             const show = cache[ref.showId]
             if (!show) return cache
             const slide = show.slides[ref.id]

@@ -13,8 +13,14 @@
         <div id="direct-2"></div>
         <div id="direct-3"></div>
         <script type="module">
-            import Textbox from "/src/server/remote/components/show/Textbox.svelte"
+            import { createClassComponent } from "svelte/legacy"
+            import TextboxComponent from "/src/server/remote/components/show/Textbox.svelte"
             import { mediaCache } from "/src/server/remote/util/stores.ts"
+
+            // Svelte 5 components cannot be instantiated with `new`; the legacy wrapper keeps the $set API this test relies on.
+            const Textbox = function (options) {
+                return createClassComponent({ component: TextboxComponent, ...options })
+            }
 
             // PowerPointHelper.getMediaPath maps a package relationship to this extracted media path.
             const contentPaths = { "ppt/media/image1.png": "C:\\PowerPoint Imports\\Deck One\\image 1.png" }

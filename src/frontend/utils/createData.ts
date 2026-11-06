@@ -4,6 +4,7 @@ import type { MainFilePaths } from "../../types/Main"
 import type { Overlay, Template } from "../../types/Show"
 import { DEFAULT_ITEM_STYLE } from "../components/edit/scripts/itemHelpers"
 import { setShow } from "../components/helpers/setShow"
+import { updateOutputs } from "../outputState/outputs.svelte"
 import { activePopup, audioFolders, deletedDefaults, effects, folders, language, mediaFolders, outputs, overlays, projects, remotePassword, scriptures, shows, templates, variables } from "../stores"
 import { stageShows, templateCategories } from "./../stores"
 import { translateText } from "./language"
@@ -70,7 +71,7 @@ export function createData(paths: MainFilePaths) {
 
     // translate names set in defaults.ts
     if (get(outputs).default?.name === "Primary") {
-        outputs.update((a) => {
+        updateOutputs((a) => {
             a.default.name = translateText("theme.primary")
             return a
         })

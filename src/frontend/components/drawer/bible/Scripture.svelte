@@ -1,6 +1,6 @@
 <script lang="ts">
     import JSONBible from "json-bible"
-    import { ApiBible } from "json-bible/lib/api"
+    import { type ApiBible } from "json-bible/lib/api"
     import type { Verse } from "json-bible/lib/Bible"
     import type { VerseReference } from "json-bible/lib/reference"
     import { onMount } from "svelte"

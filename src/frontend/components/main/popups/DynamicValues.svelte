@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
+    import { updateShowsCache } from "../../../showsCacheState/showsCache.svelte"
     import { activeEdit, activePage, activePopup, activeShow, activeStage, dynamicValuesRevealUsed, overlays, popupData, refreshEditSlide, showsCache, special, stageShows, templates } from "../../../stores"
     import { triggerClickOnEnterSpace } from "../../../utils/clickable"
     import { formatSearch } from "../../../utils/search"
@@ -167,7 +168,7 @@
         let ref = getLayoutRef(showId)
         let slideId = ref[edit.slide || 0]?.id || ""
 
-        showsCache.update((a) => {
+        updateShowsCache((a) => {
             if (!a[showId]?.slides?.[slideId]) return a
 
             a[showId].slides[slideId].items = updateItemText(a[showId].slides[slideId].items)

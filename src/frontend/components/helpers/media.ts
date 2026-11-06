@@ -8,6 +8,7 @@ import type { FileFolder, MediaStyle, Subtitle } from "../../../types/Main"
 import type { Cropping, Styles } from "../../../types/Settings"
 import type { ShowType } from "../../../types/Show"
 import { requestMain, sendMain } from "../../IPC/main"
+import { updateMedia } from "../../mediaState/media.svelte"
 import { audioFolders, cachePath, loadedMediaThumbnails, media, mediaFolders, special } from "../../stores"
 import { addToMediaFolder } from "../../utils/cloudSync"
 import { isMainWindow, newToast, wait, waitUntilValueIsDefined } from "../../utils/common"
@@ -15,18 +16,15 @@ import { audioExtensions, imageExtensions, mediaExtensions, presentationExtensio
 import type { API_media, API_slide_thumbnail } from "../actions/api"
 import { clone } from "./array"
 import { getFirstActiveOutput, getOutputResolution } from "./output"
+import { getFileName, removeExtension } from "./pureHelpers"
+
+export { getFileName, removeExtension }
 
 export function getExtension(path: string): string {
     if (typeof path !== "string") return ""
     if (path.indexOf(".") < 0) return path
     if (path.includes("?")) path = path.slice(0, path.indexOf("?"))
     return path.substring(path.lastIndexOf(".") + 1).toLowerCase()
-}
-
-export function removeExtension(name: string): string {
-    if (typeof name !== "string" || !name) return ""
-    if (name.indexOf(".") < 0) return name
-    return name.slice(0, name.lastIndexOf("."))
 }
 
 export function isMediaExtension(extension: string, audio = false): boolean {
@@ -41,13 +39,6 @@ export function getMediaType(extension: string): ShowType {
     if (audioExtensions.includes(extension.toLowerCase())) return "audio"
     if (videoExtensions.includes(extension.toLowerCase())) return "video"
     return "image"
-}
-
-export function getFileName(path: string): string {
-    if (typeof path !== "string") return ""
-    if (path.indexOf("\\") > -1) return path.substring(path.lastIndexOf("\\") + 1)
-    if (path.indexOf("/") > -1) return path.substring(path.lastIndexOf("/") + 1)
-    return path
 }
 
 let pathJoiner = ""
@@ -282,7 +273,7 @@ export async function doesMediaExist(path: string, noCache = false) {
 
     // update "media"
     if (!existsData.exists || !creationTime) {
-        media.update((a) => {
+        updateMedia((a) => {
             if (existsData.exists && a[path]) {
                 a[path].creationTime = existsData.creationTime
             } else {
@@ -317,7 +308,7 @@ export async function getMediaInfo(path: string): Promise<{ codecs: string[]; mi
 
     if (JSON.stringify(get(media)[path]?.info) === JSON.stringify(info)) return info
 
-    media.update((a) => {
+    updateMedia((a) => {
         if (!a[path]) a[path] = {}
         a[path].info = info
         return a
@@ -344,7 +335,7 @@ export async function isVideoSupported(path: string) {
 export function setMediaTracks(data: { path: string; tracks: Subtitle[] }) {
     const path: string = data.path || ""
 
-    media.update((a) => {
+    updateMedia((a) => {
         if (!a[path]) a[path] = {}
         a[path].tracks = data.tracks
         return a
@@ -813,7 +804,7 @@ function refreshMediaLicense(url: string, providerId: ContentProviderId, mediaId
         const license = await requestMain(Main.CHECK_MEDIA_LICENSE, { providerId, mediaId })
         if (!license) {
             if (get(media)[url]?.licenseExpiresAt !== undefined) {
-                media.update((m) => {
+                updateMedia((m) => {
                     if (m[url]) delete m[url].licenseExpiresAt
                     return m
                 })
@@ -821,7 +812,7 @@ function refreshMediaLicense(url: string, providerId: ContentProviderId, mediaId
             return false
         }
 
-        media.update((m) => {
+        updateMedia((m) => {
             if (!m[url]) m[url] = {}
             m[url].licenseExpiresAt = license.expiresAt
             if (!m[url].contentFile) m[url].contentFile = {}

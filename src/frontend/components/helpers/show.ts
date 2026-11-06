@@ -1,5 +1,6 @@
 import { get } from "svelte/store"
 import type { Item, Show, ShowList, Shows, Slide, TrimmedShow, TrimmedShows } from "../../../types/Show"
+import { updateShowsCache } from "../../showsCacheState/showsCache.svelte"
 import { activeEdit, activeFocus, activePage, activeProject, activeShow, cachedShowsData, customMetadata, dictionary, focusMode, groupNumbers, groups, projects, refreshEditSlide, shows, showsCache, sorted, sortedShowsList } from "../../stores"
 import { translateText } from "../../utils/language"
 import { clone, keysToID, removeValues, sortByName, sortByNameAndNumber } from "./array"
@@ -318,7 +319,7 @@ export function updateCachedShow(showId: string, show: Show, layoutId = "") {
 
             // update local group
             if (JSON.stringify(oldGroup) !== JSON.stringify({ group: slide.group, color: slide.color })) {
-                showsCache.update((a) => {
+                updateShowsCache((a) => {
                     a[showId].slides[slide.id].group = slide.group
                     a[showId].slides[slide.id].color = slide.color
                     return a
@@ -365,7 +366,7 @@ export function removeTemplatesFromShow(showId: string, slideId?: string, enable
 
     if (slideId) {
         // remove slide template
-        showsCache.update((a) => {
+        updateShowsCache((a) => {
             const show = a[showId]
             if (!show?.slides?.[slideId]?.settings?.template) return a
 
@@ -375,7 +376,7 @@ export function removeTemplatesFromShow(showId: string, slideId?: string, enable
         })
     } else if (enableHistory) {
         // remove any slide templates
-        showsCache.update((a) => {
+        updateShowsCache((a) => {
             const show = a[showId]
             Object.values(show.slides || {}).forEach((slide) => {
                 if (slide.settings?.template) delete slide.settings.template

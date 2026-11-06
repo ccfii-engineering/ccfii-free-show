@@ -3,6 +3,7 @@
     import type { Unsubscriber } from "svelte/store"
     import type { Output } from "../../../../types/Output"
     import type { MediaType, ShowType } from "../../../../types/Show"
+    import { patchOutput } from "../../../outputState/outputs.svelte"
     import { getPlaybackSnapshot, subscribePlaybackState } from "../../../outputState/playbackStore"
     import { activeFocus, activeShow, focusMode, outLocked, playerVideos } from "../../../stores"
     import { triggerClickOnEnterSpace } from "../../../utils/clickable"
@@ -17,6 +18,7 @@
     import { VideoPlayer } from "../../media/video/videoPlayer"
     import { videoSync } from "../../media/video/videoSync"
     import VideoSlider from "../VideoSlider.svelte"
+    import { outputWithBackgroundFlag } from "./mediaControlsBackground"
 
     export let currentOutput: Output | null
     export let outputId: string
@@ -115,7 +117,8 @@
 
         const loop = !videoData.loop
         videoData.loop = loop
-        if (background && getActiveSnapshot()) setOutput("background", { ...background, loop }, false, outputId)
+        // setOutput would restart the video (it resends startAt), so only patch the stored flag
+        if (background && getActiveSnapshot()) patchOutput(outputId, (output) => outputWithBackgroundFlag(output, { loop }))
         VideoPlayer.setLoop(path, outputId, loop)
     }
 

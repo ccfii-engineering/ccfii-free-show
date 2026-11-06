@@ -193,7 +193,7 @@
 
     // slide styling
     // currentSlide?.settings?.resolution
-    $: resolution = getResolution(null, { currentOutput, currentStyle }, false, outputId, styleIdOverride)
+    $: resolution = getResolution(null, { outputs: $outputs, styles: $styles }, outputId, styleIdOverride)
     $: transitions = getOutputTransitions(slideData, currentStyle.transition, $transitionData, mirror && !preview)
     $: slideFilter = getSlideFilter(slideData)
 

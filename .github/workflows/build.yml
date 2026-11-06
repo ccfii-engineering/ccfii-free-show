@@ -41,7 +41,24 @@ jobs:
         if: runner.os == 'macOS'
         run: npm i dmg-license
 
-      - name: Bundle internal app
+      - name: Build app
+        run: npm run build
+
+      - name: Download Electron binary (Electron 42+ does not fetch it on install)
+        run: node node_modules/electron/install.js
+
+      - name: Build and verify @discordjs/opus for Electron (Windows, install-app-deps skips N-API add-ons)
+        if: runner.os == 'Windows'
+        run: node scripts/build/ensureOpusBinary.js
+
+      - name: Build and verify @discordjs/opus for Electron (macOS, x64 and arm64)
+        if: runner.os == 'macOS'
+        run: node scripts/build/ensureOpusBinary.js --arch=x64,arm64
+
+      - name: Validate bundled PowerPoint renderer
+        run: node scripts/tests/runPowerpointRendererElectron.mjs
+
+      - name: Bundle internal app (never publishes)
         run: npm run dist:internal
 
       - name: Upload bundled artifacts

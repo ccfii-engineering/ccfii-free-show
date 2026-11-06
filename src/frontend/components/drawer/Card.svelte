@@ -25,8 +25,8 @@
     export let showApplyOnHover = false
     export let checkered = false
     export let mode: "grid" | "list" | "lyrics" = "grid"
-    export let resolution: Resolution = getResolution(null, { $outputs, $styles })
-    $: resolution = getResolution(resolution, { $outputs, $styles })
+    export let resolution: Resolution = getResolution(null, { outputs: $outputs, styles: $styles })
+    $: resolution = getResolution(resolution, { outputs: $outputs, styles: $styles })
     $: mainWidth = width || (mode === "grid" ? 100 / $mediaOptions.columns : 100)
 </script>
 

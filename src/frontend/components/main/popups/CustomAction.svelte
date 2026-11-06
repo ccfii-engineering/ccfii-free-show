@@ -1,5 +1,6 @@
 <script lang="ts">
-    import { actions, activeShow, showsCache } from "../../../stores"
+    import { updateShowsCache } from "../../../showsCacheState/showsCache.svelte"
+    import { actions, activeShow } from "../../../stores"
     import { _show } from "../../helpers/shows"
     import MaterialDropdown from "../../inputs/MaterialDropdown.svelte"
     import Tip from "../Tip.svelte"
@@ -11,7 +12,7 @@
         .sort((a, b) => a.name?.localeCompare(b.name))
 
     function updateValue(id: string) {
-        showsCache.update((a) => {
+        updateShowsCache((a) => {
             if (!a[$activeShow?.id || ""]) return a
 
             a[$activeShow!.id].settings.customAction = id

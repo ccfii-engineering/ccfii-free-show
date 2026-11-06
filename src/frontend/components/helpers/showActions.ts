@@ -1,5 +1,5 @@
 import type { ExifData } from "exif"
-import type { ICommonTagsResult } from "music-metadata/lib/type"
+import type { ICommonTagsResult } from "music-metadata"
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist"
 import { get } from "svelte/store"
 import { OUTPUT } from "../../../types/Channels"
@@ -22,6 +22,8 @@ import { getCurrentTimerValue, getTimeUntilClock, playPauseGlobal } from "../dra
 import { getDynamicValue } from "../edit/scripts/itemHelpers"
 import { getTextLines } from "../edit/scripts/textStyle"
 import { clearBackground, clearOverlays, clearTimers } from "../output/clear"
+import { updateOutputs } from "../../outputState/outputs.svelte"
+import { updateShowsCache } from "../../showsCacheState/showsCache.svelte"
 import {
     activeEdit,
     activeFocus,
@@ -132,7 +134,7 @@ export function swichProjectItem(pos: number, id: string) {
     // set active layout from project if it exists
     if (projectLayout) {
         if (!get(showsCache)[id].layouts[projectLayout]) projectLayout = Object.keys(get(showsCache)[id].layouts)[0]
-        showsCache.update((a) => {
+        updateShowsCache((a) => {
             if (!a[id].settings) a[id].settings = { activeLayout: "", template: null }
             a[id].settings.activeLayout = projectLayout
             return a
@@ -554,7 +556,7 @@ export function changeOutputStyle(data: API_output_style) {
             if (type === "specific") outputStyle = outputsList[outputId]
             if (!outputStyle) return
 
-            outputs.update((a) => {
+            updateOutputs((a) => {
                 a[outputId].style = outputStyle
                 return a
             })
@@ -565,7 +567,7 @@ export function changeOutputStyle(data: API_output_style) {
     }
 
     const outputIds = data.outputId ? [data.outputId] : getAllNormalOutputs().map((a) => a.id)
-    outputs.update((a) => {
+    updateOutputs((a) => {
         outputIds.forEach((outputId) => {
             if (!a[outputId]) return
             a[outputId].style = data.styleId || ""
@@ -1329,7 +1331,12 @@ export function getVariableNameId(name: string) {
     return name.toLowerCase().trim().replaceAll(" ", "_")
 }
 
-export function createCSSVariables(variableUpdater = get(variables), _dynamicUpdaters: any = null, type: "default" | "stage" = "default", _updateTrigger: any = null) {
+/**
+ * `variableUpdater` is the variables record (callers pass `$variables`). The dynamic group colors are read from the first output's
+ * active slide and the shows cache, so a `$:` caller lists the values it depends on in `_refreshOn` (the active `outSlide`, a timer tick)
+ * instead of depending on the whole outputs store. `_refreshOn` is never read here; it only makes the dependency explicit at the call site.
+ */
+export function createCSSVariables(variableUpdater = get(variables), type: "default" | "stage" = "default", _refreshOn: { outSlide?: OutSlide | null; tick?: number } = {}) {
     // add all number variables
     const numberVariables = Object.values(variableUpdater || {}).filter((a) => a && (a.type === "number" || a.type === "random_number" || (a.type === "text" && a.text?.includes("{"))))
     let css = numberVariables.reduce((css, v) => (css += `--variable-${getVariableNameId(v.name)}: ${v.type === "text" ? getDynamicValue(v.text || "", type) : (v.number ?? (v.default || 0))};`), "")

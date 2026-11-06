@@ -8,6 +8,8 @@ import type { DropData, Selected } from "../../../types/Main"
 import type { Item, Slide, SlideAction } from "../../../types/Show"
 import { sendMain } from "../../IPC/main"
 import { changeLayout, changeSlideGroups } from "../../show/slides"
+import { updateMedia } from "../../mediaState/media.svelte"
+import { updateShowsCache } from "../../showsCacheState/showsCache.svelte"
 import { activeDrawerTab, activeEdit, activePage, activePopup, activeProject, activeShow, alertMessage, audioFolders, audioPlaylists, audioStreams, drawerTabsData, editingProjectTemplate, media, mediaFolders, overlays, playerVideos, projects, projectTemplates, scriptureSettings, shows, showsCache, templates, timers } from "../../stores"
 import { newToast } from "../../utils/common"
 import { getAccess } from "../../utils/profile"
@@ -406,7 +408,7 @@ export const dropActions = {
         if (drop.data === "favourites" && drag.id === "media") {
             drag.data.forEach((card) => {
                 const path: string = card.path || card.id
-                media.update((a) => {
+                updateMedia((a) => {
                     if (!a[path]) a[path] = { filter: "" }
                     a[path].favourite = true
                     return a
@@ -689,7 +691,7 @@ const slideDrop = {
             }
 
             if (newData.name && slide.group === mediaName) {
-                showsCache.update((shows) => {
+                updateShowsCache((shows) => {
                     if (!shows[showId]?.slides?.[slideId]) return shows
                     shows[showId].slides[slideId].group = removeExtension(newData.name)
                     return shows

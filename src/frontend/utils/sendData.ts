@@ -2,13 +2,16 @@ import { get } from "svelte/store"
 import { CONTROLLER, REMOTE, STAGE } from "../../types/Channels"
 import { Main } from "../../types/IPC/Main"
 import type { ClientMessage, Clients } from "../../types/Socket"
-import type { RemoteMediaPlayRequest } from "../../types/remote/control"
+import { isControllerRequestKey } from "../../types/controller/protocol"
+import { isStageRequestKey } from "../../types/stage/protocol"
+import { isRemoteRequestKey, REMOTE_MEDIA_REQUEST_KEYS, REMOTE_PRE_AUTH_KEYS } from "../../types/remote/protocol"
 import { API_ACTIONS } from "../components/actions/api"
 import { checkWindowCapture } from "../components/helpers/output"
 import { connections, outLocked, remotePassword, shows } from "../stores"
 import { requestMainResult } from "../IPC/main"
 import { isMainWindow } from "./common"
 import { receiveCONTROLLER } from "./controllerTalk"
+import { isRemoteConnectionAuthorized } from "./remoteAccess"
 import { closeRemoteMediaConnection, receiveREMOTE } from "./remoteTalk"
 import { receiveSTAGE } from "./stageTalk"
 
@@ -116,19 +119,18 @@ export async function sendData(id: Clients, msg: ClientMessage, check = false) {
         msg.send = true
         if (data === undefined) msg.data = null
     } else if (id === REMOTE) {
-        if (!receiveREMOTE[channel]) return console.info("UNKNOWN CHANNEL:", channel)
-        msg = await receiveREMOTE[channel](msg)
-        if ((msg as any)?._remoteMediaOperation === "thumbnail") msg = (await fetchRemoteMediaThumbnail(msg, connectionId || "")) as any
-        else if ((msg as any)?._remoteMediaOperation === "play") msg = (await playRemoteMedia(msg, connectionId || "")) as any
+        if (!isRemoteRequestKey(channel) || !receiveREMOTE[channel]) return console.info("UNKNOWN CHANNEL:", channel)
+        // the wire message is untyped; each handler narrows it to its protocol request
+        msg = (await (receiveREMOTE[channel] as (request: ClientMessage) => Promise<ClientMessage | void>)(msg)) as ClientMessage
     } else if (id === STAGE) {
-        if (!receiveSTAGE[channel]) return console.info("UNKNOWN CHANNEL:", channel)
-        msg.data = receiveSTAGE[channel](msg.data, connectionId)
-
-        if (msg.data === undefined) msg.data = null
-        if (msg.data?.channel === "ERROR") msg = { ...msg, channel: "ERROR", data: msg.data?.data }
+        if (!isStageRequestKey(channel) || !receiveSTAGE[channel]) return console.info("UNKNOWN CHANNEL:", channel)
+        // the wire message is untyped; each handler narrows it to its protocol request. It answers the connection
+        // that asked (or the first one for app-internal requests); the reply keeps the original id and listenerId.
+        const reply = await (receiveSTAGE[channel] as (request: ClientMessage) => ClientMessage | void | Promise<ClientMessage | void>)({ ...msg, id: connectionId })
+        msg = (reply ? { ...msg, channel: reply.channel, data: reply.data ?? null } : undefined) as ClientMessage
     } else if (id === CONTROLLER) {
-        if (!receiveCONTROLLER[channel]) return console.info("UNKNOWN CHANNEL:", channel)
-        msg = await receiveCONTROLLER[channel](msg)
+        if (!isControllerRequestKey(channel) || !receiveCONTROLLER[channel]) return console.info("UNKNOWN CHANNEL:", channel)
+        msg = (await (receiveCONTROLLER[channel] as (request: ClientMessage) => Promise<ClientMessage | void>)(msg)) as ClientMessage
     }
 
     if (id === REMOTE && msg && !isPreAuthRemoteChannel(msg.channel) && !isRemoteConnectionAuthorized(msg.id || connectionId)) return
@@ -144,57 +146,13 @@ export async function sendData(id: Clients, msg: ClientMessage, check = false) {
     }
 }
 
-async function fetchRemoteMediaThumbnail(msg: any, connectionId: string) {
-    const requestId = msg.data?.requestId
-    const result = await requestMainResult(Main.REMOTE_MEDIA_THUMBNAIL, { connectionId, path: msg.data?.path })
-    if (result.status !== "success" || !isRemoteConnectionAuthorized(connectionId)) {
-        return { id: connectionId, channel: "MEDIA_ERROR", data: { requestId, code: mediaIPCErrorCode(result) } }
-    }
-
-    return { id: connectionId, channel: "MEDIA_THUMBNAIL_RESULT", data: { requestId, ...result.data } }
-}
-
-async function playRemoteMedia(msg: any, connectionId: string) {
-    const request = msg.data as RemoteMediaPlayRequest
-    const result = await requestMainResult(Main.REMOTE_MEDIA_RESOLVE, { connectionId, path: request?.path })
-    if (result.status !== "success" || !isRemoteConnectionAuthorized(connectionId)) {
-        return { id: connectionId, channel: "MEDIA_PLAY_RESULT", data: { requestId: request?.requestId, ok: false, code: mediaIPCErrorCode(result) } }
-    }
-    if (get(outLocked)) return { id: connectionId, channel: "MEDIA_PLAY_RESULT", data: { requestId: request?.requestId, ok: false, code: "unavailable" } }
-
-    if (result.data.kind === "audio") await API_ACTIONS.play_audio({ path: result.data.path })
-    else {
-        const playbackData: { type: string; loop?: boolean; muted?: boolean } = { type: result.data.kind }
-        if (typeof request.loop === "boolean") playbackData.loop = request.loop
-        if (typeof request.muted === "boolean") playbackData.muted = request.muted
-        await API_ACTIONS.play_media({ path: result.data.path, data: playbackData })
-    }
-    return { id: connectionId, channel: "MEDIA_PLAY_RESULT", data: { requestId: request?.requestId, ok: true } }
-}
-
-function isRemoteConnectionAuthorized(connectionId: string | undefined): boolean {
-    if (!connectionId) return false
-    const connection = get(connections).REMOTE?.[connectionId]
-    return !!connection?.entered && (!get(remotePassword).length || connection.entered === true)
-}
-
 function requiresRemoteEntry(channel: string, apiId: string | undefined) {
-    if (channel === "MEDIA_LIST" || channel === "MEDIA_CANCEL" || channel === "MEDIA_THUMBNAIL" || channel === "MEDIA_PLAY") return true
+    if (REMOTE_MEDIA_REQUEST_KEYS.includes(channel)) return true
     return channel === "API" && ["get_thumbnail", "play_media", "play_audio"].includes(apiId || "")
 }
 
 function isPreAuthRemoteChannel(channel: string) {
-    return ["PASSWORD", "ACCESS", "ERROR", "LANGUAGE"].includes(channel)
-}
-
-function mediaIPCErrorCode(result: any) {
-    if (result.status === "error") {
-        const message = result.error.message.toLowerCase()
-        for (const code of ["busy", "invalid_path", "cursor_expired", "restart_required", "not_media", "too_large", "unavailable"]) {
-            if (message.includes(code)) return code
-        }
-    }
-    return "unavailable"
+    return REMOTE_PRE_AUTH_KEYS.includes(channel)
 }
 
 // limit data sent per second

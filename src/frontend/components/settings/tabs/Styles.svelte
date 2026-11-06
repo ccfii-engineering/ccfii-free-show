@@ -1,6 +1,7 @@
 <script lang="ts">
     import { uid } from "uid"
     import type { AspectRatio, Resolution, Styles } from "../../../../types/Settings"
+    import { updateOutputs } from "../../../outputState/outputs.svelte"
     import { activeDrawerTab, activeEdit, activePage, activeStyle, outputs, styles, templates } from "../../../stores"
     import { translateText } from "../../../utils/language"
     import { updateMappedEntries } from "../../../utils/mapStoreEntries"
@@ -150,7 +151,7 @@
 
     $: normalOutputs = Object.values($outputs).filter((a) => a.enabled && !a.stageOutput)
     function useStyle() {
-        outputs.update((a) => {
+        updateOutputs((a) => {
             return updateMappedEntries(a, Object.keys(a), (entry) => {
                 if (entry.stageOutput || !entry.enabled) return entry
                 return { ...entry, style: styleId }

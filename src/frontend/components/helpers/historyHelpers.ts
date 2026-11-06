@@ -2,7 +2,8 @@ import { get } from "svelte/store"
 import { uid } from "uid"
 import { REMOTE } from "../../../types/Channels"
 import { ShowObj } from "../../classes/Show"
-import { actions, activeDrawerTab, activeEdit, activeProject, activeRename, activeShow, activeStage, activeTagFilter, audioPlaylists, currentOutputSettings, dictionary, drawerTabsData, editingProjectTemplate, effects, events, focusMode, folders, globalTags, groups, interactions, notFound, openedFolders, overlays, playerVideos, profiles, projects, projectTemplates, projectView, shows, showsCache, special, stageShows, styles, theme, themes } from "../../stores"
+import { updateOutputs } from "../../outputState/outputs.svelte"
+import { $, actions, activeDrawerTab, activeEdit, activeProject, activeRename, activeShow, activeStage, activeTagFilter, audioPlaylists, currentOutputSettings, dictionary, drawerTabsData, editingProjectTemplate, effects, events, focusMode, folders, globalTags, groups, interactions, notFound, openedFolders, overlays, playerVideos, profiles, projects, projectTemplates, projectView, shows, showsCache, special, stageShows, styles, theme, themes } from "../../stores"
 import { translateText } from "../../utils/language"
 import { updateThemeValues } from "../../utils/updateSettings"
 import { EMPTY_CATEGORY, EMPTY_EFFECT, EMPTY_EVENT, EMPTY_LAYOUT, EMPTY_PLAYER_VIDEO, EMPTY_PROJECT, EMPTY_PROJECT_FOLDER, EMPTY_SECTION, EMPTY_SLIDE, EMPTY_STAGE, EMPTY_TAG } from "../../values/empty"
@@ -54,7 +55,7 @@ export const _updaters = {
             if (!stageOutput) return
 
             // set to new stage output
-            outputs.update((a) => {
+            updateOutputs((a) => {
                 a[outputId].stageOutput = stageOutput.id
                 return a
             })
@@ -335,7 +336,7 @@ export const _updaters = {
     stage_item_content: { store: stageShows, empty: "", timestamp: true },
 
     show: {
-        store: showsCache,
+        store: $.showsCache,
         empty: new ShowObj(), // this should not be used (it's not updated)
         initialize: (data: any) => {
             const replacer: any = {}
@@ -441,7 +442,7 @@ export const _updaters = {
     },
 
     show_layout: {
-        store: showsCache,
+        store: $.showsCache,
         empty: EMPTY_LAYOUT,
         initialize: (data) => {
             if (!data.timestamps) data.timestamps = {}
@@ -477,7 +478,7 @@ export const _updaters = {
     },
 
     show_key: {
-        store: showsCache,
+        store: $.showsCache,
         initialize: (data) => {
             if (typeof data !== "object") return data
 
@@ -548,7 +549,7 @@ export const _updaters = {
         }
     },
     settings_output: {
-        store: outputs,
+        store: $.outputs,
         select: (id: string) => {
             currentOutputSettings.set(id)
         },
@@ -563,7 +564,7 @@ export const _updaters = {
                     // enable if no enabled
                     const allEnabled = allNormalOutputs.filter((id) => get(outputs)[id].enabled)
                     if (!allEnabled.length) {
-                        outputs.update((a) => {
+                        updateOutputs((a) => {
                             a[allNormalOutputs[0]].enabled = true
                             return a
                         })
@@ -572,7 +573,7 @@ export const _updaters = {
                 }
 
                 // create output if no normal outputs (in case stage outputs are still active)
-                outputs.update((a) => {
+                updateOutputs((a) => {
                     a.default = { enabled: true, active: true, name: translateText("theme.primary"), color: "#F0008C", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, screen: null, style: "default", show: {} }
                     return a
                 })
@@ -724,7 +725,7 @@ export function getProjectName(updater = get(special)) {
 
 function clearOverlayOutput(slideId: string) {
     if (!isOutCleared("overlays")) {
-        outputs.update((a) => {
+        updateOutputs((a) => {
             Object.entries(a).forEach(([id, output]) => {
                 if (output.out?.overlays?.includes(slideId)) {
                     a[id].out!.overlays = a[id].out!.overlays!.filter((overlayId) => overlayId !== slideId)

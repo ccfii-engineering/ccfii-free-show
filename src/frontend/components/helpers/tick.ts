@@ -1,5 +1,6 @@
 import { get } from "svelte/store"
-import { outputs, slideTimers } from "../../stores"
+import { updateOutputs } from "../../outputState/outputs.svelte"
+import { slideTimers } from "../../stores"
 import { playFolder } from "../../utils/shortcuts"
 import { clone } from "./array"
 import { startFolderTimer } from "./output"
@@ -26,7 +27,7 @@ export function newSlideTimer(timerId: string, duration: number, folderPath = ""
 
         const data = get(slideTimers)[id].data || ""
 
-        outputs.update((a) => {
+        updateOutputs((a) => {
             if (a[id]?.out) a[id].out.transition = null
             return a
         })

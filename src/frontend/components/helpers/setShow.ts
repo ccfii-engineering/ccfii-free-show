@@ -5,6 +5,7 @@ import { AudioPlayer } from "../../audio/audioPlayer"
 import type { ShowObj } from "../../classes/Show"
 import { fixShowIssues } from "../../converters/importHelpers"
 import { requestMain } from "../../IPC/main"
+import { updateShowsCache } from "../../showsCacheState/showsCache.svelte"
 import { cachedShowsData, categories, notFound, saved, shows, showsCache, textCache } from "../../stores"
 import { invalidateSearchIndex } from "../../utils/searchFast"
 import { Main } from "./../../../types/IPC/Main"
@@ -51,7 +52,7 @@ export async function setShow(id: string, value: "delete" | Show): Promise<Show>
         })
     }
 
-    showsCache.update((a) => {
+    updateShowsCache((a) => {
         previousValue = a[id]
         if (value === "delete") delete a[id]
         else if (value) {

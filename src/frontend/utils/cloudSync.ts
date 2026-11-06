@@ -5,6 +5,7 @@ import { generateLightRandomColor } from "../components/helpers/color"
 import { isLocalFile } from "../components/helpers/media"
 import { loadShows } from "../components/helpers/setShow"
 import { requestMain, sendMain } from "../IPC/main"
+import { setShowsCache, updateShowsCache } from "../showsCacheState/showsCache.svelte"
 import { activeEdit, activePage, activePopup, activeProject, activeShow, alertMessage, cloudSyncData, cloudUsers, deletedShows, focusMode, popupData, providerConnections, renamedShows, saved, scripturesCache, shows, showsCache, special } from "../stores"
 import { hasNewerUpdate, isMainWindow, newToast, setStatus, wait } from "./common"
 import { confirmCustom } from "./popup"
@@ -133,7 +134,7 @@ export async function syncWithCloud(initialize: boolean = false, isClosing: bool
 
     if (method === "replace") {
         // reset cached data
-        if (!get(focusMode)) showsCache.set({})
+        if (!get(focusMode)) setShowsCache({})
         scripturesCache.set({})
         deletedShows.set([])
         renamedShows.set([])
@@ -177,7 +178,7 @@ export async function syncWithCloud(initialize: boolean = false, isClosing: bool
     // reset cached shows as they might have changed
     const allShowIds = Object.keys(get(shows))
     const syncedShowIds = Object.keys(get(showsCache)).filter((id) => allShowIds.includes(id))
-    showsCache.update((a) => {
+    updateShowsCache((a) => {
         // only delete shows that were synced, so any shows created while syncing don't get deleted
         syncedShowIds.forEach((id) => {
             delete a[id]

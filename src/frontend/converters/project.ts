@@ -8,7 +8,8 @@ import { history } from "../components/helpers/history"
 import { getExtension, getFileName, getMediaType, removeExtension } from "../components/helpers/media"
 import { checkName } from "../components/helpers/show"
 import { sendMain } from "../IPC/main"
-import { actions as actionsStores, activePage, activePopup, activeProject, activeShow, alertMessage, editingProjectTemplate, effects as effectsStores, focusMode, folders, media as mediaStores, overlays as overlayStores, projects, projectTemplates, projectView, recentFiles } from "../stores"
+import { actions as actionsStores, activePage, activePopup, activeProject, activeShow, alertMessage, editingProjectTemplate, effects as effectsStores, focusMode, folders, overlays as overlayStores, projects, projectTemplates, projectView, recentFiles } from "../stores"
+import { updateMedia } from "../mediaState/media.svelte"
 import { translateText } from "../utils/language"
 import { confirmCustom } from "../utils/popup"
 import { audioExtensions, mediaExtensions } from "../values/extensions"
@@ -60,7 +61,7 @@ export function importProject(files: { content: string; path?: string; name?: st
 
         // get media data
         if (media) {
-            mediaStores.update((a) => {
+            updateMedia((a) => {
                 Object.entries(media).forEach(([path, data]: any) => {
                     a[path] = { ...(a[path] || {}), ...data }
                 })

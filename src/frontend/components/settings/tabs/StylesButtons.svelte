@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { updateOutputs } from "../../../outputState/outputs.svelte"
     import { activeStyle, outputs } from "../../../stores"
     import T from "../../helpers/T.svelte"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
@@ -7,7 +8,7 @@
     $: normalOutputs = Object.values($outputs).filter((a) => a.enabled && !a.stageOutput)
 
     function useStyle() {
-        outputs.update((a) => {
+        updateOutputs((a) => {
             Object.keys(a).forEach((outputId) => {
                 let output = a[outputId]
                 if (output.stageOutput || !output.enabled) return

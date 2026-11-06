@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onDestroy } from "svelte"
+    import { updateOutputs } from "../../../outputState/outputs.svelte"
     import { outputs, selected, theme, themes } from "../../../stores"
     import { updateThemeValues } from "../../../utils/updateSettings"
     import { clone } from "../../helpers/array"
@@ -63,7 +64,7 @@
         let colorKeys = Object.keys($outputs)
         if (colorKeys.length !== 1) return
 
-        outputs.update((a) => {
+        updateOutputs((a) => {
             a[colorKeys[0]].color = value
             return a
         })

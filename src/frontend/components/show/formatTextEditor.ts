@@ -7,7 +7,7 @@ import { createChord } from "../edit/scripts/chords"
 import { getItemText, getSlideText } from "../edit/scripts/textStyle"
 import { clone, keysToID, removeDuplicates } from "../helpers/array"
 import { history } from "../helpers/history"
-import { isEmpty } from "../helpers/output"
+import { isEmpty } from "../helpers/slideTemplateMerge"
 import { getGlobalGroup } from "../helpers/show"
 import { _show } from "../helpers/shows"
 

@@ -1,6 +1,8 @@
 import { get } from "svelte/store"
 import { STAGE } from "../../types/Channels"
 import type { OutSlide } from "../../types/Show"
+import type { StageLayoutData, StageProgress, StageProtocol } from "../../types/stage/protocol"
+import type { WebHandlerTable } from "../../types/WebProtocol"
 import { runAction } from "../components/actions/actions"
 import { clone, keysToID } from "../components/helpers/array"
 import { getBase64Path } from "../components/helpers/media"
@@ -72,16 +74,20 @@ async function getNextBackground(currentOutputSlide: OutSlide | null, returnPath
     return { path: base64path, filePath: path, mediaStyle: get(media)[path] || {} }
 }
 
-export const receiveSTAGE = {
-    LAYOUTS: () => {
-        return keysToID(get(stageShows))
+export const receiveSTAGE: WebHandlerTable<StageProtocol> = {
+    LAYOUTS: (msg) => ({
+        id: msg.id,
+        channel: "LAYOUTS",
+        data: keysToID(get(stageShows))
             .filter((a) => !a.disabled)
             .map((a) => ({ id: a.id, name: a.name, password: !!a.password }))
-    },
-    LAYOUT: (data: { id: string; password?: string }, connectionId: string) => {
-        let layout = get(stageShows)[data.id]
-        if (!layout || layout.disabled) return { channel: "ERROR", data: "noShow" }
-        if (layout.password && layout.password !== data.password) return { channel: "ERROR", data: "wrongPass" }
+    }),
+    LAYOUT: (msg) => {
+        const data = msg.data
+        const connectionId = msg.id || ""
+        let layout: any = get(stageShows)[data.id]
+        if (!layout || layout.disabled) return { id: msg.id, channel: "ERROR", data: "noShow" }
+        if (layout.password && layout.password !== data.password) return { id: msg.id, channel: "ERROR", data: "wrongPass" }
         setConnectedState("STAGE", connectionId, "active", data.id)
 
         layout = arrayToObject(filterObjectArray(get(stageShows), ["disabled", "name", "settings", "items"]))[data.id]
@@ -103,18 +109,19 @@ export const receiveSTAGE = {
         send(STAGE, ["DATA"], { timeFormat: get(timeFormat) })
 
         // send media items
-        Object.values(layout.items).forEach(async (item) => {
+        Object.values(layout.items).forEach(async (item: any) => {
             if (item.type === "media" && item.src) {
                 const data = await getBase64Path(item.src)
                 send(STAGE, ["MEDIA"], { path: item.src, value: data })
             }
         })
 
-        return layout
+        return { id: msg.id, channel: "LAYOUT", data: layout as StageLayoutData }
     },
 
-    OUT: (data: any, connectionId: string) => {
-        let stageId = data?.id
+    OUT: (msg) => {
+        const connectionId = msg.id || ""
+        let stageId = msg.data?.id
         if (!stageId) stageId = get(connections).STAGE?.[connectionId]?.active
         if (!stageId) return
 
@@ -131,9 +138,10 @@ export const receiveSTAGE = {
         if (outSlideId) send(STAGE, ["SHOW_DATA"], { id: outSlideId, show: get(showsCache)[outSlideId] })
 
         sendBackgroundToStage(outputId)
-        return output
+        return { id: msg.id, channel: "OUT", data: output }
     },
-    SHOW_DATA: (_data: any, connectionId: string) => {
+    SHOW_DATA: (msg) => {
+        const connectionId = msg.id || ""
         const stageId = get(connections).STAGE?.[connectionId]?.active
         if (!stageId) return
 
@@ -153,10 +161,11 @@ export const receiveSTAGE = {
             send(STAGE, ["MEDIA"], { path: media.path, value: data })
         })
 
-        return { id: outSlideId, show }
+        return { id: msg.id, channel: "SHOW_DATA", data: { id: outSlideId, show } }
     },
 
-    REQUEST_PROGRESS: (data: any) => {
+    REQUEST_PROGRESS: (msg) => {
+        const data: StageProgress = msg.data
         let outputId = data.outputId
         if (!outputId) outputId = getFirstOutput()?.id
         if (!outputId) return
@@ -199,19 +208,21 @@ export const receiveSTAGE = {
 
         data.progress = { currentShowSlide, slidesLength, layoutGroups, projectItems, currentProjectIndexes }
 
-        return data
+        return { id: msg.id, channel: "REQUEST_PROGRESS", data }
     },
 
     // sent by clients with a visible "current output" mirror item (renewed while visible)
-    STREAM_SUBSCRIBE: (data: any, connectionId = "") => {
-        if (addStageStreamViewer(connectionId, data?.outputId)) checkWindowCapture()
+    STREAM_SUBSCRIBE: (msg) => {
+        if (addStageStreamViewer(msg.id || "", msg.data?.outputId)) checkWindowCapture()
     },
-    STREAM_UNSUBSCRIBE: (_data: any, connectionId = "") => {
-        removeStageStreamViewer(connectionId)
+    STREAM_UNSUBSCRIBE: (msg) => {
+        removeStageStreamViewer(msg.id || "")
         checkWindowCapture()
     },
 
-    RUN_ACTION: (a: { id: string }, connectionId: string) => {
+    RUN_ACTION: (msg) => {
+        const a = msg.data
+        const connectionId = msg.id || ""
         const stageId = get(connections).STAGE?.[connectionId]?.active
         const hasPassword = Object.values(get(stageShows) || {}).some((s: any) => s?.password)
         if (hasPassword && !stageId) return

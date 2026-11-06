@@ -1,11 +1,10 @@
 <script lang="ts">
     import "../common/brand.css"
-    import { io } from "socket.io-client"
+    import type { OutputStreamProtocol, OutputStreamResponses } from "../../types/stream/protocol"
+    import { createWebClient } from "../common/util/webClient"
     import { onMount } from "svelte"
     import Icon from "../common/components/Icon.svelte"
     import { audioContext, mutePlayback, processBuffer, unmutePlayback } from "../common/util/audioStream"
-
-    let socket = io()
 
     // FPS
     let secondsTimeout: NodeJS.Timeout | null = null
@@ -32,37 +31,36 @@
     let showAudioIcon = false
 
     // let initialDelay = 0
-    socket.on("OUTPUT_STREAM", (msg) => {
-        switch (msg.channel) {
-            case "STREAM":
-                frames++
-                // FPS
-                count++
-                if (!secondsTimeout) startFPS()
+    const client = createWebClient<OutputStreamProtocol, OutputStreamResponses>({ event: "OUTPUT_STREAM", autoReady: true })
+    client.start({
+        STREAM: (data) => {
+            frames++
+            // FPS
+            count++
+            if (!secondsTimeout) startFPS()
 
-                // this did not work well across different devices
-                // if (!initialDelay) {
-                //     // include device time offset / transmission delay
-                //     initialDelay = Date.now() - msg.data.time
-                // } else {
-                //     let timeSinceSent = Date.now() - initialDelay - msg.data.time
-                //     if (timeSinceSent > 5000) return // skip frames if overloaded
-                // }
+            // this did not work well across different devices
+            // if (!initialDelay) {
+            //     // include device time offset / transmission delay
+            //     initialDelay = Date.now() - msg.data.time
+            // } else {
+            //     let timeSinceSent = Date.now() - initialDelay - msg.data.time
+            //     if (timeSinceSent > 5000) return // skip frames if overloaded
+            // }
 
-                capture = msg.data
+            capture = data
 
-                socket.emit("OUTPUT_STREAM", { channel: "STREAM_DONE", data: { id: msg.data.id, success: true } })
-                break
-            case "AUDIO_BUFFER":
-                if (audioSignal && audioMuted) return
-                if (!audioSignal) {
-                    showAudioIcon = true
-                    setTimeout(() => (showAudioIcon = false), 3000)
-                }
-                audioSignal = true
+            client.send("STREAM_DONE", { id: data.id, success: true })
+        },
+        AUDIO_BUFFER: (data) => {
+            if (audioSignal && audioMuted) return
+            if (!audioSignal) {
+                showAudioIcon = true
+                setTimeout(() => (showAudioIcon = false), 3000)
+            }
+            audioSignal = true
 
-                processBuffer(msg.data.buffer, { sampleRate: msg.data.sampleRate, channelCount: msg.data.channelCount })
-                break
+            processBuffer(data.buffer, { sampleRate: data.sampleRate, channelCount: data.channelCount })
         }
     })
 

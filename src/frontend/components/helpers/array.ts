@@ -1,4 +1,7 @@
 import { translateText } from "../../utils/language"
+import { areObjectsEqual, clone } from "./pureHelpers"
+
+export { areObjectsEqual, clone }
 
 // check if array has any data
 export function arrayHasData<T>(array: T, data: any): boolean {
@@ -177,21 +180,6 @@ export function changeValues<T>(object: T, values: { [key: string]: any }) {
     return object
 }
 
-// clone objects
-export function clone<T>(object: T): T {
-    if (object === null || typeof object !== "object") return object
-
-    try {
-        return structuredClone(object)
-    } catch {
-        try {
-            return JSON.parse(JSON.stringify(object))
-        } catch {
-            return object
-        }
-    }
-}
-
 // not currently in use, but could be handy
 // export function slowLoop(array, interval, returnFunc) {
 //     loopFunction(0)
@@ -268,9 +256,4 @@ export function rangeSelect(e: any, currentlySelected: (number | string)[], newS
     }
 
     return currentlySelected
-}
-
-// compare two objects, check that they are identical, regardless of key order
-export function areObjectsEqual(a: Record<string, any>, b: Record<string, any>): boolean {
-    return JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort())
 }

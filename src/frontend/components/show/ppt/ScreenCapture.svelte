@@ -1,7 +1,8 @@
 <script lang="ts">
     import { Main } from "../../../../types/IPC/Main"
     import { requestMain } from "../../../IPC/main"
-    import { activeProject, outLocked, outputs, presentationData, projects, special } from "../../../stores"
+    import { updateOutputs } from "../../../outputState/outputs.svelte"
+    import { activeProject, outLocked, presentationData, projects, special } from "../../../stores"
     import { triggerClickOnEnterSpace } from "../../../utils/clickable"
     import { getFileName, removeExtension } from "../../helpers/media"
     import { getAllActiveOutputIds } from "../../helpers/output"
@@ -83,7 +84,7 @@
         if ($outLocked) return
 
         const outputIds = getAllActiveOutputIds()
-        outputs.update((a) => {
+        updateOutputs((a) => {
             outputIds.forEach((id) => {
                 if (a[id].out?.slide?.type !== "ppt") return
                 a[id].out.slide.screen = chosenWindow

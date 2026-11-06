@@ -2,6 +2,7 @@
     import { createEventDispatcher, onDestroy, onMount } from "svelte"
     import type { MediaStyle } from "../../../../types/Main"
     import { type CameraData, cameraManager } from "../../../media/cameraManager"
+    import { updateMedia } from "../../../mediaState/media.svelte"
     import { media, os, outputs, special } from "../../../stores"
     import { translateText } from "../../../utils/language"
     import Icon from "../../helpers/Icon.svelte"
@@ -92,7 +93,7 @@
     function removeStyle(key: string) {
         iconClicked = setTimeout(() => (iconClicked = null), 50)
 
-        media.update((a) => {
+        updateMedia((a) => {
             if (!a[cam.id]) return a
 
             if (key === "filters") {

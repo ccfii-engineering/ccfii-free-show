@@ -5,6 +5,7 @@ import { clearAudio } from "../../audio/audioFading"
 import { AudioPlayer } from "../../audio/audioPlayer"
 import { sendMain } from "../../IPC/main"
 import { clearPlaybackForOutput } from "../../outputState/playbackStore"
+import { updateOutputs } from "../../outputState/outputs.svelte"
 import { activeEdit, activePage, activePopup, activeStage, contextActive, customMessageCredits, drawSettings, focusMode, lockedOverlays, outLocked, outputCache, outputs, outputSlideCache, overlays, overlayTimers, playingAudio, playingMetronome, selected, slideTimers, topContextActive, videosData, videosTime } from "../../stores"
 import { customActionActivation } from "../actions/actions"
 import { startMetronome } from "../drawer/audio/metronome"
@@ -33,7 +34,7 @@ export function clearAll(button = false) {
 
     const hasPowerPoint = outputIds.some((outputId) => get(outputs)[outputId]?.out?.slide?.type === "ppt")
     outputIds.forEach(clearPlayingVideo)
-    outputs.update((current) => updateMappedEntries(current, outputIds, (output) => clearPresentation(output)))
+    updateOutputs((current) => updateMappedEntries(current, outputIds, (output) => clearPresentation(output)))
     lockedOverlays.set([])
 
     videosData.update((current) => removeOutputKeys(current, outputIds))
@@ -76,7 +77,7 @@ export function restoreOutput() {
 
     const outputIds = getAllActiveOutputIds()
 
-    outputs.update((a) => {
+    updateOutputs((a) => {
         return updateMappedEntries(a, Object.keys(get(outputCache)), (entry, id) => {
             if (id.includes("playing")) return entry
             if (!outputIds.includes(id)) return entry

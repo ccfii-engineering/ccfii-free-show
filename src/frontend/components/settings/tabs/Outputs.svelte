@@ -7,6 +7,7 @@
     import type { Output, RtmpDestination } from "../../../../types/Output"
     import { AudioAnalyser } from "../../../audio/audioAnalyser"
     import { requestMain, sendMain } from "../../../IPC/main"
+    import { updateOutputs } from "../../../outputState/outputs.svelte"
     import { activePage, activePopup, activeStage, activeStyle, alertMessage, currentOutputSettings, ndiData, outputDisplay, outputs, rtmpStatus, saved, settingsTab, special, stageShows, styles, toggleOutputEnabled } from "../../../stores"
     import { newToast } from "../../../utils/common"
     import { translateText } from "../../../utils/language"
@@ -37,7 +38,7 @@
 
         if (key === "style") setTimeout(refreshOut)
 
-        outputs.update((a: any) => {
+        updateOutputs((a: any) => {
             const out = a[outputId]
             if (!out) return a
 

@@ -4,6 +4,7 @@
     import type { Output } from "../../../../types/Output"
     import { AudioAnalyser } from "../../../audio/audioAnalyser"
     import { createOutputAudioChannel } from "../../../audio/routing/audioRoutingInit"
+    import { updateOutputs } from "../../../outputState/outputs.svelte"
     import { activeTriggerFunction, currentOutputSettings, outputs, popupData, stageShows, styles, toggleOutputEnabled } from "../../../stores"
     import { newToast } from "../../../utils/common"
     import { translateText } from "../../../utils/language"
@@ -50,7 +51,7 @@
 
         if (key === "style") setTimeout(refreshOut)
 
-        outputs.update((a: any) => {
+        updateOutputs((a: any) => {
             const out = a[outputId]
 
             // Update value

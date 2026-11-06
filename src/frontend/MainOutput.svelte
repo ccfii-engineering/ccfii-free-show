@@ -17,7 +17,7 @@
     let width = 0
     let height = 0
     let resolution: Resolution = getResolution()
-    $: if ($currentWindow === "output") resolution = getResolution(null, { $outputs, $styles }, true)
+    $: if ($currentWindow === "output") resolution = getResolution(null, { outputs: $outputs, styles: $styles })
 
     // $: outputStyle = getCurrentStyle($styles, $outputs[outputId]?.style)
 

@@ -10,7 +10,7 @@
     import { getItemText } from "../edit/scripts/textStyle"
     import { clone, keysToID, sortByName } from "../helpers/array"
     import Icon from "../helpers/Icon.svelte"
-    import { getActiveOutputs, getStageResolution, percentageStylePos } from "../helpers/output"
+    import { getActiveOutputs, getFirstActiveOutput, getStageResolution, percentageStylePos } from "../helpers/output"
     import { createCSSVariables, replaceDynamicValues } from "../helpers/showActions"
     import { getStyles } from "../helpers/style"
     import Button from "../inputs/Button.svelte"
@@ -210,7 +210,7 @@
         currentBackground = bg
     }
 
-    // $: resolution = getResolution(resolution, { $outputs, $styles })
+    // $: resolution = getResolution(resolution, { outputs: $outputs, styles: $styles })
 
     $: isDisabledVariable = id.includes("variables") && $variables[id.split("#")[1]]?.enabled === false
 
@@ -293,7 +293,7 @@
     // fixed letter width
     $: fixedWidth = item?.type === "timer" || item?.type === "clock" ? "font-feature-settings: 'tnum' 1;" : ""
 
-    $: cssVariables = createCSSVariables($variables, $outputs, "stage", updateTrigger)
+    $: cssVariables = createCSSVariables($variables, "stage", { outSlide: getFirstActiveOutput($outputs)?.out?.slide, tick: updateTrigger })
 
     // flash background (on mount & text changes)
     $: flashColor = item?.flash?.color || "#FF0000"

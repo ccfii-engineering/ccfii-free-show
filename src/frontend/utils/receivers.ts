@@ -6,14 +6,17 @@ import { AudioAnalyser } from "../audio/audioAnalyser"
 import { AudioAnalyserMerger } from "../audio/audioAnalyserMerger"
 import { setEqualizerEnabled, updateEqualizerBands } from "../audio/audioEqualizer"
 import { publishPlaybackReport } from "../outputState/playbackStore"
+import { applyPlayingVideoAudio, filterLiveBackgroundUpdates, mergeOutputStates, outputsToClearOnDeactivate } from "../outputState/receiverPresentationState"
 import { runAction } from "../components/actions/actions"
 import { clone } from "../components/helpers/array"
-import { clearBackground } from "../components/output/clear"
 import { checkNextAfterMedia } from "../components/helpers/showActions"
 import { clearBackground } from "../components/output/clear"
 import { receiveMainGlobal } from "../IPC/main"
 import { updateMappedEntries } from "./mapStoreEntries"
 import { getOutputReceiverSignature } from "./outputSignatures"
+import { setOutputs, updateOutputs } from "../outputState/outputs.svelte"
+import { setMedia } from "../mediaState/media.svelte"
+import { setShowsCache } from "../showsCacheState/showsCache.svelte"
 import {
     actions,
     activePopup,
@@ -40,7 +43,6 @@ import {
     gain,
     groups,
     livePrepare,
-    media,
     metronome,
     metronomeTimer,
     ndiData,
@@ -57,7 +59,6 @@ import {
     previewBuffers,
     projects,
     shows,
-    showsCache,
     slideTimelineSpeedMultiplier,
     slideVideoData,
     special,
@@ -103,22 +104,6 @@ export function remoteListen() {
 
 // OUTPUT
 
-// Late MAIN_DATA/MAIN_TIME messages can arrive after a background was cleared (IPC race with
-// clearBackground's store cleanup) and resurrect stale duration/progress (#16/#18). Drop updates
-// for outputs that no longer have a live background.
-function filterLiveBackgroundUpdates(msg: any): Record<string, any> | null {
-    if (!msg || typeof msg !== "object") return null
-    const filtered: Record<string, any> = {}
-    let kept = false
-    for (const [outputId, value] of Object.entries(msg)) {
-        const background = get(outputs)[outputId]?.out?.background
-        if (!background || (!background.path && !background.id)) continue
-        filtered[outputId] = value
-        kept = true
-    }
-    return kept ? filtered : null
-}
-
 const clearing: string[] = []
 const receiveOUTPUTasMAIN: any = {
     BUFFER: ({ id, time, buffer, size }) => {
@@ -131,33 +116,18 @@ const receiveOUTPUTasMAIN: any = {
             return a
         })
     },
-    OUTPUTS: (a: any) => outputs.set(a),
+    OUTPUTS: (a: any) => setOutputs(a),
     RESTART: ({ id }) => restartOutputs(id),
     // DISPLAY: (a: any) => outputDisplay.set(a.enabled),
     OUTPUT_STATE: (newStates: { id: string; active: boolean | "invisible" }[]) => {
-        newStates.forEach((newState) => {
-            // an output that stops being active must not keep media state alive (#19): a stale
-            // background re-opens misrouted into the legacy playback path because the canonical
-            // generation was already retired
-            if (newState.active === false && get(outputs)[newState.id]?.out?.background) clearBackground(newState.id)
-            // mirror runtime activation into output windows (#19): they need the rising edge to
-            // start a fresh playback generation after close/reopen
-            send(OUTPUT, ["OUTPUT_ACTIVE"], { [newState.id]: newState.active === true })
-        })
-        outputState.update((a) => {
-            newStates.forEach((newState) => {
-                const stateIndex = a.findIndex((state) => state.id === newState.id)
-                if (stateIndex < 0) a.push(newState)
-                else a[stateIndex] = newState
-            })
-
-            // only enabled ones & not invisible
-            a = a.filter((state) => get(outputs)[state.id]?.enabled && !get(outputs)[state.id]?.invisible)
-
-            const getVisibleState = [...new Set(a.filter((state) => typeof state.active === "boolean").map((state) => state.active) as boolean[])]
-            if (getVisibleState.length === 1) outputDisplay.set(getVisibleState[0])
-
-            return a
+        outputsToClearOnDeactivate(newStates, get(outputs)).forEach((id) => clearBackground(id))
+        // mirror runtime activation into output windows (#19): they need the rising edge to
+        // start a fresh playback generation after close/reopen
+        newStates.forEach((newState) => send(OUTPUT, ["OUTPUT_ACTIVE"], { [newState.id]: newState.active === true }))
+        outputState.update((current) => {
+            const { states, display } = mergeOutputStates(current, newStates, get(outputs))
+            if (display !== undefined) outputDisplay.set(display)
+            return states
         })
     },
     ACTION_MAIN: (a: { id: string }) => runAction(get(actions)[a.id]),
@@ -166,35 +136,20 @@ const receiveOUTPUTasMAIN: any = {
 
         if (data.channels) AudioAnalyserMerger.addChannels(data.id, data.channels)
 
-        playingVideos.update((playingVideo) => {
-            const existing = playingVideo.findIndex((a) => a.id === data.id)
-
-            if (data.stop) {
-                if (existing > -1) playingVideo.splice(existing, 1)
-                return playingVideo
-            }
-
-            if (existing > -1) {
-                playingVideo[existing] = { ...data, location: "output" }
-            } else if (get(outputs)[data.id]?.out?.background) {
-                playingVideo.push({ location: "output", ...data })
-            }
-
-            return playingVideo
-        })
+        playingVideos.update((playingVideo) => applyPlayingVideoAudio(playingVideo, data, get(outputs)))
 
         if (data.stop && !AudioAnalyser.shouldAnalyse()) {
             AudioAnalyserMerger.stop()
         }
     },
     MOVE: (data) => {
-        outputs.update((a) => {
+        updateOutputs((a) => {
             if (!a[data.id] || a[data.id].boundsLocked) return a
             return updateMappedEntries(a, [data.id], (entry) => ({ ...entry, bounds: data.bounds }))
         })
     },
     UPDATE_OUTPUTS_DATA: ({ key, value, id, autoSave }) => {
-        outputs.update((a) => {
+        updateOutputs((a) => {
             const ids = id ? [id] : Object.keys(get(outputs))
             return updateMappedEntries(a, ids, (entry) => ({ ...entry, [key]: value }))
         })
@@ -216,12 +171,12 @@ const receiveOUTPUTasMAIN: any = {
     },
     MAIN_LOG: (msg: any) => console.info(msg),
     MAIN_DATA: (msg: any) => {
-        const filtered = filterLiveBackgroundUpdates(msg)
+        const filtered = filterLiveBackgroundUpdates(msg, get(outputs))
         if (!filtered) return
         videosData.update((a) => ({ ...a, ...filtered }))
     },
     MAIN_TIME: (msg: any) => {
-        const filtered = filterLiveBackgroundUpdates(msg)
+        const filtered = filterLiveBackgroundUpdates(msg, get(outputs))
         if (!filtered) return
         videosTime.update((a) => ({ ...a, ...filtered }))
     },
@@ -287,7 +242,7 @@ export const receiveOUTPUTasOUTPUT: any = {
         // output.ts - only current output data is sent
         const id = Object.keys(a)[0]
         if (!id) {
-            outputs.set(a)
+            setOutputs(a)
             return
         }
 
@@ -295,7 +250,7 @@ export const receiveOUTPUTasOUTPUT: any = {
         const newOutputs = getOutputReceiverSignature(a, id)
         if (previousOutputs === newOutputs) return
 
-        outputs.set(a)
+        setOutputs(a)
         previousOutputs = newOutputs
     },
     ALL_OUTPUTS: (a: any) => {
@@ -326,7 +281,7 @@ export const receiveOUTPUTasOUTPUT: any = {
     // OVERLAY: (a: any) => overlays.set(a),
     // COLOR: (a: any) => backgroundColor.set(a),
     // SCREEN: (a: any) => screen.set(a),
-    SHOWS: (a: any) => showsCache.set(a),
+    SHOWS: (a: any) => setShowsCache(a),
     CATEGORIES: (a: any) => categories.set(a),
 
     TEMPLATES: (a: any) => templates.set(a),
@@ -338,7 +293,7 @@ export const receiveOUTPUTasOUTPUT: any = {
     DRAW_TOOL: (a: any) => drawTool.set(a.data),
     DRAW_SETTINGS: (a: any) => drawSettings.set(a),
     VISUALIZER_DATA: (a: any) => visualizerData.set(a),
-    MEDIA: (a: any) => media.set(a),
+    MEDIA: (a: any) => setMedia(a),
     OUT_SLIDE_CACHE: (a: any) => outputSlideCache.set(a),
     CUSTOM_METADATA: (a: any) => customMetadata.set(a),
     CUSTOM_CREDITS: (a: any) => customMessageCredits.set(a),
@@ -485,7 +440,7 @@ const receiveCLOUD = {
         }
 
         // reload shows cache (because there could be some changes)
-        showsCache.set({})
+        setShowsCache({})
         activeShow.set(null)
 
         // show completed toast

@@ -18,6 +18,7 @@ import { downloadOnlineMedia, encodeFilePath, getExtension, getMediaType, locate
 import { getAllOutputs } from "../../helpers/output"
 import { checkNextAfterMedia } from "../../helpers/showActions"
 import { clearBackground } from "../../output/clear"
+import { outputSeekTracker } from "./outputSeekTracker"
 import { findPlayingEntry, OutputPlaybackControl, type PlaybackSelection, resolveOutputPaused } from "./outputPlaybackControl"
 import { TimeInterpolator } from "./videoTime"
 
@@ -622,6 +623,8 @@ export class VideoPlayer {
                 this.initSyncClock()
             }
 
+            // a seek is newer than any pending startAt time from setOutput
+            new Set([outputId, ...selection.linkedOutputIds]).forEach((id) => outputSeekTracker.markSeek(id))
             this.outputPlaybackControl.publishTime(selection, time)
         })
     }

@@ -1,6 +1,7 @@
 <script lang="ts">
     import { OUTPUT } from "../../../../types/Channels"
     import type { Output } from "../../../../types/Output"
+    import { updateOutputs } from "../../../outputState/outputs.svelte"
     import { activePopup, currentOutputSettings, outputs, special } from "../../../stores"
     import { send } from "../../../utils/request"
     import HRule from "../../input/HRule.svelte"
@@ -19,7 +20,7 @@
     function updateOutput(key: string, value: any) {
         if (!currentOutput) return
 
-        outputs.update((a) => {
+        updateOutputs((a) => {
             if (key.includes(".")) {
                 let split = key.split(".")
                 if (!a[currentOutput!.id][split[0]]) a[currentOutput!.id][split[0]] = {}

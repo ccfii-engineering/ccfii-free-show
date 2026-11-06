@@ -1,7 +1,8 @@
 import { get } from "svelte/store"
 import { uid } from "uid"
 import type { Item, TimelineAction } from "../../../types/Show"
-import { activeEdit, showsCache } from "../../stores"
+import { updateShowsCache } from "../../showsCacheState/showsCache.svelte"
+import { activeEdit } from "../../stores"
 import { hasNewerUpdate, triggerFunction } from "../../utils/common"
 import { translateText } from "../../utils/language"
 import { _show } from "../helpers/shows"
@@ -83,7 +84,7 @@ export class SlideTimeline {
     static triggerAction(action: TimelineAction, value: string | number, ref?: { id?: string; slideId?: string }) {
         if (action.type === "style") {
             // WIP too many updates to showsCache at once with many actions!!
-            showsCache.update((a) => {
+            updateShowsCache((a) => {
                 const slide = a[ref?.id || ""]?.slides?.[ref?.slideId || ""]
                 if (!slide) return a
 
