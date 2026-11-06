@@ -6,8 +6,9 @@
     import Icon from "../../../common/components/Icon.svelte"
     import { translate } from "../../util/helpers"
     import { GetLayout } from "../../util/output"
+    import { lyricsSaveMessage, saveLyrics } from "../../util/lyricsSave"
     import { send } from "../../util/socket"
-    import { _set, activeShow, activeTab, dictionary, isCleared, outLayout, outShow, outSlide, textCache } from "../../util/stores"
+    import { _set, activeShow, activeTab, dictionary, isCleared, isConnected, outLayout, outShow, outSlide, textCache, textDraft } from "../../util/stores"
     import Clear from "../show/Clear.svelte"
     import Slides from "../show/Slides.svelte"
     import AddGroups from "./AddGroups.svelte"
@@ -55,6 +56,24 @@
     let editOpened: boolean = false
     let textValue = ""
     let editSeedValue = ""
+    let saving = false
+    let saveMessage = ""
+    let saveMessageKind: "" | "saved" | "error" = ""
+    let savedNote = ""
+    let savedNoteTimeout: ReturnType<typeof setTimeout> | null = null
+
+    // unsaved text survives a lost connection: the editor reopens with it once the show is back
+    let draftChecked = false
+    // (checked once, when the first show is known: later drafts are the ones being typed right now)
+    $: if (!draftChecked && $activeShow?.id) {
+        draftChecked = true
+        if ($textDraft?.id === $activeShow.id) {
+            editOpened = true
+            textValue = $textDraft.value
+            saveMessage = translate("edit.lyrics_draft_restored", $dictionary)
+            saveMessageKind = ""
+        }
+    }
 
     $: {
         const showId = $activeShow?.id || ""
@@ -74,6 +93,8 @@
 
     function reset() {
         textValue = ""
+        saveMessage = ""
+        saveMessageKind = ""
     }
     function done() {
         if (addGroups) {
@@ -87,10 +108,34 @@
             return
         }
 
-        editOpened = false
-        if ($textCache[$activeShow?.id || ""] === textValue) return
+        saveText()
+    }
 
-        send("API:set_plain_text", { id: $activeShow?.id, value: textValue })
+    // the main app answers saved or refused (locked, read-only); a refused save keeps the editor open with the text
+    async function saveText() {
+        const showId = $activeShow?.id || ""
+        if (saving || !showId) return
+        if ($textCache[showId] === textValue) {
+            editOpened = false
+            textDraft.set(null)
+            return
+        }
+
+        saving = true
+        const outcome = await saveLyrics(showId, textValue)
+        saving = false
+
+        if (outcome.status !== "saved") {
+            saveMessage = lyricsSaveMessage(outcome, $dictionary)
+            saveMessageKind = "error"
+            return
+        }
+
+        textDraft.set(null)
+        editOpened = false
+        savedNote = lyricsSaveMessage(outcome, $dictionary)
+        if (savedNoteTimeout) clearTimeout(savedNoteTimeout)
+        savedNoteTimeout = setTimeout(() => (savedNote = ""), 4000)
     }
 
     function playSlide(index: number) {
@@ -126,6 +171,10 @@
 {#if $activeShow?.layouts}
     <h2 class="header">{$activeShow.name || ""}</h2>
 
+    {#if savedNote}
+        <p class="saved-note" role="status" data-testid="lyrics-saved">{savedNote}</p>
+    {/if}
+
     {#if (groupsOpened || editOpened) && !($activeShow.id === $outShow?.id)}
         {#if groupsOpened}
             {#if addGroups}
@@ -134,7 +183,7 @@
                 <GroupsEdit show={$activeShow} />
             {/if}
         {:else}
-            <TextEdit bind:value={textValue} />
+            <TextEdit bind:value={textValue} message={saveMessage} messageKind={saveMessageKind} />
         {/if}
 
         <div class="buttons" style="position: relative; z-index: 2;">
@@ -146,7 +195,7 @@
                     </Button>
                 {/if}
 
-                <Button on:click={done} style="width: 100%;" center dark class="done-button">
+                <Button on:click={done} style="width: 100%;" center dark class="done-button" disabled={editOpened && !groupsOpened && (!$isConnected || saving)}>
                     <Icon id={addGroups ? "back" : "check"} right />
                     {translate(`actions.${addGroups ? "back" : "done"}`, $dictionary)}
                 </Button>
@@ -208,6 +257,15 @@
 {/if}
 
 <style>
+    .saved-note {
+        margin: 0;
+        padding: 8px 12px;
+        white-space: normal;
+        font-size: 0.9em;
+        background-color: var(--operator-raised, var(--primary-lighter));
+        border-left: 3px solid var(--operator-amber, #faa739);
+    }
+
     .controls-section {
         display: flex;
         flex-direction: column;

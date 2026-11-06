@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
     playMedia: vi.fn(),
     playAudio: vi.fn(),
     setTemplate: vi.fn(),
+    setPlainText: vi.fn(),
     loadShows: vi.fn(),
     setOutput: vi.fn(),
     updateOut: vi.fn(),
@@ -48,7 +49,7 @@ vi.mock("../components/helpers/show", () => ({ getLayoutRef: () => [] }))
 vi.mock("../components/helpers/showActions", () => ({ updateOut: state.updateOut }))
 vi.mock("../components/helpers/shows", () => ({ _show: vi.fn() }))
 vi.mock("../components/output/clear", () => ({ clearAll: state.clearAll }))
-vi.mock("../components/actions/api", () => ({ API_ACTIONS: { play_media: state.playMedia, play_audio: state.playAudio, set_template: state.setTemplate } }))
+vi.mock("../components/actions/api", () => ({ API_ACTIONS: { play_media: state.playMedia, play_audio: state.playAudio, set_template: state.setTemplate, set_plain_text: state.setPlainText } }))
 vi.mock("../IPC/main", () => ({ requestMainResult: state.requestMainResult, sendMain: state.sendMain }))
 vi.mock("./common", () => ({ isMainWindow: () => true, lastClickTime: 0 }))
 vi.mock("./language", () => ({ translateText: (key: string) => key }))
@@ -89,6 +90,7 @@ beforeEach(() => {
     state.playMedia.mockReset()
     state.playAudio.mockReset()
     state.setTemplate.mockReset()
+    state.setPlainText.mockReset()
     state.loadShows.mockReset()
     state.setOutput.mockReset()
     state.updateOut.mockReset()
@@ -144,6 +146,34 @@ describe("template apply", () => {
     it("GET_TEMPLATES carries the first output's style template (none here)", async () => {
         await request("GET_TEMPLATES")
         expect(only("GET_TEMPLATES").data).toMatchObject({ templates: {}, categories: {}, outputStyleTemplate: null })
+    })
+})
+
+describe("lyrics save", () => {
+    const saveMessage = (data: unknown) => ({ id: "c1", channel: "API:set_plain_text", data }) as any
+
+    it("answers API:set_plain_text with the saved or blocked result for the Remote", async () => {
+        state.setPlainText.mockResolvedValueOnce({ status: "saved", showId: "s1" })
+        await sendData(REMOTE, saveMessage({ id: "s1", value: "[Verse 1]\nLine" }))
+        expect(state.setPlainText).toHaveBeenCalledWith({ id: "s1", value: "[Verse 1]\nLine" })
+        expect(only("API:set_plain_text")).toMatchObject({ id: "c1", data: { status: "saved", showId: "s1" } })
+
+        state.sent = []
+        state.setPlainText.mockResolvedValueOnce({ status: "blocked", reason: "show_locked", showId: "s1" })
+        await sendData(REMOTE, saveMessage({ id: "s1", value: "x" }))
+        expect(only("API:set_plain_text").data).toEqual({ status: "blocked", reason: "show_locked", showId: "s1" })
+    })
+
+    it("applies nothing and sends nothing when the connection is not authorized", async () => {
+        connections.set({ REMOTE: { c1: { entered: false } } })
+        await sendData(REMOTE, saveMessage({ id: "s1", value: "x" }))
+        expect(state.setPlainText).not.toHaveBeenCalled()
+        expect(state.sent).toEqual([])
+    })
+
+    it("is never replayed after a reconnect, so a live edit cannot be sent twice", () => {
+        expect(toRemoteReplayRequest("API:set_plain_text", { id: "s1", value: "x" })).toBeNull()
+        expect(toRemoteReplayRequest("API:rearrange_groups", { showId: "s1", from: 0, to: 1 })).toBeNull()
     })
 })
 

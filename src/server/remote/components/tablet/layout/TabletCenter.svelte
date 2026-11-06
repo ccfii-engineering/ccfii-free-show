@@ -1,8 +1,9 @@
 <script lang="ts">
-    import { _set, active, activeDrawerTab, activeProject, activeShow, createShow, dictionary, outShow, outSlide, project, projectsOpened, selectedSlides, templateScope, textCache } from "../../../util/stores"
+    import { _set, active, activeDrawerTab, activeProject, activeShow, createShow, dictionary, isConnected, outShow, outSlide, project, projectsOpened, selectedSlides, templateScope, textCache, textDraft } from "../../../util/stores"
     import { uid } from "uid"
     import { translate, throttle } from "../../../util/helpers"
     import { GetLayout } from "../../../util/output"
+    import { lyricsSaveMessage, saveLyrics } from "../../../util/lyricsSave"
     import { send } from "../../../util/socket"
 
     import Slides from "../../show/Slides.svelte"
@@ -28,6 +29,24 @@
     let editOpened: boolean = false
     let textValue = ""
     let editSeedValue = ""
+    let saving = false
+    let saveMessage = ""
+    let saveMessageKind: "" | "saved" | "error" = ""
+    let savedNote = ""
+    let savedNoteTimeout: ReturnType<typeof setTimeout> | null = null
+
+    // unsaved text survives a lost connection: the editor reopens with it once the show is back
+    let draftChecked = false
+    // (checked once, when the first show is known: later drafts are the ones being typed right now)
+    $: if (!draftChecked && $activeShow?.id) {
+        draftChecked = true
+        if ($textDraft?.id === $activeShow.id) {
+            editOpened = true
+            textValue = $textDraft.value
+            saveMessage = translate("edit.lyrics_draft_restored", $dictionary)
+            saveMessageKind = ""
+        }
+    }
 
     $: {
         const showId = $activeShow?.id || ""
@@ -47,17 +66,36 @@
 
     function reset() {
         textValue = ""
+        saveMessage = ""
+        saveMessageKind = ""
     }
     function cancel() {
         editOpened = false
+        textDraft.set(null)
         reset()
     }
 
-    function save() {
-        editOpened = false
-        if ($textCache[$activeShow?.id || ""] === textValue) return
+    // the main app answers saved or refused (locked, read-only); a refused save keeps the editor open with the text
+    async function save() {
+        const showId = $activeShow?.id || ""
+        if (saving || !showId) return
+        if ($textCache[showId] === textValue) return cancel()
 
-        send("API:set_plain_text", { id: $activeShow?.id, value: textValue })
+        saving = true
+        const outcome = await saveLyrics(showId, textValue)
+        saving = false
+
+        if (outcome.status !== "saved") {
+            saveMessage = lyricsSaveMessage(outcome, $dictionary)
+            saveMessageKind = "error"
+            return
+        }
+
+        textDraft.set(null)
+        editOpened = false
+        savedNote = lyricsSaveMessage(outcome, $dictionary)
+        if (savedNoteTimeout) clearTimeout(savedNoteTimeout)
+        savedNoteTimeout = setTimeout(() => (savedNote = ""), 4000)
     }
 
     function done() {
@@ -208,9 +246,12 @@
                             <GroupsEdit show={$activeShow} />
                         {/if}
                     {:else}
-                        <TextEdit bind:value={textValue} />
+                        <TextEdit bind:value={textValue} message={saveMessage} messageKind={saveMessageKind} />
                     {/if}
                 {:else}
+                    {#if savedNote}
+                        <p class="saved-note" role="status" data-testid="lyrics-saved">{savedNote}</p>
+                    {/if}
                     <div bind:this={scrollElem} on:scroll={handleScrollThrottled} class="scroll" style="flex: 1;min-height: 0;overflow-y: auto;background-color: var(--primary-darkest);scroll-behavior: smooth;display: flex;flex-direction: column;">
                         {#if slideView === "lyrics"}
                             {#each layoutSlides as layoutSlide, i (layoutSlide.id)}
@@ -273,9 +314,9 @@
                     {:else if editOpened}
                         <Button on:click={cancel} variant="outlined" center>
                             <Icon id="close" />
-                            {translate("actions.cancel", $dictionary)}
+                            {translate("popup.cancel", $dictionary)}
                         </Button>
-                        <Button on:click={save} dark center>
+                        <Button on:click={save} dark center disabled={!$isConnected || saving}>
                             <Icon id="save" />
                             {translate("actions.save", $dictionary)}
                         </Button>
@@ -327,6 +368,15 @@
         min-width: 0;
         overflow: hidden;
         background-color: var(--primary-darkest);
+    }
+
+    .saved-note {
+        margin: 0;
+        padding: 8px 12px;
+        white-space: normal;
+        font-size: 0.9em;
+        background-color: var(--operator-raised, var(--primary-lighter));
+        border-left: 3px solid var(--operator-amber, #faa739);
     }
 
     .scroll span.picked {

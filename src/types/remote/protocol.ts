@@ -137,6 +137,15 @@ export interface RemoteTemplateRequest {
 export type RemoteTemplateBlockReason = Exclude<ApplyBlock, null> | "no_show" | "unknown_template" | "no_slides"
 export type RemoteTemplateResult = { status: "applied"; showId: string; scope: ApplyScope; count: number } | { status: "blocked"; reason: RemoteTemplateBlockReason; showId?: string }
 
+/** Payload of `API:set_plain_text`: the lyrics text typed on the Remote for the show open there. */
+export interface RemoteTextSaveRequest {
+    id: string
+    value: string
+}
+/** why the main app refused a lyrics save: nothing is changed, the Remote keeps the draft and shows the reason */
+export type RemoteTextBlockReason = "show_locked" | "slide_locked" | "read_only" | "no_show"
+export type RemoteTextSaveResult = { status: "saved"; showId: string } | { status: "blocked"; reason: RemoteTextBlockReason; showId?: string }
+
 /** replies to `API:<action>` requests whose payload the Remote reads */
 export interface RemoteApiResponses {
     "API:get_thumbnail": { path: string; thumbnail?: string }
@@ -154,6 +163,8 @@ export interface RemoteApiResponses {
     "API:create_show": { show: Show; id: string }
     /** answers a template apply: applied, or blocked with the reason */
     "API:set_template": RemoteTemplateResult
+    /** answers a lyrics save: saved, or blocked with the reason */
+    "API:set_plain_text": RemoteTextSaveResult
 }
 /** `API:<action>` requests carry an untyped action payload; the action registry is outside this protocol */
 export type RemoteApiChannel = `API:${string}`

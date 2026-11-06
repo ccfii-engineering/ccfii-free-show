@@ -102,6 +102,8 @@ export let selectedSlides: Writable<number[]> = writable([])
 
 export let mediaCache: Writable<any> = writable({})
 export let textCache: Writable<any> = writable({})
+/** lyrics typed but not saved yet. The Remote drops its views when the connection is lost, so the draft lives here and the editor reopens with it */
+export let textDraft: Writable<{ id: string; value: string } | null> = writable(null)
 export let groupsCache: Writable<any> = writable({})
 export let scriptureCache: Writable<{ [key: string]: Bible }> = writable({})
 
@@ -165,6 +167,7 @@ export const _ = {
     selectedSlides,
     mediaCache,
     textCache,
+    textDraft,
     groupsCache,
     scriptureCache,
     playingAudioData,

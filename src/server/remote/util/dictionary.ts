@@ -84,6 +84,7 @@ export const DEFAULT_DICTIONARY = {
         rename: "Rename",
         delete: "Delete",
         done: "Done",
+        save: "Save",
         back: "Back",
         archive_title: "Archive"
     },
@@ -134,6 +135,29 @@ export const DEFAULT_DICTIONARY = {
         blocked_no_show: "Not applied: the show was not found on the main app.",
         blocked_unknown_template: "Not applied: that template no longer exists.",
         blocked_no_slides: "Not applied: none of the selected slides can take a template (they may be locked)."
+    },
+    edit: {
+        lyrics_help: "Put a group name on its own line, like [Verse 1] or [Chorus]. Leave a blank line to start a new slide.",
+        lyrics_slide_count: "$1 slides",
+        lyrics_slide_count_one: "1 slide",
+        lyrics_long_line: "Slide $1, line $2 is $3 characters and may not fit on screen.",
+        lyrics_long_line_more: "and $1 more long lines",
+        lyrics_preview: "Slide preview",
+        lyrics_preview_empty: "Slides appear here as you type.",
+        lyrics_saved: "Lyrics saved.",
+        lyrics_saving: "Saving...",
+        lyrics_offline: "Offline. Lyrics can't be saved until the connection is back. Your text is kept.",
+        lyrics_no_reply: "The main app did not answer. Your text is kept, check the connection and save again.",
+        lyrics_blocked_show_locked: "Not saved: this show is locked. Your text is kept.",
+        lyrics_blocked_slide_locked: "Not saved: the show has locked slides. Your text is kept.",
+        lyrics_blocked_read_only: "Not saved: the profile on the main app is read-only for this show. Your text is kept.",
+        lyrics_blocked_no_show: "Not saved: the show was not found on the main app. Your text is kept.",
+        lyrics_draft_restored: "Your unsaved text was restored.",
+        transpose_up: "Transpose up",
+        transpose_down: "Transpose down"
+    },
+    popup: {
+        cancel: "Cancel"
     },
     clear: {
         all: "Clear all"
