@@ -1034,6 +1034,13 @@
     },
     "edit": {
         "text": "Text",
+        "lyrics_help": "Put a group name on its own line, like [Verse 1] or [Chorus]. Leave a blank line to start a new slide.",
+        "lyrics_slide_count": "$1 slides",
+        "lyrics_slide_count_one": "1 slide",
+        "lyrics_long_line": "Slide $1, line $2 is $3 characters and may not fit on screen.",
+        "lyrics_long_line_more": "and $1 more long lines",
+        "lyrics_preview": "Slide preview",
+        "lyrics_preview_empty": "Slides appear here as you type.",
         "font": "Font",
         "family": "Font family",
         "font_size": "Font size",
