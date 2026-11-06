@@ -7,6 +7,14 @@ import { clone } from "./array"
 import { addToPos } from "./mover"
 // import { loadShows } from "./setShow"
 
+/**
+ * A copy of one slide's `settings` object (empty when the slide has none).
+ * `_show().slides([id]).get("settings")` returns an array (one value per slide id), so spreading it directly nests the settings under key "0".
+ */
+export function getSlideSettings(slideId: string, showId = "active"): { [key: string]: any } {
+    return clone(_show(showId).slides([slideId]).get("settings")[0] || {})
+}
+
 /** Shows function */
 /** string[] | "active" */
 export function _show(id = "active") {
@@ -391,14 +399,18 @@ export function _show(id = "active") {
                     layoutIds.forEach((layoutId: any, i: number) => {
                         a.push([])
                         let layoutIndex = -1
+                        // `shows` is a snapshot, the cache shrinks as dangling slides are removed, so shift the snapshot indexes
+                        let removedSlides = 0
                         shows[id].layouts[layoutId]?.slides?.forEach((layoutSlide: any, index: number) => {
                             if (!layoutSlide) return
                             if (!shows[id].slides[layoutSlide.id]) {
                                 console.error("MISSING SLIDE")
                                 // missing slides can cause index problems, this will delete the layout id
+                                const missingAt = index - removedSlides
+                                removedSlides++
                                 updateShowsCache((cache) => {
                                     if (!cache[id]) return cache
-                                    cache[id].layouts[layoutId].slides.splice(index, 1)
+                                    cache[id].layouts[layoutId].slides.splice(missingAt, 1)
                                     return cache
                                 })
                                 return
@@ -417,6 +429,7 @@ export function _show(id = "active") {
                             children = newChildren
 
                             a[i].push({ type: "parent", layoutId, index, layoutIndex, id: layoutSlide.id, children, data: layoutSlide })
+                            let removedChildren = 0
                             if (children) {
                                 children.forEach((childId: string, jndex: number) => {
                                     layoutIndex++
@@ -427,12 +440,14 @@ export function _show(id = "active") {
                                     // check if layout is a "real" slide
                                     if (!shows[id].slides[childId]) {
                                         // remove empty slide
+                                        const missingChildAt = jndex - removedChildren
+                                        removedChildren++
                                         updateShowsCache((a1) => {
                                             if (!a1[id]) return a1
 
-                                            a1[id].slides[layoutSlide.id].children?.splice(jndex, 1)
-                                            if (a1[id].layouts[layoutId].slides[index].children?.[childId]) {
-                                                delete a1[id].layouts[layoutId].slides[index].children![childId]
+                                            a1[id].slides[layoutSlide.id].children?.splice(missingChildAt, 1)
+                                            if (a1[id].layouts[layoutId].slides[index - removedSlides]?.children?.[childId]) {
+                                                delete a1[id].layouts[layoutId].slides[index - removedSlides].children![childId]
                                             }
                                             return a1
                                         })

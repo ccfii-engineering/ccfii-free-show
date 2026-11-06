@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte"
     import type { TabsObj } from "../../../types/Tabs"
+    import { selectCachedShow } from "../../showsCacheState/showsCache.svelte"
     import { activeEdit, activePopup, activeShow, cloudUsers, drawer, drawerOpenedInEdit, editMode, focusMode, refreshEditSlide, showsCache, slideNotesActive, special } from "../../stores"
     import { isActiveShowInUseByCloudUser } from "../../utils/cloudSync"
     import { getAccess } from "../../utils/profile"
@@ -24,6 +25,8 @@
 
     $: currentShowId = $activeShow?.id || $activeEdit.showId || ""
     $: currentShow = $showsCache[currentShowId]
+    $: textEditorShowStore = selectCachedShow($activeShow?.id || "")
+    $: textEditorShow = $textEditorShowStore
     $: ref = getLayoutRef(currentShowId, currentShow)
     $: Slide = currentShow?.slides && $activeEdit.slide != null ? currentShow.slides[ref[$activeEdit.slide]?.id] : null
 
@@ -117,7 +120,7 @@
 
             <div class="content">
                 {#if $editMode === "text_edit" && !$focusMode}
-                    <TextEditor currentShow={$showsCache[$activeShow?.id || ""]} />
+                    <TextEditor currentShow={textEditorShow} />
                 {:else}
                     <SlideEditor />
 

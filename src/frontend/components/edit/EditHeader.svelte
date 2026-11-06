@@ -1,6 +1,8 @@
 <script lang="ts">
     import { fade } from "svelte/transition"
-    import { activeEdit, activePopup, editMode, groups, showsCache, slideNotesActive, special, templates } from "../../stores"
+    import { resolveTemplateInUse } from "../../../common/templates/templateInUse"
+    import { selectCachedShow } from "../../showsCacheState/showsCache.svelte"
+    import { activeEdit, activePopup, categories, editMode, groups, slideNotesActive, special, templates } from "../../stores"
     import Icon from "../helpers/Icon.svelte"
     import T from "../helpers/T.svelte"
     import MaterialButton from "../inputs/MaterialButton.svelte"
@@ -10,7 +12,8 @@
     export let showId: string
     export let hideOptions = false
 
-    $: currentShow = $showsCache[showId]
+    $: myShow = selectCachedShow(showId)
+    $: currentShow = $myShow
 
     function mousedown(e) {
         if (!e.target.closest(".showDropdown") && !e.target.closest(".header .right")) showDropdown = false
@@ -26,7 +29,13 @@
 
     $: parentId = $activeEdit.slide !== null && ref?.[$activeEdit.slide!] ? ref[$activeEdit.slide!]?.parent?.id || ref[$activeEdit.slide!]?.id : ""
     $: slideGroup = _show(showId).slides([parentId]).get()?.[0]?.globalGroup || ""
-    $: templateId = Slide?.settings?.template || $groups[slideGroup]?.template || currentShow?.settings?.template || ""
+    $: templateId =
+        resolveTemplateInUse({
+            showTemplateId: currentShow?.settings?.template,
+            categoryTemplateId: $categories[currentShow?.category || ""]?.template,
+            slide: { slideTemplateId: Slide?.settings?.template, groupTemplateId: $groups[slideGroup]?.template },
+            isKnownTemplate: (id) => !!$templates[id]
+        }).templateId || ""
 </script>
 
 <svelte:window on:mousedown={mousedown} />
@@ -56,7 +65,7 @@
             {/if}
 
             {#if showDropdown && currentShow}
-                <div class="showDropdown" transition:fade={{ duration: 100 }} role="none" on:click={() => (showDropdown = false)}>
+                <div class="showDropdown" transition:fade|global={{ duration: 100 }} role="none" on:click={() => (showDropdown = false)}>
                     <MaterialButton title="tooltip.notes" on:click={() => slideNotesActive.set(!$slideNotesActive)}>
                         <Icon id="notes" white={!$slideNotesActive} />
 

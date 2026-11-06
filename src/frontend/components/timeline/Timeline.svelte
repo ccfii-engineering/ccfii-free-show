@@ -900,7 +900,7 @@
 
                     <!-- Selection Box -->
                     {#if selectionRect}
-                        <div class="selection-box" style="left: {selectionRect.x}px; top: {selectionRect.y}px; width: {selectionRect.w}px; height: {selectionRect.h}px;" out:fade={{ duration: 80 }}></div>
+                        <div class="selection-box" style="left: {selectionRect.x}px; top: {selectionRect.y}px; width: {selectionRect.w}px; height: {selectionRect.h}px;" out:fade|global={{ duration: 80 }}></div>
                     {/if}
 
                     <!-- Playhead (Line Only) -->

@@ -1,8 +1,9 @@
 <script lang="ts">
-    import { _set, active, activeProject, activeShow, createShow, dictionary, outShow, outSlide, project, projectsOpened, textCache } from "../../../util/stores"
+    import { _set, active, activeDrawerTab, activeProject, activeShow, createShow, dictionary, drawer, isConnected, outShow, outSlide, project, projectsOpened, selectedSlides, templateScope, textCache, textDraft } from "../../../util/stores"
     import { uid } from "uid"
     import { translate, throttle } from "../../../util/helpers"
     import { GetLayout } from "../../../util/output"
+    import { lyricsSaveMessage, saveLyrics } from "../../../util/lyricsSave"
     import { send } from "../../../util/socket"
 
     import Slides from "../../show/Slides.svelte"
@@ -28,6 +29,24 @@
     let editOpened: boolean = false
     let textValue = ""
     let editSeedValue = ""
+    let saving = false
+    let saveMessage = ""
+    let saveMessageKind: "" | "saved" | "error" = ""
+    let savedNote = ""
+    let savedNoteTimeout: ReturnType<typeof setTimeout> | null = null
+
+    // unsaved text survives a lost connection: the editor reopens with it once the show is back
+    let draftChecked = false
+    // (checked once, when the first show is known: later drafts are the ones being typed right now)
+    $: if (!draftChecked && $activeShow?.id) {
+        draftChecked = true
+        if ($textDraft?.id === $activeShow.id) {
+            editOpened = true
+            textValue = $textDraft.value
+            saveMessage = translate("edit.lyrics_draft_restored", $dictionary)
+            saveMessageKind = ""
+        }
+    }
 
     $: {
         const showId = $activeShow?.id || ""
@@ -47,17 +66,36 @@
 
     function reset() {
         textValue = ""
+        saveMessage = ""
+        saveMessageKind = ""
     }
     function cancel() {
         editOpened = false
+        textDraft.set(null)
         reset()
     }
 
-    function save() {
-        editOpened = false
-        if ($textCache[$activeShow?.id || ""] === textValue) return
+    // the main app answers saved or refused (locked, read-only); a refused save keeps the editor open with the text
+    async function save() {
+        const showId = $activeShow?.id || ""
+        if (saving || !showId) return
+        if ($textCache[showId] === textValue) return cancel()
 
-        send("API:set_plain_text", { id: $activeShow?.id, value: textValue })
+        saving = true
+        const outcome = await saveLyrics(showId, textValue)
+        saving = false
+
+        if (outcome.status !== "saved") {
+            saveMessage = lyricsSaveMessage(outcome, $dictionary)
+            saveMessageKind = "error"
+            return
+        }
+
+        textDraft.set(null)
+        editOpened = false
+        savedNote = lyricsSaveMessage(outcome, $dictionary)
+        if (savedNoteTimeout) clearTimeout(savedNoteTimeout)
+        savedNoteTimeout = setTimeout(() => (savedNote = ""), 4000)
     }
 
     function done() {
@@ -78,8 +116,31 @@
         return name || "—"
     }
 
+    // the Templates drawer's "Selected slides" scope turns a tap on a slide into a pick instead of a play,
+    // but only while that tab is showing in an open drawer (the tabs stay mounted behind the scenes)
+    const drawerMinHeight = 40
+    $: drawerOpen = ($drawer.height ?? 400) > drawerMinHeight
+    $: templatesVisible = drawerOpen && $activeDrawerTab === "templates"
+    $: picking = templatesVisible && $templateScope === "slides"
+    // minimizing the drawer or leaving the tab ends the picking: scope and picks reset so a tap plays again
+    $: if (!templatesVisible && $templateScope === "slides") {
+        templateScope.set("show")
+        selectedSlides.set([])
+    }
+    // picks belong to one show
+    let pickShowId = ""
+    $: if (($activeShow?.id || "") !== pickShowId) {
+        pickShowId = $activeShow?.id || ""
+        selectedSlides.set([])
+    }
+
+    function toggleSlide(index: number) {
+        selectedSlides.update((a) => (a.includes(index) ? a.filter((i) => i !== index) : [...a, index].sort((x, y) => x - y)))
+    }
+
     function playSlide(index: number) {
         if (!$activeShow) return
+        if (picking) return toggleSlide(index)
 
         const showId = $activeShow.id
         const layoutId = $activeShow.settings.activeLayout
@@ -194,14 +255,17 @@
                             <GroupsEdit show={$activeShow} />
                         {/if}
                     {:else}
-                        <TextEdit bind:value={textValue} />
+                        <TextEdit bind:value={textValue} message={saveMessage} messageKind={saveMessageKind} />
                     {/if}
                 {:else}
+                    {#if savedNote}
+                        <p class="saved-note" role="status" data-testid="lyrics-saved">{savedNote}</p>
+                    {/if}
                     <div bind:this={scrollElem} on:scroll={handleScrollThrottled} class="scroll" style="flex: 1;min-height: 0;overflow-y: auto;background-color: var(--primary-darkest);scroll-behavior: smooth;display: flex;flex-direction: column;">
                         {#if slideView === "lyrics"}
                             {#each layoutSlides as layoutSlide, i (layoutSlide.id)}
                                 {#if !layoutSlide.disabled}
-                                    <span style="padding: 5px;{$outShow?.id === $activeShow.id && outNumber === i ? 'background-color: rgba(0 0 0 / 0.6);' : ''}" role="button" tabindex="0" on:click={() => playSlide(i)} on:keydown={(e) => (e.key === "Enter" ? playSlide(i) : null)}>
+                                    <span style="padding: 5px;{$outShow?.id === $activeShow.id && outNumber === i ? 'background-color: rgba(0 0 0 / 0.6);' : ''}" class:picked={picking && $selectedSlides.includes(i)} aria-pressed={picking ? $selectedSlides.includes(i) : undefined} role="button" tabindex="0" on:click={() => playSlide(i)} on:keydown={(e) => (e.key === "Enter" ? playSlide(i) : null)}>
                                         <span class="group" style="opacity: 0.6;font-size: 0.8em;display: flex;justify-content: center;position: relative;">
                                             <span style="left: 0;position: absolute;">{i + 1}</span>
                                             <span>{$activeShow.slides[layoutSlide.id].group === null ? "" : getName($activeShow.slides[layoutSlide.id].group || "", layoutSlide.id, i)}</span>
@@ -225,7 +289,7 @@
                                 {/if}
                             {/each}
                         {:else}
-                            <Slides {dictionary} {scrollElem} on:click={(e) => playSlide(e.detail)} outSlide={outNumber} columns={3} />
+                            <Slides {dictionary} {scrollElem} on:click={(e) => playSlide(e.detail)} outSlide={outNumber} columns={3} {picking} picked={$selectedSlides} />
                         {/if}
                     </div>
                 {/if}
@@ -259,9 +323,9 @@
                     {:else if editOpened}
                         <Button on:click={cancel} variant="outlined" center>
                             <Icon id="close" />
-                            {translate("actions.cancel", $dictionary)}
+                            {translate("popup.cancel", $dictionary)}
                         </Button>
-                        <Button on:click={save} dark center>
+                        <Button on:click={save} dark center disabled={!$isConnected || saving}>
                             <Icon id="save" />
                             {translate("actions.save", $dictionary)}
                         </Button>
@@ -313,6 +377,20 @@
         min-width: 0;
         overflow: hidden;
         background-color: var(--primary-darkest);
+    }
+
+    .saved-note {
+        margin: 0;
+        padding: 8px 12px;
+        white-space: normal;
+        font-size: 0.9em;
+        background-color: var(--operator-raised, var(--primary-lighter));
+        border-left: 3px solid var(--operator-amber, #faa739);
+    }
+
+    .scroll span.picked {
+        outline: 3px solid var(--operator-amber, var(--accent));
+        outline-offset: -3px;
     }
 
     /* lyric spacing inside scroll */

@@ -67,7 +67,7 @@
 </script>
 
 {#if hasProgress}
-    <div class="container" transition:slide={{ duration: 200 }}>
+    <div class="container" transition:slide|global={{ duration: 200 }}>
         {#if hasDownloads}
             <div class="header">
                 <Icon id="download" size={0.9} white />
@@ -76,7 +76,7 @@
             </div>
 
             {#each mediaEntries as [url, data] (url)}
-                <div class="download-item" transition:fade={{ duration: 150 }}>
+                <div class="download-item" transition:fade|global={{ duration: 150 }}>
                     <div class="pdf-top-row">
                         <div class="file-name" title={data.name || getFileName(url)}>{data.name || getFileName(url)}</div>
                         <span class="status {data.status === 'error' ? 'error' : data.status === 'complete' ? 'ok' : ''}">{getStatusLabel(data.status, data.progress, data.total, url)}</span>
@@ -98,7 +98,7 @@
             </div>
 
             {#each imports as [filePath, data] (filePath)}
-                <div class="download-item" transition:fade={{ duration: 150 }}>
+                <div class="download-item" transition:fade|global={{ duration: 150 }}>
                     <div class="pdf-top-row">
                         <div class="file-name" title={data.name}>{data.name}</div>
                         <span class="status {data.status === 'error' ? 'error' : data.status === 'complete' ? 'ok' : ''}">{getStatusLabel(data.status, data.progress, data.total, filePath)}</span>

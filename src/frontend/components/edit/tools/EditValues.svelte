@@ -1,6 +1,6 @@
 <script lang="ts">
     import { createEventDispatcher, onDestroy } from "svelte"
-    import { actions, activeEdit, activePage, activeStage, outputs, special, timers } from "../../../stores"
+    import { actions, activeEdit, activePage, activeShow, activeStage, outputs, special, timers } from "../../../stores"
     import { throttle } from "../../../utils/common"
     import { translateText } from "../../../utils/language"
     import { mediaExtensions } from "../../../values/extensions"
@@ -348,7 +348,7 @@
                                 {@const hasTimelineAction = $special.slideTimelineActive && $activePage === "edit" && ($activeEdit.type || "show") === "show" && SlideTimeline.hasActionAtTime(input.key || "", type, $activeEdit?.items?.length ? $activeEdit.items : [0], timelineUpdater)}
 
                                 {#if input.type === "fontDropdown"}
-                                    <MaterialFontDropdown label={values.label} {value} style={values.style} fontStyleValue={input.styleValue} on:change={(e) => changed(e, input)} on:fontStyle={(e) => changed(e, { ...input, key: "font" })} enableFontStyles />
+                                    <MaterialFontDropdown label={values.label} {value} showId={($activeEdit.type || "show") === "show" ? $activeShow?.id || "" : ""} style={values.style} fontStyleValue={input.styleValue} on:change={(e) => changed(e, input)} on:fontStyle={(e) => changed(e, { ...input, key: "font" })} enableFontStyles />
                                 {:else if input.type === "toggle"}
                                     <MaterialButton style="min-width: 50px;flex: 1;" title={values.label} on:click={() => toggle(input)}>
                                         <Icon id={values.icon} size={1.2} white />

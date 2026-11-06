@@ -1,5 +1,6 @@
 import { Main } from "../../../types/IPC/Main"
 import type { MidiValues, TransitionType } from "../../../types/Show"
+import type { RemoteTemplateRequest, RemoteTextSaveRequest } from "../../../types/remote/protocol"
 import { clearAudio } from "../../audio/audioFading"
 import { AudioPlayer } from "../../audio/audioPlayer"
 import { AudioPlaylist } from "../../audio/audioPlaylist"
@@ -11,6 +12,7 @@ import { slideTimelineSpeedMultiplier } from "../../stores"
 import { transposeText } from "../../utils/chordTranspose"
 import { triggerFunction } from "../../utils/common"
 import { obsSetScene, obsStartLivestream, obsStartRecording, obsStopLivestream, obsStopRecording } from "../../utils/obsTalk"
+import { saveRemoteText } from "../../utils/remoteText"
 import { togglePlayingMedia } from "../../utils/shortcuts"
 import { contentProviderSync } from "../../utils/startup"
 import { updateTransition } from "../../utils/transitions"
@@ -214,11 +216,11 @@ export const API_ACTIONS = {
     name_select_show: (data: API_strval) => selectShowByName(data.value), // BC
     start_show: (data: API_id) => startShowSync(data.id),
     change_layout: (data: API_layout) => changeShowLayout(data),
-    set_plain_text: (data: API_id_value) => formatText(data.value, data.id),
+    set_plain_text: (data: RemoteTextSaveRequest) => saveRemoteText(data),
     set_show: (data: API_id_value) => setShowAPI(data.id, data.value),
     rearrange_groups: (data: API_rearrange) => rearrangeGroups(data),
     add_group: (data: API_group) => addGroup(data),
-    set_template: (data: API_id) => setTemplate(data.id),
+    set_template: (data: RemoteTemplateRequest) => setTemplate(data),
     set_next_slide_timer: (data: API_numval) => setNextSlideTimer(data.value),
     change_slide_timeline_speed: (data: API_numval) => slideTimelineSpeedMultiplier.set(data.value ?? 1),
     transpose_show_up: (data: API_id) => formatText(transposeText(getPlainEditorText(data.id), 1), data.id),

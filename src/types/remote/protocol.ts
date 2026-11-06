@@ -1,3 +1,4 @@
+import type { ApplyBlock, ApplyScope } from "../../common/templates/templateInUse"
 import type { Variable } from "../Main"
 import type { OutData } from "../Output"
 import type { Project } from "../Projects"
@@ -122,6 +123,29 @@ export interface RemoteMediaCancelRequest {
     requestId: string
 }
 
+/**
+ * Payload of `API:set_template`. `showId` is the show open on the Remote; without it the main app falls back to its own active show.
+ * Callers that send only `id` (automations) keep working: whole show, now with the same guards as the desktop.
+ */
+export interface RemoteTemplateRequest {
+    id: string
+    showId?: string
+    scope?: ApplyScope
+    /** layout slide indexes, used for the "slides" scope */
+    slides?: number[]
+}
+export type RemoteTemplateBlockReason = Exclude<ApplyBlock, null> | "no_show" | "unknown_template" | "no_slides"
+export type RemoteTemplateResult = { status: "applied"; showId: string; scope: ApplyScope; count: number } | { status: "blocked"; reason: RemoteTemplateBlockReason; showId?: string }
+
+/** Payload of `API:set_plain_text`: the lyrics text typed on the Remote for the show open there. */
+export interface RemoteTextSaveRequest {
+    id: string
+    value: string
+}
+/** why the main app refused a lyrics save: nothing is changed, the Remote keeps the draft and shows the reason */
+export type RemoteTextBlockReason = "show_locked" | "slide_locked" | "read_only" | "no_show"
+export type RemoteTextSaveResult = { status: "saved"; showId: string } | { status: "blocked"; reason: RemoteTextBlockReason; showId?: string }
+
 /** replies to `API:<action>` requests whose payload the Remote reads */
 export interface RemoteApiResponses {
     "API:get_thumbnail": { path: string; thumbnail?: string }
@@ -137,6 +161,10 @@ export interface RemoteApiResponses {
     "API:toggle_media_loop": unknown
     "API:get_pdf_thumbnails": { path: string; pages: string[] }
     "API:create_show": { show: Show; id: string }
+    /** answers a template apply: applied, or blocked with the reason */
+    "API:set_template": RemoteTemplateResult
+    /** answers a lyrics save: saved, or blocked with the reason */
+    "API:set_plain_text": RemoteTextSaveResult
 }
 /** `API:<action>` requests carry an untyped action payload; the action registry is outside this protocol */
 export type RemoteApiChannel = `API:${string}`
@@ -163,7 +191,7 @@ export interface RemoteResponses extends RemoteApiResponses {
     GET_SCRIPTURE: RemoteScriptureResponse
     SEARCH_SCRIPTURE: RemoteScriptureSearchResponse
     GET_OVERLAYS: { overlays: Overlays; categories: Categories }
-    GET_TEMPLATES: { templates: Templates; categories: Categories }
+    GET_TEMPLATES: { templates: Templates; categories: Categories; outputStyleTemplate?: string | null }
     GET_FUNCTIONS: RemoteFunctions
     // pushed by the main app when its data changes
     ACTIVE_SCRIPTURE: RemoteActiveScripture | null
@@ -171,6 +199,8 @@ export interface RemoteResponses extends RemoteApiResponses {
     OVERLAY_CATEGORIES: Categories
     TEMPLATES: Templates
     TEMPLATE_CATEGORIES: Categories
+    /** id of the template set on the first active output's style (the on-screen override), or null */
+    OUTPUT_STYLE_TEMPLATE: string | null
     ACTIONS: { [key: string]: Action }
     ACTION_TAGS: { [key: string]: Tag }
     VARIABLES: { [key: string]: Variable }

@@ -3,7 +3,7 @@
     import { activeShow, globalTags, shows } from "../../stores"
     import Icon from "../helpers/Icon.svelte"
     import T from "../helpers/T.svelte"
-    import { keysToID, sortByName, sortObject } from "../helpers/array"
+    import { clone, keysToID, sortByName, sortObject } from "../helpers/array"
     import { history } from "../helpers/history"
     import Button from "../inputs/Button.svelte"
     import Center from "../system/Center.svelte"
@@ -25,7 +25,7 @@
     }
 
     function enableTag(tagId: string) {
-        let quickAccess = _show().get("quickAccess") || {}
+        let quickAccess = clone(_show().get("quickAccess") || {})
         quickAccess.tags = [...(quickAccess.tags || []), tagId]
 
         let showId: string = $activeShow!.id

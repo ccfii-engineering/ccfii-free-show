@@ -17,7 +17,7 @@
         <slot />
     </div>
 {:else}
-    <div class="transitioner" in:customTick={inTransition || transition || {}} out:customTick={outTransition || transition || {}} on:outrostart>
+    <div class="transitioner" in:customTick|global={inTransition || transition || {}} out:customTick|global={outTransition || transition || {}} on:outrostart>
         <slot />
     </div>
 {/if}

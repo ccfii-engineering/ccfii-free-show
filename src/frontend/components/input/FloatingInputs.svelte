@@ -68,10 +68,10 @@
     .row.light {
         --background: rgba(225, 225, 225, 0.85);
     }
-    .row:has(.overflow) {
+    .row:has(:global(.overflow)) {
         overflow: visible;
     }
-    .row:has(.overflow-interact) {
+    .row:has(:global(.overflow-interact)) {
         bottom: 0 !important;
         height: calc(var(--size) + var(--padding));
         border-radius: calc(var(--size) * 0.5);
@@ -80,7 +80,7 @@
         background: transparent;
         backdrop-filter: unset;
     }
-    .row:has(.overflow-interact) :global(button) {
+    .row:has(:global(.overflow-interact)) :global(button) {
         box-shadow: 1px 1px 6px rgb(0 0 0 / 0.4);
     }
 

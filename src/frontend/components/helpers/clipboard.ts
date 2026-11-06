@@ -903,7 +903,7 @@ const deleteActions = {
         }
 
         // remove this
-        const showMidi = _show().get("midi") || {}
+        const showMidi = clone(_show().get("midi") || {})
         delete showMidi[id]
         _show().set({ key: "midi", value: showMidi })
     },

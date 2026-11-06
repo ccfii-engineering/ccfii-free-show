@@ -9,6 +9,11 @@ export function translate(key: string, d: Dictionary = _get("dictionary"), fallb
     return d[keys[0]]?.[keys[1]] || fallback || ""
 }
 
+/** translate and fill `$1`, `$2` placeholders */
+export function translateWith(key: string, args: (string | number)[], d: Dictionary = _get("dictionary"), fallback = "") {
+    return args.reduce<string>((text, value, i) => text.replaceAll("$" + (i + 1), String(value)), translate(key, d, fallback))
+}
+
 export function setError(err: string) {
     let errors = _get("errors")
     if (errors.includes(err)) return

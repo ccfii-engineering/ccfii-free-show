@@ -114,7 +114,7 @@
             event.preventDefault()
             if (searchValue && event.key === " ") return
 
-            if (open && highlightedIndex >= 0) {
+            if (open && highlightedIndex >= 0 && !options[highlightedIndex]?.heading) {
                 selectOption(null, options[highlightedIndex].value)
             } else {
                 toggleDropdown(true)
@@ -125,7 +125,7 @@
             if (!open) toggleDropdown(true)
             else {
                 // loops back around when reached end
-                highlightedIndex = (highlightedIndex + 1) % options.length
+                highlightedIndex = stepSelectable(highlightedIndex, 1)
                 scrollToHighlighted()
             }
             return
@@ -134,7 +134,7 @@
             if (!open) toggleDropdown(true)
             else {
                 // loops back around when reached end
-                highlightedIndex = (highlightedIndex - 1 + options.length) % options.length
+                highlightedIndex = stepSelectable(highlightedIndex, -1)
                 scrollToHighlighted()
             }
             return
@@ -153,8 +153,8 @@
         } else if (event.key.length === 1) {
             searchValue = formatSearch(searchValue + event.key, true)
 
-            let activeIndex = options.findIndex((a) => formatSearch(a.label, true).startsWith(searchValue))
-            if (activeIndex < 0) activeIndex = options.findIndex((a) => formatSearch(a.label, true).includes(searchValue))
+            let activeIndex = options.findIndex((a) => !a.heading && formatSearch(a.label, true).startsWith(searchValue))
+            if (activeIndex < 0) activeIndex = options.findIndex((a) => !a.heading && formatSearch(a.label, true).includes(searchValue))
             if (activeIndex < 0) return
 
             // enter to select
@@ -162,6 +162,16 @@
 
             scrollToHighlighted()
         }
+    }
+
+    // moves to the next option that is not a group heading (loops around)
+    function stepSelectable(from: number, direction: 1 | -1) {
+        let index = from
+        for (let i = 0; i < options.length; i++) {
+            index = (index + direction + options.length) % options.length
+            if (!options[index]?.heading) return index
+        }
+        return from
     }
 
     let nextScrollTimeout: NodeJS.Timeout | null = null
@@ -184,6 +194,10 @@
 
             index = index - 1
         }
+
+        // skip group headings
+        while (options[index]?.heading && index > 0 && index < options.length - 1) index += e.deltaY > 0 ? 1 : -1
+        if (!options[index] || options[index].heading) return
 
         const newValue = options[index].value
         if (value === newValue) return
@@ -356,31 +370,36 @@
 
     {#if open}
         {#if useVirtualList}
-            <div class="dropdown virtual" style="max-height: {maxHeight}px" transition:flyFade>
+            <div class="dropdown virtual" style="max-height: {maxHeight}px" transition:flyFade|global>
                 <VirtualList items={options} height="{maxHeight}px" activeIndex={highlightedIndex} let:item={option}>
-                    <li style="{option.data ? 'justify-content: space-between;' : ''}{option.style || ''}" role="option" aria-selected={option.value === value} class:selected={option.value === value} class:highlighted={options.indexOf(option) === highlightedIndex} on:click={(e) => selectOption(e, option.value)}>
-                        {#if option.icon}<Icon id={option.icon} style="margin-right: 5px;" color={option.iconColor} boxed={!!option.iconColor} white />{/if}
+                    {#if option.heading}
+                        <li class="heading" role="presentation">{translateText(option.label)}</li>
+                    {:else}
+                        <li style="{option.data ? 'justify-content: space-between;' : ''}{option.style || ''}" role="option" aria-selected={option.value === value} class:selected={option.value === value} class:highlighted={options.indexOf(option) === highlightedIndex} on:click={(e) => selectOption(e, option.value)}></li>
+                        <li style="{option.data ? 'justify-content: space-between;' : ''}{option.style || ''}" role="option" aria-selected={option.value === value} class:selected={option.value === value} class:highlighted={options.indexOf(option) === highlightedIndex} on:click={(e) => selectOption(e, option.value)}>
+                            {#if option.icon}<Icon id={option.icon} style="margin-right: 5px;" color={option.iconColor} boxed={!!option.iconColor} white />{/if}
 
-                        {#if option.prefix}<span class="prefix">{option.prefix}</span>{/if}
-                        {option.label || "—"}
+                            {#if option.prefix}<span class="prefix">{option.prefix}</span>{/if}
+                            {option.label || "—"}
 
-                        {#if option.data}
-                            <div class="data" data-title={option.data}>{option.data}</div>
-                        {/if}
+                            {#if option.data}
+                                <div class="data" data-title={option.data}>{option.data}</div>
+                            {/if}
 
-                        {#if allowDeleting && option.value !== value}
-                            <MaterialButton
-                                label="actions.delete"
-                                class="delete-button"
-                                style="position: absolute;right: 2px;width: 40px;"
-                                icon="delete"
-                                on:click={() => {
-                                    dispatch("delete", option.value)
-                                }}
-                                red
-                            />
-                        {/if}
-                    </li>
+                            {#if allowDeleting && option.value !== value}
+                                <MaterialButton
+                                    label="actions.delete"
+                                    class="delete-button"
+                                    style="position: absolute;right: 2px;width: 40px;"
+                                    icon="delete"
+                                    on:click={() => {
+                                        dispatch("delete", option.value)
+                                    }}
+                                    red
+                                />
+                            {/if}
+                        </li>
+                    {/if}
                 </VirtualList>
 
                 {#if addNew}
@@ -393,7 +412,7 @@
                 {/if}
             </div>
         {:else}
-            <ul style="max-height: {maxHeight}px" class="dropdown" role="listbox" tabindex="-1" bind:this={scrollElem} transition:flyFade>
+            <ul style="max-height: {maxHeight}px" class="dropdown" role="listbox" tabindex="-1" bind:this={scrollElem} transition:flyFade|global>
                 {#if allowEmpty}
                     <li style="opacity: 0.5;font-style: italic;" role="option" aria-selected={!value} class:selected={!value} class:highlighted={highlightedIndex < 0} on:click={() => selectOption(null, "")}>
                         {translateText("main.none")}
@@ -401,29 +420,33 @@
                 {/if}
 
                 {#each options as option, i}
-                    <li style="{option.data ? 'justify-content: space-between;' : ''}{option.style || ''}" role="option" aria-selected={option.value === value} class:selected={option.value === value} class:highlighted={i === highlightedIndex} on:click={(e) => selectOption(e, option.value)}>
-                        {#if option.icon}<Icon id={option.icon} style="margin-right: 5px;" color={option.iconColor} boxed={!!option.iconColor} white />{/if}
+                    {#if option.heading}
+                        <li class="heading" role="presentation">{translateText(option.label)}</li>
+                    {:else}
+                        <li style="{option.data ? 'justify-content: space-between;' : ''}{option.style || ''}" role="option" aria-selected={option.value === value} class:selected={option.value === value} class:highlighted={i === highlightedIndex} on:click={(e) => selectOption(e, option.value)}>
+                            {#if option.icon}<Icon id={option.icon} style="margin-right: 5px;" color={option.iconColor} boxed={!!option.iconColor} white />{/if}
 
-                        {#if option.prefix}<span class="prefix">{option.prefix}</span>{/if}
-                        {option.label || "—"}
+                            {#if option.prefix}<span class="prefix">{option.prefix}</span>{/if}
+                            {option.label || "—"}
 
-                        {#if option.data}
-                            <div class="data" data-title={option.data}>{option.data}</div>
-                        {/if}
+                            {#if option.data}
+                                <div class="data" data-title={option.data}>{option.data}</div>
+                            {/if}
 
-                        {#if allowDeleting && option.value !== value}
-                            <MaterialButton
-                                label="actions.delete"
-                                class="delete-button"
-                                style="position: absolute;right: 2px;width: 40px;"
-                                icon="delete"
-                                on:click={() => {
-                                    dispatch("delete", option.value)
-                                }}
-                                red
-                            />
-                        {/if}
-                    </li>
+                            {#if allowDeleting && option.value !== value}
+                                <MaterialButton
+                                    label="actions.delete"
+                                    class="delete-button"
+                                    style="position: absolute;right: 2px;width: 40px;"
+                                    icon="delete"
+                                    on:click={() => {
+                                        dispatch("delete", option.value)
+                                    }}
+                                    red
+                                />
+                            {/if}
+                        </li>
+                    {/if}
                 {/each}
 
                 {#if addNew}
@@ -647,6 +670,17 @@
     }
     .dropdown li.selected {
         color: var(--secondary);
+    }
+    .dropdown li.heading {
+        cursor: default;
+        pointer-events: none;
+        opacity: 0.6;
+        font-size: 0.75em;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding-top: 0.75rem;
+        padding-bottom: 0.25rem;
     }
 
     .dropdown .data {

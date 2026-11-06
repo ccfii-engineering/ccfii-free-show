@@ -18,6 +18,8 @@ export type HistoryIDs =
     | "setItems"
     | "setStyle"
     | "slideStyle"
+    | "slideTemplate"
+    | "textScope"
     // show
     | "slide"
     | "showMedia"
@@ -28,6 +30,8 @@ export interface History {
     oldData?: any
     newData?: any
     save?: boolean
+    /** Show to re-apply its template to after this entry runs (do, undo and redo), so open slides follow a template edit. */
+    restyleShow?: string
     time?: number
     location?: {
         page: HistoryPages

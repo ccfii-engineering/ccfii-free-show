@@ -84,7 +84,7 @@
     </MaterialButton>
 
     {#if zoomOpened}
-        <div class="overflow zoom_popup" transition:slide={{ duration: 150 }}>
+        <div class="overflow zoom_popup" transition:slide|global={{ duration: 150 }}>
             <MaterialButton style="padding: 0 !important;" on:click={reset} bold={false} center>
                 <p class="text" data-title={translateText("actions.resetZoom")}>{(addValue < 0 ? columns * 100 : 100 / columns).toFixed()}%</p>
             </MaterialButton>

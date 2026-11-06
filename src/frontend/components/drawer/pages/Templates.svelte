@@ -1,7 +1,9 @@
 <script lang="ts">
     import { onMount } from "svelte"
+    import { describeTemplateClickTarget, getTemplateApplyBlock, resolveTemplateInUse, type ApplyScope } from "../../../../common/templates/templateInUse"
     import type { Template } from "../../../../types/Show"
-    import { activeEdit, activePage, activePopup, activeShow, alertMessage, categories, labelsDisabled, mediaOptions, outputs, selected, showsCache, special, styles, templateApplied, templateCategories, templates } from "../../../stores"
+    import { selectCachedShow } from "../../../showsCacheState/showsCache.svelte"
+    import { activeEdit, activePage, activePopup, activeShow, alertMessage, categories, labelsDisabled, mediaOptions, outputs, selected, special, styles, templateApplied, templateCategories, templates } from "../../../stores"
     import { translateText } from "../../../utils/language"
     import { getAccess } from "../../../utils/profile"
     import { clone, keysToID, sortByName } from "../../helpers/array"
@@ -13,6 +15,7 @@
     import T from "../../helpers/T.svelte"
     import FloatingInputs from "../../input/FloatingInputs.svelte"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
+    import Icon from "../../helpers/Icon.svelte"
     import Loader from "../../main/Loader.svelte"
     import Actions from "../../slide/Actions.svelte"
     import Center from "../../system/Center.svelte"
@@ -30,7 +33,39 @@
     $: resolution = getResolution(null, { outputs: $outputs, styles: $styles }) // $templates[active || ""]?.settings?.resolution
     let filteredTemplates: (Template & { id: string })[] = []
 
-    $: activeTemplate = ($activeShow && $activeShow.type === undefined) || $activeShow?.type === "show" ? $showsCache[$activeShow.id]?.settings?.template : null
+    $: isShowActive = !!($activeShow && ($activeShow?.type || "show") === "show")
+    $: activeShowId = isShowActive ? $activeShow?.id || "" : ""
+    $: myShow = selectCachedShow(activeShowId)
+    $: currentShow = $myShow
+
+    // what the show uses today, and what overrides it
+    $: categoryId = currentShow?.category || ""
+    $: categoryTemplateId = $categories[categoryId]?.template || ""
+    $: categoryTemplateName = $templates[categoryTemplateId]?.name || ""
+    $: categoryName = $categories[categoryId]?.default ? translateText($categories[categoryId]?.name || "") : $categories[categoryId]?.name || ""
+    $: outputStyleId = getFirstActiveOutput($outputs)?.style || ""
+    $: outputStyleTemplateId = $special.styleTemplatePreview !== false ? $styles[outputStyleId]?.template || "" : ""
+    $: templateInUse = resolveTemplateInUse({
+        showTemplateId: currentShow?.settings?.template,
+        categoryTemplateId,
+        outputStyleTemplateId,
+        isKnownTemplate: (id) => !!$templates[id]
+    })
+    $: activeTemplate = isShowActive ? templateInUse.templateId : null
+
+    // apply scope
+    $: selectedSlideCount = $selected.id === "slide" ? $selected.data.length : 0
+    $: totalSlideCount = currentShow ? getLayoutRef("active", currentShow).length : 0
+    let scope: ApplyScope = $selected.id === "slide" && $selected.data.length ? "slides" : "show" // keep today's behaviour if slides are selected when the drawer opens
+    $: if (selectedSlideCount === 0 && scope === "slides") scope = "show"
+    $: clickTarget = describeTemplateClickTarget({ selectedSlideCount: scope === "slides" ? selectedSlideCount : 0, totalSlideCount })
+    $: targetText = clickTarget.scope === "slides" ? translateText(clickTarget.count === 1 ? "template_use.one_selected_slide" : "template_use.n_selected_slides", null, [String(clickTarget.count)]) : translateText(clickTarget.labelKey)
+
+    $: profileAccess = getAccess("shows")
+    $: showReadOnly = profileAccess.global === "read" || profileAccess[categoryId] === "read"
+    $: applyBlock = getTemplateApplyBlock({ scope: clickTarget.scope, showLocked: !!currentShow?.locked, readOnly: showReadOnly, categoryTemplateId })
+    $: categoryBlocksShow = !!categoryTemplateId && clickTarget.scope === "show"
+    $: styleOverrideName = outputStyleTemplateId && templateInUse.outputStyleOverride ? $templates[templateInUse.outputStyleOverride]?.name || "" : ""
 
     let fullFilteredTemplates: (Template & { id: string })[] = []
     $: if ($templates || active || $templateCategories) updateTemplates()
@@ -80,85 +115,52 @@
         })
     }
 
-    $: isShowActive = !!($activeShow && ($activeShow?.type || "show") === "show")
-    let alerted = false
     function templateClick(e: MouseEvent | null = null, templateId: string) {
         if (e?.target?.closest?.(".edit") || e?.target?.closest?.(".icons")) return
         if (!$activeShow || !isShowActive || e?.ctrlKey || e?.metaKey) return
 
-        if ($showsCache[$activeShow.id]?.locked) {
+        if (applyBlock === "show_locked") {
             alertMessage.set("show.locked")
             activePopup.set("alert")
             return
         }
-
-        const profile = getAccess("shows")
-        const readOnly = profile.global === "read" || profile[$showsCache[$activeShow.id]?.category || ""] === "read"
-        if (readOnly) {
+        if (applyBlock === "read_only") {
             alertMessage.set("profile.locked")
             activePopup.set("alert")
             return
         }
 
-        // one selected slides
-        let ref = getLayoutRef()
-        if ($selected.id === "slide" && $selected.data.length < ref.length) {
+        // selected slides (every slide selected counts as the whole show, as the target line says)
+        if (clickTarget.scope === "slides") {
+            let ref = getLayoutRef()
+            const slideIds: string[] = []
             $selected.data.forEach(({ index, showId }) => {
                 let slideId = ref[index]?.id
+                if (!slideId || (showId && showId !== $activeShow?.id)) return
 
                 // check if locked
-                let groupSlide = _show(showId || "active")
+                let groupSlide = _show("active")
                     .slides([ref[index]?.parent?.id || ref[index]?.id])
                     .get()[0]
                 if (groupSlide?.locked) return
 
-                let slideSettings = _show(showId || "active")
-                    .slides([slideId])
-                    .get("settings")
-                let oldData = { style: clone(slideSettings) }
-                let newData = { style: { ...clone(slideSettings), template: templateId } }
-
-                // WIP apply to all slides at once...
-                history({
-                    id: "slideStyle",
-                    oldData,
-                    newData,
-                    location: { page: "edit", show: $activeShow, slide: slideId }
-                })
+                slideIds.push(slideId)
             })
 
+            // one history step: undo and redo restore the slides, not only the template id
+            if (slideIds.length) history({ id: "slideTemplate", newData: { template: templateId, slideIds }, location: { page: "edit", show: $activeShow } })
+
             deselect()
-            // WIP refresh slides (apply template)
             return
         }
 
-        // alert if show category has a template
-        const categoryId = $showsCache[$activeShow.id]?.category || ""
-        const categoryTemplate = $categories[categoryId]?.template || ""
-        if (categoryTemplate) {
-            if (!alerted) {
-                alertMessage.set("tips.category_template")
-                activePopup.set("alert")
-                alerted = true
-            }
-            return
-        }
+        // a category template blocks whole-show applies (the cards warn about it before the click)
+        if (applyBlock === "category_template") return
 
         templateApplied.set(true)
         setTimeout(() => templateApplied.set(false), 500)
 
         history({ id: "TEMPLATE", newData: { id: templateId, data: { createItems: true, shiftItems: e?.shiftKey } }, location: { page: "none", override: "show#" + $activeShow.id } })
-
-        // alert if first output has a style template
-        if ($special.styleTemplatePreview !== false) {
-            const outputStyleId = getFirstActiveOutput()?.style || ""
-            const styleTemplate = $styles[outputStyleId]?.template || ""
-            if (styleTemplate && !alerted) {
-                alertMessage.set("tips.style_template_active")
-                activePopup.set("alert")
-                alerted = true
-            }
-        }
     }
 
     function keydown(e: KeyboardEvent) {
@@ -180,6 +182,36 @@
 <svelte:window on:keydown={keydown} />
 
 <div style="position: relative;height: 100%;overflow-y: auto;" class="context #drawer_templates" on:wheel={wheel}>
+    {#if isShowActive}
+        <div class="scope templateScope">
+            <div class="scopeRow">
+                {#if !$labelsDisabled}<span class="scopeLabel"><T id="template_use.apply_to" /></span>{/if}
+                <div class="scopeSwitch" role="group" aria-label={translateText("template_use.apply_to")}>
+                    <MaterialButton variant={scope === "show" ? "contained" : "outlined"} isActive={scope === "show"} on:click={() => (scope = "show")}>
+                        <T id="template_use.whole_show" />
+                    </MaterialButton>
+                    <MaterialButton variant={scope === "slides" ? "contained" : "outlined"} isActive={scope === "slides"} disabled={!selectedSlideCount} title={selectedSlideCount ? "" : "template_use.select_slides_hint"} on:click={() => (scope = "slides")}>
+                        <T id="template_use.selected_slides" />
+                    </MaterialButton>
+                </div>
+                <span class="target" data-testid="template-target">{targetText}</span>
+            </div>
+
+            {#if categoryBlocksShow}
+                <div class="warning" data-testid="template-category-warning">
+                    <Icon id="warning" size={1} white />
+                    <span>{translateText("template_use.warn_category", null, [categoryName, categoryTemplateName])}</span>
+                </div>
+            {/if}
+            {#if styleOverrideName}
+                <div class="warning" data-testid="template-style-warning">
+                    <Icon id="warning" size={1} white />
+                    <span>{translateText("template_use.warn_style", null, [styleOverrideName])}</span>
+                </div>
+            {/if}
+        </div>
+    {/if}
+
     <DropArea id="templates">
         <!-- WIP lazy loading with skeleton instead -->
         {#if preloader && fullFilteredTemplates.length > 10}
@@ -199,6 +231,13 @@
                             {/if}
 
                             <TemplateSlide templateId={template.id} {template} preview />
+
+                            {#if isShowActive && template.id === activeTemplate}
+                                <span class="badge inUse" data-testid="template-in-use"><T id="template_use.in_use_badge" /></span>
+                            {/if}
+                            {#if isShowActive && categoryBlocksShow}
+                                <span class="badge blocked" data-title={translateText("template_use.warn_category", null, [categoryName, categoryTemplateName])}><Icon id="warning" size={0.8} white /></span>
+                            {/if}
                         </Card>
                     </SelectElem>
                 {/each}
@@ -230,6 +269,69 @@
 </FloatingInputs>
 
 <style>
+    .scope {
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 6px 8px;
+        background-color: var(--primary-darkest);
+        border-bottom: 1px solid var(--primary-lighter);
+    }
+    .scopeRow {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 12px;
+    }
+    .scopeLabel {
+        opacity: 0.7;
+        font-size: 0.9em;
+    }
+    .scopeSwitch {
+        display: flex;
+        border: 1px solid var(--primary-lighter);
+        border-radius: 4px;
+        overflow: hidden;
+    }
+    .target {
+        font-size: 0.9em;
+        opacity: 0.8;
+    }
+    .warning {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 4px 8px;
+        font-size: 0.85em;
+        background-color: rgb(255 170 0 / 0.15);
+        border-left: 3px solid #ffaa00;
+        border-radius: 2px;
+    }
+    .badge {
+        position: absolute;
+        top: 4px;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        padding: 1px 6px;
+        border-radius: 3px;
+        font-size: 0.75em;
+        font-weight: bold;
+        pointer-events: auto;
+    }
+    .badge.inUse {
+        left: 4px;
+        background-color: var(--secondary);
+        color: var(--secondary-text);
+    }
+    .badge.blocked {
+        right: 4px;
+        background-color: #b36b00;
+    }
+
     .grid {
         display: flex;
         flex-wrap: wrap;

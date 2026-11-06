@@ -63,6 +63,7 @@ export type SaveListSettings =
     | "maxConnections"
     | "mediaFolders"
     | "mediaOptions"
+    | "recentFonts"
     | "openedFolders"
     | "outputs"
     | "sorted"

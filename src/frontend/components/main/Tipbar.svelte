@@ -52,7 +52,7 @@
 </script>
 
 {#if !isClosed && !$isDev}
-    <section class="toolbar" transition:slide={{ duration: 150 }}>
+    <section class="toolbar" transition:slide|global={{ duration: 150 }}>
         <div class="text">
             {#if activeMessage === "donate"}
                 <Icon id="heart" right size={0.8} white />

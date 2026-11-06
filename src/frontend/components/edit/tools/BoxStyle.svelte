@@ -1,20 +1,26 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
-    import type { Item, ItemType, Slide } from "../../../../types/Show"
-    import { activeEdit, activePopup, activeShow, alertMessage, categories, styles as outputStyles, overlays, selected, shownTips, showsCache, special, templates, theme, themes, timers } from "../../../stores"
-    import { getNormalizedKey, isFormattingKey } from "../../../utils/shortcuts"
+    import { resolveTemplateInUse } from "../../../../common/templates/templateInUse"
+    import type { Item, ItemType, Show, Slide } from "../../../../types/Show"
+    import { activeEdit, activePopup, activeShow, alertMessage, categories, groups, styles as outputStyles, overlays, selected, shownTips, showsCache, special, templates, theme, themes, timers } from "../../../stores"
     import { newToast } from "../../../utils/common"
+    import { translateText } from "../../../utils/language"
+    import { showEntry } from "../../../utils/perEntryStores"
+    import { getNormalizedKey, isFormattingKey } from "../../../utils/shortcuts"
     import { clone } from "../../helpers/array"
     import { history } from "../../helpers/history"
     import { getExtension, getMediaType } from "../../helpers/media"
     import { getAllEnabledOutputs } from "../../helpers/output"
-    import { getCustomMetadata, getLayoutRef, initializeMetadata } from "../../helpers/show"
-    import { _show } from "../../helpers/shows"
+    import { getCustomMetadata, getLayoutRef, initializeMetadata, isSlideLocked } from "../../helpers/show"
+    import { _show, getSlideSettings } from "../../helpers/shows"
     import { getStyles } from "../../helpers/style"
     import { MAX_FONT_SIZE } from "../scripts/autosize"
     import { addFilterString, addStyle, addStyleString, getItemStyleAtPos, getItemText, getLastLineAlign, getLineText, getSelectionRange } from "../scripts/textStyle"
+    import { getOwnTextStyleSlideIds, matchItemIndexes, resetTextStyleToTemplate, type TextScope } from "../scripts/textScope"
     import { itemBoxes, setBoxInputValue } from "../values/boxes"
     import EditValues from "./EditValues.svelte"
+    import TextScopeControl from "./TextScopeControl.svelte"
+    import TextScopeFooter from "./TextScopeFooter.svelte"
 
     export let id: ItemType
     export let allSlideItems: Item[] = []
@@ -329,7 +335,8 @@
 
     ///
 
-    function setValue(input: any, allItems: any[]) {
+    function setValue(input: any, allItems: any[], forced: ForcedScope | null = null) {
+        const activeScope = getActiveScope(forced)
         let value: any = input.value
         if (input.id === "filter") value = addFilterString(item?.filter || "", [input.key, value])
         else if (input.id === "align" && item?.type === "table") value = addStyleString(item?.align || "", [input.key, value])
@@ -381,7 +388,30 @@
                 if (input.value && Number(styles["font-size"]) < MAX_FONT_SIZE) newFontSize = MAX_FONT_SIZE
                 else if (!input.value && Number(styles["font-size"]) === MAX_FONT_SIZE) newFontSize = 100
             }
-            if (newFontSize) updateValue({ detail: { name: "font_size", id: "style", key: "font-size", value: newFontSize + "px" } })
+            if (newFontSize) updateValue({ detail: { name: "font_size", id: "style", key: "font-size", value: newFontSize + "px" } }, forced)
+        }
+
+        // SCOPE
+
+        if (activeScope === "all") {
+            const writes = getAllSlidesTargets(allItems).map(({ slide, items }) => ({ id: "setItems", slide, items, style: { key: targetId, values: [value] } }))
+            if (writes.length) history({ id: "textScope", newData: { writes }, location: { page: "edit", show: $activeShow! } })
+            return
+        }
+
+        if (activeScope === "template") {
+            writeToTemplate(allItems, forced, (templateItem) => {
+                if (!targetId.includes(".")) {
+                    templateItem[targetId] = value
+                    return
+                }
+
+                const splitted = targetId.split(".")
+                const nested = typeof templateItem[splitted[0]] === "object" && templateItem[splitted[0]] !== null ? templateItem[splitted[0]] : {}
+                nested[splitted[1]] = input.value
+                templateItem[splitted[0]] = nested
+            })
+            return
         }
 
         // UPDATE
@@ -458,8 +488,10 @@
         }
     }
 
-    function updateValue(e: any) {
+    function updateValue(e: any, forced: ForcedScope | null = null) {
         let input = e.detail
+        const activeScope = getActiveScope(forced)
+        const activeSlideId: string = getLayoutRef()[$activeEdit.slide ?? ""]?.id
         console.log("BOX INPUT:", input)
 
         const sel = window.getSelection()
@@ -500,13 +532,27 @@
         if (input.id === "nowrap") input = { ...input, id: "style", key: "white-space", value: input.value ? "nowrap" : undefined }
 
         if (input.id !== "style" && !input.id.includes("CSS")) {
-            setValue(input, allItems)
+            setValue(input, allItems, forced)
             return
         }
 
         let aligns: boolean = input.key === "align-items" || input.key === "text-align"
 
         if (input.id.includes("CSS")) allItems = [allItems[0]]
+
+        // write the change into the template the slide uses
+        if (activeScope === "template") {
+            writeToTemplate(allItems, forced, (templateItem) => {
+                const value = computeItemValue(input, templateItem, null, aligns)
+                if (input.key === "align-items") templateItem.align = value
+                else if (currentType !== "text" || (!templateItem.lines && typeof value === "string")) templateItem.style = value
+                else
+                    templateItem.lines?.forEach((line, j) => {
+                        if (value?.[j] !== undefined) line[aligns ? "align" : "text"] = value[j]
+                    })
+            })
+            return
+        }
 
         /////
 
@@ -516,8 +562,13 @@
         let slideItems: number[][] = [allItems]
         let showSlides = $showsCache[$activeShow?.id || ""]?.slides || {}
 
-        // get all selected slides
-        if (slides[0] && $selected.id === "slide" && Array.isArray($selected.data)) {
+        if (activeScope === "all") {
+            // every slide in the layout, matched by text box position
+            const targets = getAllSlidesTargets(allItems)
+            slides = targets.map((a) => a.slide)
+            slideItems = targets.map((a) => a.items)
+        } else if (slides[0] && $selected.id === "slide" && Array.isArray($selected.data)) {
+            // get all selected slides
             let selectedSlides = $selected.data.filter(({ index }) => index !== $activeEdit.slide!)
             slides.push(...selectedSlides.map(({ index }) => ref[index]?.id))
 
@@ -552,41 +603,15 @@
         function getNewItemValues(currentSlideItem: Item, slideId: string) {
             if (!currentSlideItem) return
 
-            let selected = selection
-            if (!selected?.length || !selected?.filter((a) => a.start !== a.end).length) {
-                selected = []
-                currentSlideItem.lines?.forEach((line) => {
-                    selected!.push({ start: 0, end: getLineText(line).length })
-                })
-            }
-
-            if (input.key === "text-align") {
-                let newAligns: any[] = []
-                currentSlideItem.lines?.forEach((line, linePos) => {
-                    if (!selection?.length || selection[linePos]?.start !== undefined) newAligns.push(`${input.key}: ${input.value};`)
-                    else newAligns.push(line.align)
-                })
-                values[slideId].push(newAligns)
-            } else if (currentSlideItem.lines) {
-                if (input.id.includes("CSS")) {
-                    values[slideId].push(addStyle(selected, currentSlideItem, input.value).lines!.map((a) => a.text))
-                } else {
-                    values[slideId].push(aligns ? addStyleString(currentSlideItem.align || "", [input.key, input.value]) : addStyle(selected, clone(currentSlideItem), [input.key, input.value]).lines!.map((a) => a.text))
-                }
-            } else {
-                if (input.id.includes("CSS")) {
-                    values[slideId].push(input.value)
-                } else {
-                    // merge into each item's own style so position etc. is kept when changing multiple items
-                    values[slideId].push(addStyleString(currentSlideItem.style || "", [input.key, input.value]))
-                }
-            }
+            // a partial selection only makes sense on the slide it was made on
+            const ranges = activeScope === "all" && slideId !== activeSlideId ? null : selection
+            values[slideId].push(computeItemValue(input, currentSlideItem, ranges, aligns))
         }
 
         // align other items (VARIABLE)
         if (aligns && item?.type && item.type !== "text") {
             input.id = "align"
-            setValue(input, allItems)
+            setValue(input, allItems, forced)
 
             return
         }
@@ -642,31 +667,258 @@
             return
         }
 
+        // one write per slide: "All slides" stores them as a single history entry
+        let writes: { id: string; slide: string; items: number[]; style: any; override: string }[] = []
         if (setItemStyle.includes(id)) {
             slides.forEach((slide, i) => {
                 if (!slideItems[i].length) return
-
-                history({
-                    id: "setItems",
-                    // oldData: { style: { key: "style", values: [oldData] } },
-                    newData: { style: { key: "style", values: values[slide] } },
-                    location: { page: "edit", show: $activeShow!, slide, items: slideItems[i], override: "slide_" + slide + "_items_" + slideItems[i].join(",") }
-                })
+                writes.push({ id: "setItems", slide, items: slideItems[i], style: { key: "style", values: values[slide] }, override: "slide_" + slide + "_items_" + slideItems[i].join(",") })
             })
+        } else {
+            let key: string = input.key === "text-align" || aligns ? "align" : "text"
+            slides.forEach((slide, i) => {
+                if (!slideItems[i].length) return
+                // WIP
+                const historyId = input.key === "text-align" ? "textAlign" : aligns ? "setItems" : "textStyle"
+                writes.push({ id: historyId, slide, items: slideItems[i], style: { key, values: values[slide] }, override: "slide_" + slide + "_items_" + slideItems[i].join(",") })
+            })
+        }
 
+        if (activeScope === "all") {
+            if (writes.length) history({ id: "textScope", newData: { writes: writes.map(({ override: _override, ...write }) => write) }, location: { page: "edit", show: $activeShow! } })
             return
         }
 
-        let key: string = input.key === "text-align" || aligns ? "align" : "text"
-        slides.forEach((slide, i) => {
-            if (!slideItems[i].length) return
+        writes.forEach((write) => {
             history({
-                // WIP
-                id: input.key === "text-align" ? "textAlign" : aligns ? "setItems" : "textStyle",
-                newData: { style: { key, values: values[slide] } },
-                location: { page: "edit", show: $activeShow!, slide, items: slideItems[i], override: "slide_" + slide + "_items_" + slideItems[i].join(",") }
+                id: write.id as any,
+                newData: { style: write.style },
+                location: { page: "edit", show: $activeShow!, slide: write.slide, items: write.items, override: write.override }
             })
         })
+    }
+
+    // TEXT SCOPE
+
+    type ForcedScope = { scope: TextScope; templateId?: string }
+
+    let scope: TextScope = "slide"
+    $: scopeAvailable = id === "text" && !$activeEdit.id && ($activeEdit.type || "show") === "show" && !!$activeShow?.id
+    const getActiveScope = (forced: ForcedScope | null): TextScope => (!scopeAvailable ? "slide" : forced?.scope || scope)
+
+    $: myShow = showEntry($activeShow?.id || "")
+    $: layoutSlideIds = scopeAvailable ? getLayoutSlideIds($myShow) : []
+    $: activeLayoutSlideId = $activeEdit.slide !== null && $activeEdit.slide !== undefined ? getLayoutRef()[$activeEdit.slide]?.id || "" : ""
+
+    function getLayoutSlideIds(_updater: Show | null) {
+        return [...new Set<string>(getLayoutRef().map((a) => a.id))].filter(Boolean)
+    }
+
+    // the layout ref read once per run: slide id to its parent id (first match wins), and the first slide id
+    type LayoutContext = { parents: Map<string, string>; firstId: string }
+    function getLayoutContext(): LayoutContext {
+        const ref = getLayoutRef()
+        const parents = new Map<string, string>()
+        ref.forEach((a) => {
+            if (!parents.has(a.id)) parents.set(a.id, a.parent?.id || a.id)
+        })
+        return { parents, firstId: ref[0]?.id || "" }
+    }
+
+    // same precedence as the edit header and the template apply: slide > group > first slide > category > show
+    function getSlideTemplateId(slideId: string, show: Show | null, _deps: any[] = [], context: LayoutContext = getLayoutContext()): string {
+        if (!show || !slideId) return ""
+
+        const parentId = context.parents.get(slideId) || slideId
+        const showTemplateId = show.settings?.template || ""
+        return (
+            resolveTemplateInUse({
+                showTemplateId,
+                categoryTemplateId: $categories[show.category || ""]?.template,
+                firstSlideTemplateId: $templates[showTemplateId]?.settings?.firstSlideTemplate,
+                slide: { isFirstSlide: context.firstId === slideId, slideTemplateId: show.slides?.[slideId]?.settings?.template, groupTemplateId: $groups[show.slides?.[parentId]?.globalGroup || ""]?.template },
+                isKnownTemplate: (templateId) => !!$templates[templateId]
+            }).templateId || ""
+        )
+    }
+
+    $: slideTemplateId = scopeAvailable ? getSlideTemplateId(activeLayoutSlideId, $myShow, [$templates, $groups, $categories]) : ""
+    $: slideTemplateName = slideTemplateId ? $templates[slideTemplateId]?.name || translateText("main.unnamed") : ""
+    $: if (scope === "template" && !slideTemplateName) scope = "slide"
+
+    function getAllSlidesTargets(allItems: number[]) {
+        const showId = $activeShow?.id || ""
+        const showSlides = $showsCache[showId]?.slides || {}
+        const activeSlideId = getLayoutRef()[$activeEdit.slide ?? ""]?.id
+        const targets: { slide: string; items: number[] }[] = []
+
+        getLayoutSlideIds(null).forEach((slideId) => {
+            if (!showSlides[slideId]) return
+            if (slideId !== activeSlideId && isSlideLocked(showId, slideId)) return
+
+            const items = slideId === activeSlideId ? allItems : matchItemIndexes(allSlideItems, allItems, showSlides[slideId].items || []).map((a) => a.target)
+            if (!items.length) return
+            // the edited slide always goes first
+            if (slideId === activeSlideId) targets.unshift({ slide: slideId, items })
+            else targets.push({ slide: slideId, items })
+        })
+
+        return targets
+    }
+
+    // template items matching the edited items, changed by `change`, written through the template update path (history, so undo works)
+    function writeToTemplate(allItems: number[], forced: ForcedScope | null, change: (_item: Item) => void) {
+        const templateId = forced?.templateId || slideTemplateId
+        const templateItems: Item[] = $templates[templateId]?.items || []
+        const pairs = matchItemIndexes(allSlideItems, allItems, templateItems)
+        if (!templateId || !pairs.length) {
+            newToast("text_scope.no_match")
+            return
+        }
+
+        const indexes = pairs.map((a) => a.target)
+        const changed = indexes.map((index) => {
+            const templateItem = clone(templateItems[index])
+            change(templateItem)
+            return templateItem
+        })
+
+        history({
+            id: "UPDATE",
+            oldData: { id: templateId },
+            newData: { key: "items", data: changed, indexes },
+            location: { page: "edit", id: "template_items", override: templateId + "#" + indexes.join(",") },
+            // the open show follows the template right away (and again on undo and redo)
+            restyleShow: $activeShow?.id
+        })
+    }
+
+    // the new value of one item for a style input (selection ranges: null changes the whole item)
+    function computeItemValue(input: any, currentSlideItem: Item, ranges: { start: number; end: number }[] | null, aligns: boolean) {
+        let selected = ranges
+        if (!selected?.length || !selected?.filter((a) => a.start !== a.end).length) {
+            selected = []
+            currentSlideItem.lines?.forEach((line) => {
+                selected!.push({ start: 0, end: getLineText(line).length })
+            })
+        }
+
+        if (input.key === "text-align") {
+            let newAligns: any[] = []
+            currentSlideItem.lines?.forEach((line, linePos) => {
+                if (!ranges?.length || ranges[linePos]?.start !== undefined) newAligns.push(`${input.key}: ${input.value};`)
+                else newAligns.push(line.align)
+            })
+            return newAligns
+        }
+
+        if (currentSlideItem.lines) {
+            if (input.id.includes("CSS")) return addStyle(selected, currentSlideItem, input.value).lines!.map((a) => a.text)
+            return aligns ? addStyleString(currentSlideItem.align || "", [input.key, input.value]) : addStyle(selected, clone(currentSlideItem), [input.key, input.value]).lines!.map((a) => a.text)
+        }
+
+        if (input.id.includes("CSS")) return input.value
+        // merge into each item's own style so position etc. is kept when changing multiple items
+        return addStyleString(currentSlideItem.style || "", [input.key, input.value])
+    }
+
+    // offer after a change to one slide: apply it to all slides, save it to the template, or keep it as is
+    // `showTemplateId` and `slideTemplateId` are what the show and the slide had linked before the edit detached them
+    let lastChange: { input: any; templateId: string; slideId: string; showTemplateId: string; slideTemplateId: string } | null = null
+    $: offerVisible = !!lastChange && lastChange.slideId === activeLayoutSlideId && scope === "slide"
+
+    function offerAction(e: CustomEvent<string>) {
+        const change = lastChange
+        if (!change) return
+        if (e.detail === "all") updateValue({ detail: clone(change.input) }, { scope: "all" })
+        else if (e.detail === "template") {
+            relinkToTemplate(change)
+            updateValue({ detail: clone(change.input) }, { scope: "template", templateId: change.templateId })
+            newToast(translateText("text_scope.template_saved", null, [$templates[change.templateId]?.name || ""]))
+        }
+        lastChange = null
+    }
+
+    // the This-slide edit detached the show (and the slide) from its template; saving the change to the template links them again
+    function relinkToTemplate(change: { slideId: string; showTemplateId: string; slideTemplateId: string }) {
+        const showId = $activeShow?.id || ""
+        if (!showId || !$showsCache[showId]) return
+
+        if (change.showTemplateId && !$showsCache[showId].settings?.template) _show(showId).set({ key: "settings.template", value: change.showTemplateId })
+        if (change.slideTemplateId && !$showsCache[showId].slides?.[change.slideId]?.settings?.template) {
+            _show(showId)
+                .slides([change.slideId])
+                .set({ key: "settings", value: { ...getSlideSettings(change.slideId, showId), template: change.slideTemplateId } })
+        }
+    }
+
+    // slides with text styling of their own, compared to the template each slide uses.
+    // Recomputed only when the show or the templates/groups/categories change (by reference), with the layout read once per run
+    // and a per-slide result reused while the slide's items and its template's items are the same objects.
+    let ownStyleSlideIds: string[] = []
+    let showFooter = false
+    let ownSignature: any[] = []
+    const ownStyleCache = new Map<string, { items: Item[] | undefined; templateItems: Item[] | undefined | null; own: boolean }>()
+    $: updateOwnStyle(scopeAvailable, $myShow, $templates, $groups, $categories)
+
+    function updateOwnStyle(available: boolean, show: Show | null, ...deps: any[]) {
+        const signature = [available, show, ...deps]
+        if (signature.length === ownSignature.length && signature.every((value, i) => value === ownSignature[i])) return
+        ownSignature = signature
+
+        if (!available || !show) {
+            ownStyleSlideIds = []
+            showFooter = false
+            return
+        }
+
+        const context = getLayoutContext()
+        const showId = $activeShow?.id || ""
+        const ids: string[] = []
+        let anyTemplate = false
+        const used = new Set<string>()
+
+        getLayoutSlideIds(show).forEach((slideId) => {
+            const templateId = getSlideTemplateId(slideId, show, [], context)
+            if (templateId) anyTemplate = true
+            const templateItems = $templates[templateId]?.items
+
+            const slide = show.slides?.[slideId]
+            if (!slide || isSlideLocked(showId, slideId)) return
+
+            used.add(slideId)
+            const items = slide.items
+            const cached = ownStyleCache.get(slideId)
+            let own: boolean
+            if (cached && cached.items === items && cached.templateItems === templateItems) own = cached.own
+            else {
+                own = getOwnTextStyleSlideIds([{ id: slideId, items: items || [] }], () => templateItems).length > 0
+                ownStyleCache.set(slideId, { items, templateItems, own })
+            }
+            if (own) ids.push(slideId)
+        })
+
+        ownStyleCache.forEach((_value, key) => {
+            if (!used.has(key)) ownStyleCache.delete(key)
+        })
+
+        ownStyleSlideIds = ids
+        showFooter = anyTemplate
+    }
+
+    function resetOwnStyle() {
+        const show = $myShow
+        if (!show || !ownStyleSlideIds.length) return
+
+        const items: { [slideId: string]: Item[] } = {}
+        const context = getLayoutContext()
+        ownStyleSlideIds.forEach((slideId) => {
+            const templateItems = $templates[getSlideTemplateId(slideId, show, [], context)]?.items
+            if (templateItems) items[slideId] = resetTextStyleToTemplate(show.slides[slideId].items || [], templateItems)
+        })
+
+        // one history step, and the slides stay as they are linked to their templates
+        if (Object.keys(items).length) history({ id: "textScope", newData: { items, detach: false }, location: { page: "edit", show: $activeShow! } })
     }
 
     $: boxSections = box?.sections || {}
@@ -689,7 +941,17 @@
             changes = changes
         }
 
+        // remember the template before the change: a manual change on a slide removes its show template
+        const offerTemplateId = slideTemplateId
+        const offerSlideId = activeLayoutSlideId
+        const offerShow = $activeShow?.id ? $showsCache[$activeShow.id] : null
+        const offerShowTemplateId: string = offerShow?.settings?.template || ""
+        const offerSlideTemplateId: string = offerShow?.slides?.[offerSlideId]?.settings?.template || ""
+        const offerInput = clone(input)
+
         updateValue({ detail: input })
+
+        if (scopeAvailable && scope === "slide" && offerSlideId) lastChange = { input: offerInput, templateId: offerTemplateId, slideId: offerSlideId, showTemplateId: offerShowTemplateId, slideTemplateId: offerSlideTemplateId }
     }
 
     // don't load right away (because that will load content twice)
@@ -732,6 +994,9 @@
 
         if ($shownTips.includes("consider_templates")) return
 
+        // the apply offer in the text tools already suggests this, so don't interrupt with a popup
+        if (scopeAvailable) return
+
         const SLIDES = 3
         const allValues: string[] = Object.values(changes).flatMap((slide) => Object.values(slide))
         const valueCounts = new Map<string, number>()
@@ -753,5 +1018,11 @@
 <svelte:window on:keyup={keyup} on:keydown={keydown} on:mouseup={getTextSelection} on:mousedown={mousedown} />
 
 {#if loaded}
+    {#if scopeAvailable}
+        <TextScopeControl {scope} templateName={slideTemplateName} offer={offerVisible} offerHasTemplate={!!lastChange?.templateId} offerHasOtherSlides={layoutSlideIds.length > 1} on:scope={(e) => (scope = e.detail)} on:offer={offerAction} />
+    {/if}
     <EditValues sections={boxSections} {item} {styles} {customValues} type="text" on:change={updateValue2} />
+    {#if showFooter}
+        <TextScopeFooter count={ownStyleSlideIds.length} on:reset={resetOwnStyle} />
+    {/if}
 {/if}

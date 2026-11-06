@@ -11,7 +11,8 @@ import { isEmpty } from "../helpers/slideTemplateMerge"
 import { getGlobalGroup } from "../helpers/show"
 import { _show } from "../helpers/shows"
 
-export function formatText(text: string, showId = "") {
+// `page: "none"` keeps the desktop where it is (the Remote saves lyrics without moving the operator)
+export function formatText(text: string, showId = "", page: "show" | "none" = "show") {
     if (!showId) showId = get(activeShow)?.id || ""
     const show: Show = clone(_show(showId).get())
     if (!show) return
@@ -310,7 +311,7 @@ export function formatText(text: string, showId = "") {
     show.slides = newSlidesOrdered
     // if (!show.settings.template) show.settings.template = "default"
 
-    history({ id: "UPDATE", newData: { data: show }, oldData: { id: showId }, location: { page: "show", id: "show_key" } })
+    history({ id: "UPDATE", newData: { data: show }, oldData: { id: showId }, location: { page, id: "show_key" } })
 }
 
 function getSlide(slideText: string): Slide {

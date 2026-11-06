@@ -352,6 +352,7 @@ export const scriptureSettings: Writable<any> = writable({
 
 // DRAWER
 export const drawerTabsData: Writable<DrawerTabs> = writable({}) // {default}
+export const recentFonts: Writable<string[]> = writable([]) // most recently picked font families, newest first
 export const mediaOptions: Writable<MediaOptions> = writable({ columns: 5, mode: "grid" }) // {default}
 export const drawer: Writable<{ height: number; stored: null | number; autoclosed?: boolean }> = writable({ height: 300, stored: null }) // {default}
 

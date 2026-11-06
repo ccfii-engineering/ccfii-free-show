@@ -2,6 +2,7 @@
     import { onMount } from "svelte"
     import { getGroupName } from "../../../common/util/show"
     import { activeShow, mediaCache } from "../../util/stores"
+    import Icon from "../../../common/components/Icon.svelte"
     import Textbox from "./Textbox.svelte"
     import Zoomed from "./Zoomed.svelte"
 
@@ -12,6 +13,8 @@
     export let index: number
     export let columns: number = 1
     export let active: boolean = false
+    export let picking: boolean = false
+    export let picked: boolean = false
     export let resolution: any
     export let renderItems: boolean = true
 
@@ -60,7 +63,7 @@
 <!-- class:right={overIndex === index && (!selected.length || index > selected[0])}
 class:left={overIndex === index && (!selected.length || index <= selected[0])} -->
 <div class="main" style="width: {100 / columns}%">
-    <div class="slide context #slide" class:disabled={layoutSlide.disabled} class:active style="background-color: {color};" tabindex={0} data-index={index} on:click>
+    <div class="slide context #slide" class:disabled={layoutSlide.disabled} class:active class:picked role={picking ? "button" : undefined} aria-pressed={picking ? picked : undefined} data-picked={picking ? picked : undefined} style="background-color: {color};" tabindex={0} data-index={index} on:click>
         {#if shouldRenderItems}
             <Zoomed resolution={newResolution} background={slide.settings?.color || (slide.items.length ? "black" : "transparent")} bind:ratio>
                 <!-- class:ghost={!background} -->
@@ -88,6 +91,9 @@ class:left={overIndex === index && (!selected.length || index <= selected[0])} -
                 {/if}
             </div>
         {/if}
+        {#if picked}
+            <span class="pickMark" aria-hidden="true"><Icon id="check" size={1.1} white /></span>
+        {/if}
         <!-- TODO: BG: white, color: black -->
         <!-- style="width: {newResolution.width * zoom}px;" -->
 
@@ -106,6 +112,7 @@ class:left={overIndex === index && (!selected.length || index <= selected[0])} -
     }
 
     .slide {
+        position: relative;
         /* padding: 3px; */
         background-color: var(--primary);
         z-index: 0;
@@ -113,6 +120,23 @@ class:left={overIndex === index && (!selected.length || index <= selected[0])} -
         width: 100%;
         /* height: fit-content; */
         /* border: 2px solid var(--primary-lighter); */
+    }
+    .slide.picked {
+        outline: 3px solid var(--operator-amber, var(--accent));
+        outline-offset: 0;
+    }
+    .pickMark {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        z-index: 2;
+        display: flex;
+        padding: 3px;
+        border-radius: 50%;
+        background-color: var(--operator-amber, var(--accent));
+    }
+    .pickMark :global(svg) {
+        fill: var(--operator-on-amber, #211506);
     }
     .slide.active {
         /* outline: 2px solid var(--accent);

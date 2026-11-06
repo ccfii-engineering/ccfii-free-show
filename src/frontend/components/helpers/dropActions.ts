@@ -27,7 +27,7 @@ import { downloadOnlineMedia, getExtension, getFileName, getMediaLayerType, getM
 import { addToPos, getIndexes, mover } from "./mover"
 import { getLayoutRef } from "./show"
 import { getVariableNameId } from "./showActions"
-import { _show } from "./shows"
+import { _show, getSlideSettings } from "./shows"
 
 function getId(drag: Selected): string {
     const id = ""
@@ -318,16 +318,7 @@ export const dropActions = {
                     return
                 }
 
-                const slideSettings = _show().slides([slideId]).get("settings")
-                const oldData = { style: clone(slideSettings) }
-                const newData = { style: { ...clone(slideSettings), template: templateId } }
-
-                history({
-                    id: "slideStyle",
-                    oldData,
-                    newData,
-                    location: { page: "edit", show: get(activeShow)!, slide: slideId }
-                })
+                history({ id: "slideTemplate", newData: { template: templateId, slideIds: [slideId] }, location: { page: "edit", show: get(activeShow)! } })
 
                 // update
                 history({ id: "TEMPLATE", save: false, newData: { id: showTemplateId }, location: { page: "show" } })
@@ -352,7 +343,8 @@ export const dropActions = {
                 }
 
                 const showId = drag.showId || drag.data[0]?.showId || get(activeShow)?.id || ""
-                const slides: { [key: string]: Slide } = _show(showId).get()?.slides || {}
+                // a copy: adding the new slides to the cached object in place would hide the change from the cache
+                const slides: { [key: string]: Slide } = clone(_show(showId).get()?.slides || {})
                 let layout = _show(showId).layouts("active").get()[0]?.slides || []
                 const oldData = clone({ slides, layout })
                 const ref = getLayoutRef(showId)
@@ -682,9 +674,9 @@ const slideDrop = {
 
             // add as slide bg instead of layout bg
             if (keys.ctrlKey) {
-                const slideSettings = _show().slides([slideId]).get("settings")
+                const slideSettings = getSlideSettings(slideId)
                 const oldData = { style: clone(slideSettings) }
-                newData = { style: { ...clone(slideSettings), backgroundImage: newData.path } }
+                newData = { style: { ...slideSettings, backgroundImage: newData.path } }
 
                 history({ id: "slideStyle", oldData, newData, location: { page: "edit", show: get(activeShow)!, slide: slideId } })
                 return

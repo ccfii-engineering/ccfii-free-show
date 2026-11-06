@@ -268,7 +268,7 @@
 
     function deselect(e: any) {
         if (e.ctrlKey || e.metaKey || !remainSelected(e)) return
-        if (e.target.closest(".menus") || e.target.closest(".selectElem") || e.target.closest(".popup") || e.target.closest(".edit") || e.target.closest(".contextMenu") || e.target.closest(".editTools")) return
+        if (e.target.closest(".menus") || e.target.closest(".selectElem") || e.target.closest(".popup") || e.target.closest(".edit") || e.target.closest(".contextMenu") || e.target.closest(".editTools") || e.target.closest(".templateScope")) return
 
         selected.set({ id: null, data: [] })
     }

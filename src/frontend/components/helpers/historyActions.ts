@@ -392,7 +392,9 @@ export const historyActions = ({ obj, undo = null }: any) => {
             data = (deleting ? obj.oldData : obj.newData) || {}
 
             if (initializing) {
-                data.remember = { showId: get(activeShow)?.id, layout: _show().get("settings.activeLayout") }
+                // the request names its show (Remote, automations); the desktop's active show is only the fallback
+                const targetShowId: string | undefined = data.showId || get(activeShow)?.id
+                data.remember = { showId: targetShowId, layout: (targetShowId && get(showsCache)[targetShowId]?.settings?.activeLayout) || "" }
             }
 
             let slides = clone(data?.data) || []
@@ -686,10 +688,13 @@ export const historyActions = ({ obj, undo = null }: any) => {
             data = (deleting ? obj.oldData : obj.newData) || {}
 
             if (initializing) {
-                data.remember = { showId: get(activeShow)?.id, layout: _show().get("settings.activeLayout") }
+                // the request names its show (Remote, automations); the desktop's active show is only the fallback
+                const targetShowId: string | undefined = data.showId || get(activeShow)?.id
+                data.remember = { showId: targetShowId, layout: (targetShowId && get(showsCache)[targetShowId]?.settings?.activeLayout) || "" }
             }
 
-            let show = get(showsCache)[data.remember.showId]
+            // work on a copy: the cache hands out its live objects, and changing one in place skips change detection (subscribers are never told)
+            let show = clone(get(showsCache)[data.remember.showId])
             if (!show) return
             const previousShow: string = JSON.stringify(show)
             let slides = show.slides || {}
@@ -711,7 +716,13 @@ export const historyActions = ({ obj, undo = null }: any) => {
                 data.previousData = clone({ template: previousTemplateId, slides })
                 const templateId: string = data.id
 
-                if (templateId && !slideId && previousTemplateId !== templateId) _show(data.remember.showId).set({ key: "settings.template", value: slideId ? null : templateId })
+                if (templateId && !slideId && previousTemplateId !== templateId) {
+                    _show(data.remember.showId).set({ key: "settings.template", value: slideId ? null : templateId })
+
+                    // the write above replaced the cached show, so read it again or the write-back below restores the old template id
+                    show = clone(get(showsCache)[data.remember.showId]) || show
+                    slides = show.slides || {}
+                }
 
                 const template = clone(get(templates)[templateId])
                 const maxLines = template?.settings?.maxLinesPerSlide
@@ -721,7 +732,7 @@ export const historyActions = ({ obj, undo = null }: any) => {
                 }
                 const brLongLines = template?.settings?.breakLongLines
                 if (brLongLines !== "0" && !isNaN(Number(brLongLines))) {
-                    slides = breakLongLines(data.remember.showId, Number(brLongLines))
+                    slides = breakLongLines(slides, Number(brLongLines))
                     show.slides = slides
                 }
                 updateSlidesWithTemplate(template)
@@ -920,7 +931,9 @@ export const historyActions = ({ obj, undo = null }: any) => {
             // console.log(obj, deleting)
 
             if (initializing) {
-                data.remember = { showId: get(activeShow)?.id, layout: _show().get("settings.activeLayout") }
+                // the request names its show (Remote, automations); the desktop's active show is only the fallback
+                const targetShowId: string | undefined = data.showId || get(activeShow)?.id
+                data.remember = { showId: targetShowId, layout: (targetShowId && get(showsCache)[targetShowId]?.settings?.activeLayout) || "" }
             }
 
             if (deleting) {

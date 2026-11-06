@@ -1,17 +1,56 @@
 import { get } from "svelte/store"
 import type { History, HistoryNew, HistoryTypes } from "../../../types/History"
-import { activePage, historyCacheCount, isDev, undoHistory } from "../../stores"
+import { activePage, activeShow, categories, historyCacheCount, isDev, templates, undoHistory } from "../../stores"
 import { redoHistory } from "./../../stores"
 import { areObjectsEqual, clone } from "./array"
 import { historyActions } from "./historyActions"
+import { showsCache } from "../../showsCacheState/showsCache.svelte"
 import { createStore, createStoreHistory, deleteStore, deleteStoreHistory, updateStore, updateStoreHistory } from "./historyStores"
 import { deselect } from "./select"
 import { loadShows } from "./setShow"
 import { removeTemplatesFromShow } from "./show"
-import { _show } from "./shows"
+import { _show, getSlideSettings } from "./shows"
 
 // override previous history
 const override = ["textAlign", "textStyle", "deleteItem", "setItems", "setStyle", "slideStyle", "STAGE"]
+
+function getSlideTemplateState(showId: string | undefined) {
+    return { slides: clone(_show(showId).get("slides") || {}), layouts: clone(_show(showId).get("layouts") || {}), media: clone(_show(showId).get("media") || {}) }
+}
+
+function getTextScopeState(showId: string | undefined) {
+    return { slides: clone(_show(showId).get("slides") || {}), settings: clone(_show(showId).get("settings") || {}) }
+}
+
+// a slide's own template only changes its items when the template is applied, so re-apply the show template to that one slide (it uses its own template)
+function refreshSlideTemplate(showId: string | undefined, slideId: string, before: string | undefined, after: string | undefined) {
+    if (!slideId || (before || "") === (after || "")) return
+    // restyle the show that was edited, whether or not it is the one open on the desktop (it is in the cache: the edit just read it)
+    const targetId = showId || get(activeShow)?.id
+    if (!targetId || !get(showsCache)[targetId]) return
+
+    const index = (_show(targetId).layouts("active").ref()[0] || []).findIndex((a) => a.id === slideId)
+    if (index < 0) return
+
+    const showTemplateId: string = _show(targetId).get("settings.template") || ""
+    history({ id: "TEMPLATE", save: false, newData: { id: showTemplateId, indexes: [index], showId: targetId, data: { createItems: false } }, location: { page: "none" } })
+}
+
+// re-apply the template a show uses to all its slides (same rules as opening the show: a category template wins), without a history entry
+export function restyleShowWithTemplate(showId: string) {
+    const show = get(showsCache)[showId]
+    if (!show) return
+
+    let templateId: string = show.settings?.template || ""
+    let createItems = false
+    const categoryTemplate = get(categories)[show.category || ""]?.template || ""
+    if (categoryTemplate && get(templates)[categoryTemplate]) {
+        templateId = categoryTemplate
+        createItems = true
+    }
+
+    history({ id: "TEMPLATE", save: false, newData: { id: templateId, showId, data: { createItems } }, location: { page: "none" } })
+}
 
 export function historyAwait(s: string[], obj: History) {
     loadShows(s)
@@ -94,6 +133,50 @@ export function history(obj: History, shouldUndo: null | boolean = null) {
                         .slides([obj.location?.slide || ""])
                         .set({ key: "settings", value: obj.newData.style })
                 }
+                refreshSlideTemplate(showID, obj.location?.slide || "", old.style[0]?.template, obj.newData.style?.template)
+                break
+            // apply a template to selected slides as one step: undo and redo restore the stored slides, layouts and media
+            case "slideTemplate":
+                if (shouldUndo === null) {
+                    const before = getSlideTemplateState(showID)
+                    const slideIds: string[] = [...new Set<string>(obj.newData.slideIds || [])]
+                    slideIds.forEach((slideId) =>
+                        _show(showID)
+                            .slides([slideId])
+                            .set({ key: "settings", value: { ...getSlideSettings(slideId, showID), template: obj.newData.template } })
+                    )
+                    slideIds.forEach((slideId) => refreshSlideTemplate(showID, slideId, "", obj.newData.template))
+                    obj.oldData = before
+                    obj.newData = getSlideTemplateState(showID)
+                } else {
+                    _show(showID).set({ key: "slides", value: clone(obj.newData.slides) })
+                    _show(showID).set({ key: "layouts", value: clone(obj.newData.layouts) })
+                    _show(showID).set({ key: "media", value: clone(obj.newData.media) })
+                }
+                break
+            // text style on several slides as one step (Text tab scope "All slides", reset to template): undo and redo restore the stored slides and settings
+            case "textScope":
+                if (shouldUndo === null) {
+                    const before = getTextScopeState(showID)
+                    const writes: any[] = obj.newData.writes || []
+                    writes.forEach((write) => {
+                        const target = _show(showID).slides([write.slide]).items(write.items)
+                        if (write.id === "setItems") target.set(write.style)
+                        else target.lines([]).set(write.style)
+                    })
+                    Object.entries(obj.newData.items || {}).forEach(([slideId, items]) =>
+                        _show(showID)
+                            .slides([slideId])
+                            .set({ key: "items", value: clone(items) })
+                    )
+                    // remove templates because the slides have manual updates (only for changes, not when resetting to the template)
+                    if (obj.newData.detach !== false) [...new Set<string>(writes.map((a) => a.slide))].forEach((slideId) => removeTemplatesFromShow(showID || "", slideId))
+                    obj.oldData = before
+                    obj.newData = getTextScopeState(showID)
+                } else {
+                    _show(showID).set({ key: "slides", value: clone(obj.newData.slides) })
+                    _show(showID).set({ key: "settings", value: clone(obj.newData.settings) })
+                }
                 break
             case "slide":
                 old = {
@@ -153,7 +236,7 @@ export function history(obj: History, shouldUndo: null | boolean = null) {
 
                 // layout audio
                 const ref = _show(showID).layouts([obj.location.layout!]).ref()[0]?.[obj.location.layoutSlide!]
-                const audio = ref?.data?.audio || []
+                const audio: any[] = [...(ref?.data?.audio || [])]
                 if (!ref) return
 
                 if (shouldUndo) {
@@ -184,6 +267,9 @@ export function history(obj: History, shouldUndo: null | boolean = null) {
     }
 
     if (temp.obj) obj = temp.obj
+
+    // a template edit restyles the show that uses it, also on undo and redo
+    if (obj.restyleShow) restyleShowWithTemplate(obj.restyleShow)
 
     // set old
     if (old && !shouldUndo && !obj.oldData) obj.oldData = old

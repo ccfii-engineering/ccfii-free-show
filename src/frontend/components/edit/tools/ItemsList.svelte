@@ -1,12 +1,12 @@
 <script lang="ts">
     import type { Item, ItemType } from "../../../../types/Show"
-    import { activeEdit, selected, timers, variables } from "../../../stores"
+    import { activeEdit, labelsDisabled, selected, timers, variables } from "../../../stores"
     import { translateText } from "../../../utils/language"
-    import { clone } from "../../helpers/array"
     import Icon from "../../helpers/Icon.svelte"
     import { getFileName } from "../../helpers/media"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
     import { rearrangeItems } from "../scripts/itemHelpers"
+    import { getLayersFrontToBack } from "../scripts/layers"
     import { getItemText } from "../scripts/textStyle"
     import { itemBoxes } from "../values/boxes"
 
@@ -38,13 +38,13 @@
     }
 
     export let allSlideItems: Item[]
-    $: invertedItemList = Array.isArray(allSlideItems) ? clone(allSlideItems).reverse() : []
+    $: layers = getLayersFrontToBack(allSlideItems)
 
     const getType = (item: Item) => (item?.type as ItemType) || "text"
 </script>
 
-{#if invertedItemList.length}
-    <div style="margin-top: 10px;">
+{#if layers.length}
+    <div class="layers">
         <div class="title">
             <span style="display: flex;gap: 8px;align-items: center;padding: 8px 12px;">
                 <Icon id="rearrange" white />
@@ -53,7 +53,7 @@
         </div>
 
         <div
-            class="items {invertedItemList.length > 1 ? 'context #items_list_item' : ''}"
+            class="items {layers.length > 1 ? 'context #items_list_item' : ''}"
             style="display: flex;flex-direction: column;"
             on:mousedown={(e) => {
                 if (e.button !== 2) return
@@ -62,8 +62,7 @@
                 activeEdit.set({ ...$activeEdit, items: [index] })
             }}
         >
-            {#each invertedItemList as currentItem, i}
-                {@const index = invertedItemList.length - i - 1}
+            {#each layers as { item: currentItem, index, fromTemplate }, i (index)}
                 {@const type = getType(currentItem)}
                 <!-- TODO: context menu (delete / move to top/bottom / etc.) -->
 
@@ -91,9 +90,15 @@
                         <Icon id={type === "icon" ? currentItem.id || "" : itemBoxes[type]?.icon || "text"} custom={type === "icon"} size={0.8} />
                         <p style="opacity: 0.9;margin-inline-start: 10px;">{translateText("items." + type)}</p>
                         {#if getIdentifier[type]}<p style="margin-inline-start: 10px;max-width: 120px;opacity: 0.5;font-size: 0.8em;max-width: 40%;">{getIdentifier[type](currentItem)}</p>{/if}
+                        {#if fromTemplate}
+                            <span class="template_mark" title={translateText("edit.from_template")}>
+                                <Icon id="templates" size={0.8} white />
+                                {#if !$labelsDisabled}<span>{translateText("edit.from_template")}</span>{/if}
+                            </span>
+                        {/if}
                     </span>
                     <span>
-                        <MaterialButton disabled={i === allSlideItems.length - 1} icon="down" title="actions.backward" style="padding: 8px;" on:click={() => rearrangeItems("backward", index)} />
+                        <MaterialButton disabled={i === layers.length - 1} icon="down" title="actions.backward" style="padding: 8px;" on:click={() => rearrangeItems("backward", index)} />
                         <MaterialButton disabled={i === 0} icon="up" title="actions.forward" style="padding: 8px;" on:click={() => rearrangeItems("forward", index)} />
                     </span>
                 </MaterialButton>
@@ -103,6 +108,20 @@
 {/if}
 
 <style>
+    .layers {
+        margin: 8px 5px;
+    }
+
+    .template_mark {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-inline-start: 10px;
+        opacity: 0.6;
+        font-size: 0.75em;
+        white-space: nowrap;
+    }
+
     /* title */
 
     .title {

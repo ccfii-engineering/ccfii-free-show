@@ -191,6 +191,7 @@
 
         <MaterialButton class="context #slideViews" title="show.change_view: show.{$slidesOptions.mode} [Ctrl+Shift+V]" on:click={changeSlidesView}>
             <Icon size={1.3} id={$slidesOptions.mode} white={$slidesOptions.mode === "grid"} />
+            {#if !$labelsDisabled}<T id="show.view_label_{$slidesOptions.mode}" />{/if}
         </MaterialButton>
     </FloatingInputs>
 {/if}

@@ -128,7 +128,7 @@
             {/if}
 
             {#if $outputDisplay && confirm}
-                <div class="click_again" transition:slide>
+                <div class="click_again" transition:slide|global>
                     <T id="menu.again_confirm" />
                 </div>
             {/if}
@@ -145,7 +145,7 @@
             {/if}
 
             {#if $outputDisplay && confirm}
-                <div class="click_again" transition:slide>
+                <div class="click_again" transition:slide|global>
                     <T id="menu.again_confirm" />
                 </div>
             {/if}

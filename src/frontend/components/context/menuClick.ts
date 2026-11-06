@@ -520,7 +520,7 @@ const clickActions = {
             disable: !!disable,
             getTags: ({ id }) => get(shows)[id]?.quickAccess?.tags,
             applyTags: ({ id }, tags) => {
-                const quickAccess = get(shows)[id]?.quickAccess || {}
+                const quickAccess = clone(get(shows)[id]?.quickAccess || {})
                 quickAccess.tags = tags
 
                 shows.update((a) => {
