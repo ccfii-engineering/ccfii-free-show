@@ -810,7 +810,7 @@
     let cssInterval = setInterval(() => updateTrigger++, 1000)
 
     // give CSS access to certain dynamic values
-    $: cssVariables = createCSSVariables($variables, $outputs, isStage ? "stage" : "default", updateTrigger)
+    $: cssVariables = createCSSVariables($variables, isStage ? "stage" : "default", { outSlide: outputSlide, tick: updateTrigger })
 
     // initialize default filter values to get the transition working (should use animation)
     // https://stackoverflow.com/questions/68632554/css-backdrop-filter-does-not-work-with-transition

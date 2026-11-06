@@ -1331,7 +1331,12 @@ export function getVariableNameId(name: string) {
     return name.toLowerCase().trim().replaceAll(" ", "_")
 }
 
-export function createCSSVariables(variableUpdater = get(variables), _dynamicUpdaters: any = null, type: "default" | "stage" = "default", _updateTrigger: any = null) {
+/**
+ * `variableUpdater` is the variables record (callers pass `$variables`). The dynamic group colors are read from the first output's
+ * active slide and the shows cache, so a `$:` caller lists the values it depends on in `_refreshOn` (the active `outSlide`, a timer tick)
+ * instead of depending on the whole outputs store. `_refreshOn` is never read here; it only makes the dependency explicit at the call site.
+ */
+export function createCSSVariables(variableUpdater = get(variables), type: "default" | "stage" = "default", _refreshOn: { outSlide?: OutSlide | null; tick?: number } = {}) {
     // add all number variables
     const numberVariables = Object.values(variableUpdater || {}).filter((a) => a && (a.type === "number" || a.type === "random_number" || (a.type === "text" && a.text?.includes("{"))))
     let css = numberVariables.reduce((css, v) => (css += `--variable-${getVariableNameId(v.name)}: ${v.type === "text" ? getDynamicValue(v.text || "", type) : (v.number ?? (v.default || 0))};`), "")
