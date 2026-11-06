@@ -47,6 +47,13 @@ for (const store of stores) {
     })
 }
 
+test("history updaters get a writable store face (the public stores are read-only)", () => {
+    const text = files.find(({ file }) => file === "src/frontend/components/helpers/historyHelpers.ts").text
+    assert.doesNotMatch(text, /store: (showsCache|media|outputs)\b/)
+    assert.match(text, /store: \$\.showsCache/)
+    assert.match(text, /store: \$\.outputs/)
+})
+
 test("per-entry accessors for media and shows come from the rune stores, not the JSON gate", () => {
     const text = files.find(({ file }) => file === "src/frontend/utils/perEntryStores.ts").text
     assert.doesNotMatch(text, /createEntryAccessor\((media|showsCache)\)/)

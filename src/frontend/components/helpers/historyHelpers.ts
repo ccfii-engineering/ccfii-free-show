@@ -3,7 +3,7 @@ import { uid } from "uid"
 import { REMOTE } from "../../../types/Channels"
 import { ShowObj } from "../../classes/Show"
 import { updateOutputs } from "../../outputState/outputs.svelte"
-import { actions, activeDrawerTab, activeEdit, activeProject, activeRename, activeShow, activeStage, activeTagFilter, audioPlaylists, currentOutputSettings, dictionary, drawerTabsData, editingProjectTemplate, effects, events, focusMode, folders, globalTags, groups, interactions, notFound, openedFolders, overlays, playerVideos, profiles, projects, projectTemplates, projectView, shows, showsCache, special, stageShows, styles, theme, themes } from "../../stores"
+import { $, actions, activeDrawerTab, activeEdit, activeProject, activeRename, activeShow, activeStage, activeTagFilter, audioPlaylists, currentOutputSettings, dictionary, drawerTabsData, editingProjectTemplate, effects, events, focusMode, folders, globalTags, groups, interactions, notFound, openedFolders, overlays, playerVideos, profiles, projects, projectTemplates, projectView, shows, showsCache, special, stageShows, styles, theme, themes } from "../../stores"
 import { translateText } from "../../utils/language"
 import { updateThemeValues } from "../../utils/updateSettings"
 import { EMPTY_CATEGORY, EMPTY_EFFECT, EMPTY_EVENT, EMPTY_LAYOUT, EMPTY_PLAYER_VIDEO, EMPTY_PROJECT, EMPTY_PROJECT_FOLDER, EMPTY_SECTION, EMPTY_SLIDE, EMPTY_STAGE, EMPTY_TAG } from "../../values/empty"
@@ -336,7 +336,7 @@ export const _updaters = {
     stage_item_content: { store: stageShows, empty: "", timestamp: true },
 
     show: {
-        store: showsCache,
+        store: $.showsCache,
         empty: new ShowObj(), // this should not be used (it's not updated)
         initialize: (data: any) => {
             const replacer: any = {}
@@ -442,7 +442,7 @@ export const _updaters = {
     },
 
     show_layout: {
-        store: showsCache,
+        store: $.showsCache,
         empty: EMPTY_LAYOUT,
         initialize: (data) => {
             if (!data.timestamps) data.timestamps = {}
@@ -478,7 +478,7 @@ export const _updaters = {
     },
 
     show_key: {
-        store: showsCache,
+        store: $.showsCache,
         initialize: (data) => {
             if (typeof data !== "object") return data
 
@@ -549,7 +549,7 @@ export const _updaters = {
         }
     },
     settings_output: {
-        store: outputs,
+        store: $.outputs,
         select: (id: string) => {
             currentOutputSettings.set(id)
         },
