@@ -2,8 +2,8 @@ import { get } from "svelte/store"
 import type { Item, Template } from "../../types/Show"
 import { getItemText } from "../components/edit/scripts/textStyle"
 import { clone } from "../components/helpers/array"
-import { mergeWithTemplate } from "../components/helpers/output"
-import { overlays, templates } from "../stores"
+import { mergeWithTemplate } from "../components/helpers/slideTemplateMerge"
+import { overlays, scriptureSettings, templates } from "../stores"
 import { runAction } from "../components/actions/actions"
 
 const DEFAULT_TEMPLATE: Template = { name: "", color: null, category: null, items: [] }
@@ -65,7 +65,7 @@ export class TemplateHelper {
         }
 
         for (let i = 0; i < count; i++) {
-            const items = mergeWithTemplate([], this.getItems(), true)
+            const items = mergeWithTemplate([], this.getItems(), true, true, false, "", {}, { scriptureNumberColor: get(scriptureSettings).numberColor })
 
             // add overlay items
             if (this.template.settings?.overlayId) {

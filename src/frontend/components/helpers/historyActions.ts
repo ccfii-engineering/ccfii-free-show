@@ -2,7 +2,7 @@ import { get } from "svelte/store"
 import { uid } from "uid"
 import type { Item, Slide, SlideData, Template } from "../../../types/Show"
 import { breakLongLines, removeItemValues } from "../../show/slides"
-import { activeEdit, activePage, activePopup, activeProject, activeShow, alertMessage, cachedShowsData, deletedShows, groups, notFound, projects, refreshEditSlide, renamedShows, shows, showsCache, templates } from "../../stores"
+import { activeEdit, activePage, activePopup, activeProject, activeShow, alertMessage, cachedShowsData, deletedShows, groups, notFound, overlays, projects, refreshEditSlide, renamedShows, scriptureSettings, shows, showsCache, templates } from "../../stores"
 import { save } from "../../utils/save"
 import { EMPTY_SHOW_SLIDE } from "../../values/empty"
 import { customActionActivation } from "../actions/actions"
@@ -12,7 +12,7 @@ import { history } from "./history"
 import { _updaters } from "./historyHelpers"
 import { applyReassignUpdate } from "./historyReassign"
 import { addToPos } from "./mover"
-import { getItemsCountByType, isEmptyOrSpecial, mergeWithTemplate, updateLayoutsFromTemplate, updateSlideFromTemplate } from "./output"
+import { getItemsCountByType, isEmptyOrSpecial, mergeWithTemplate, updateLayoutsFromTemplate, updateSlideFromTemplate } from "./slideTemplateMerge"
 import { loadShows, saveTextCache } from "./setShow"
 import { getShowCacheId } from "./show"
 import { getItemWithMostLines } from "./showActions"
@@ -860,7 +860,7 @@ export const historyActions = ({ obj, undo = null }: any) => {
                     const changeOverflowItems = !!(slide.settings?.template || createItems)
 
                     const mode = slideTemplate?.settings?.mode
-                    let newItems = mergeWithTemplate(slide.items, slideTemplate.items, changeOverflowItems, obj.save !== false, createItems, mode, slide.customDynamicValues)
+                    let newItems = mergeWithTemplate(slide.items, slideTemplate.items, changeOverflowItems, obj.save !== false, createItems, mode, slide.customDynamicValues, { scriptureNumberColor: get(scriptureSettings).numberColor })
 
                     // remove items if not in template (and textbox is empty)
                     if (changeOverflowItems) {
@@ -890,7 +890,7 @@ export const historyActions = ({ obj, undo = null }: any) => {
 
                     const isFirst = templateMode === "global" && id === firstLayoutSlideId
                     const firstTemplateForUpdate = isFirst && firstSlideTemplateId && (appliedFirstOverride || slide.settings?.template === firstSlideTemplateId) ? firstSlideTemplateId : undefined
-                    show.slides[id] = updateSlideFromTemplate(show.slides[id], slideTemplate, isFirst, changeOverflowItems, firstTemplateForUpdate)
+                    show.slides[id] = updateSlideFromTemplate(show.slides[id], slideTemplate, isFirst, changeOverflowItems, firstTemplateForUpdate, changeOverflowItems && slideTemplate.settings?.overlayId ? get(overlays)[slideTemplate.settings.overlayId]?.items || [] : [])
 
                     const slideRefs = ref.filter((a) => a.id === id)
                     const oldTemplate = get(templates)[previousTemplateId || ""] || {}

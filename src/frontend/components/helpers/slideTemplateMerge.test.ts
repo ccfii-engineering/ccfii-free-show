@@ -1,23 +1,7 @@
-import { describe, expect, it, vi } from "vitest"
-
-vi.mock("../../audio/audioPlayer", () => ({ AudioPlayer: { getAllPlaying: vi.fn(() => []) } }))
-vi.mock("../../IPC/main", () => ({ sendMain: vi.fn(), requestMain: vi.fn() }))
-vi.mock("../../utils/shortcuts", () => ({ playFolder: vi.fn(), togglePlayingMedia: vi.fn() }))
-vi.mock("../../utils/language", () => ({ translateText: (key: string) => key }))
-
-vi.mock("../../utils/popup", () => ({ confirmCustom: vi.fn() }))
-vi.mock("../actions/actions", () => ({ customActionActivation: vi.fn(), runAction: vi.fn() }))
-vi.mock("../../utils/startup", () => ({ startup: vi.fn(), contentProviderSync: vi.fn() }))
-vi.mock("../../audio/audioProcessor", () => ({}))
-vi.mock("../../audio/audioAnalyser", () => ({ AudioAnalyser: {} }))
-vi.mock("../../audio/audioFading", () => ({ fadeinAllPlayingAudio: vi.fn(), fadeoutAllPlayingAudio: vi.fn() }))
-vi.mock("../../utils/controllerTalk", () => ({ publishPresenterSnapshot: vi.fn() }))
-vi.mock("pdfjs-dist", () => ({ getDocument: vi.fn(), GlobalWorkerOptions: {} }))
-vi.mock("../output/clear", () => ({ clearBackground: vi.fn(), clearSlide: vi.fn() }))
-vi.mock("./showActions", () => ({ getFewestOutputLines: vi.fn(), getItemWithMostLines: vi.fn(), replaceDynamicValues: vi.fn() }))
+import { describe, expect, it } from "vitest"
 
 import type { Item, Layout, LayoutRef, Media, Slide, Template } from "../../../types/Show"
-import { getItemsCountByType, getTemplateText, isEmptyOrSpecial, mergeWithTemplate, sortItemsByType, updateLayoutsFromTemplate, updateSlideFromTemplate } from "./output"
+import { getItemsCountByType, getTemplateText, isEmptyOrSpecial, mergeWithTemplate, sortItemsByType, updateLayoutsFromTemplate, updateSlideFromTemplate } from "./slideTemplateMerge"
 
 function textItem(value: string, style = "", itemStyle = "", extra: Partial<Item> = {}): Item {
     return { style: itemStyle, align: "", lines: [{ align: "", text: [{ value, style }] }], ...extra } as Item
@@ -86,7 +70,19 @@ describe("mergeWithTemplate", () => {
     })
 
     it("keeps the original text color when a slide item has mixed colors and the template is not clicked", () => {
-        const item = { style: "", align: "", lines: [{ align: "", text: [{ value: "a", style: "color: red;" }, { value: "b", style: "color: blue;" }] }] } as Item
+        const item = {
+            style: "",
+            align: "",
+            lines: [
+                {
+                    align: "",
+                    text: [
+                        { value: "a", style: "color: red;" },
+                        { value: "b", style: "color: blue;" }
+                    ]
+                }
+            ]
+        } as Item
         const template = [textItem("", "color: white;font-size: 50px;")]
         const [merged] = mergeWithTemplate([item], template)
         expect(merged.lines![0].text.map((a) => a.style)).toEqual(["color: white;font-size: 50px;color: red;", "color: white;font-size: 50px;color: blue;"])
@@ -95,7 +91,19 @@ describe("mergeWithTemplate", () => {
     })
 
     it("preserves per-text bold, italic and decoration when formats are mixed", () => {
-        const item = { style: "", align: "", lines: [{ align: "", text: [{ value: "a", style: "font-weight: bold;font-style: italic;text-decoration: underline;" }, { value: "b", style: "" }] }] } as Item
+        const item = {
+            style: "",
+            align: "",
+            lines: [
+                {
+                    align: "",
+                    text: [
+                        { value: "a", style: "font-weight: bold;font-style: italic;text-decoration: underline;" },
+                        { value: "b", style: "" }
+                    ]
+                }
+            ]
+        } as Item
         const [merged] = mergeWithTemplate([item], [textItem("", "text-decoration: line-through;")])
         expect(merged.lines![0].text[0].style).toBe("text-decoration: line-through;font-weight: bold;font-style: italic;text-decoration: line-through underline;")
         expect(merged.lines![0].text[1].style).toBe("text-decoration: line-through;font-weight: normal;font-style: normal;text-decoration: line-through;")
@@ -161,6 +169,12 @@ describe("mergeWithTemplate", () => {
         expect(parts[1]).toMatchObject({ value: "For God so loved", sourceDynamicKey: "scripture_text:0" })
     })
 
+    it("uses the supplied scripture number color", () => {
+        const template = [textItem("{scripture_text}", "font-size: 40px;")]
+        const result = mergeWithTemplate([], template, true, true, false, "", { scripture_text: [["2", "Body"]] }, { scriptureNumberColor: "#123456" })
+        expect(result[0].lines![0].text[0].style).toContain("color: #123456;")
+    })
+
     it("marks scripture decoration items as non-editable", () => {
         const template = [textItem("{scripture_text}"), textItem("{scripture_reference}")]
         const result = mergeWithTemplate([textItem("x")], template, true, true, false, "", { scripture_reference: "Ref", scripture_text: [["0", "Body"]] })
@@ -194,6 +208,13 @@ describe("updateSlideFromTemplate", () => {
         expect(updateSlideFromTemplate(slide(), template, true).settings).toEqual({ color: "#111", template: "first" })
         expect(updateSlideFromTemplate(slide(), template, false).settings).toEqual({ color: "#111" })
         expect(updateSlideFromTemplate(slide(), template, true, false, "override").settings!.template).toBe("override")
+    })
+
+    it("appends overlay items only when overflow is removed", () => {
+        const overlayItem = { type: "shape", style: "o" } as Item
+        const template = tpl({ overlayId: "ov" })
+        expect(updateSlideFromTemplate(slide(), template, false, false, undefined, [overlayItem]).items).toHaveLength(1)
+        expect(updateSlideFromTemplate(slide(), template, false, true, undefined, [overlayItem]).items).toHaveLength(2)
     })
 
     it("clears the slide color when the template has none but the slide does", () => {
@@ -234,7 +255,12 @@ describe("updateLayoutsFromTemplate", () => {
 
     it("merges template actions, replacing existing ones by id or first trigger", () => {
         const l = layouts()
-        l.l.slides[0].actions = { slideActions: [{ id: "a1", triggers: ["x"] }, { id: "keep", triggers: ["k"] }] } as any
+        l.l.slides[0].actions = {
+            slideActions: [
+                { id: "a1", triggers: ["x"] },
+                { id: "keep", triggers: ["k"] }
+            ]
+        } as any
         const result = updateLayoutsFromTemplate(l, {}, tpl({ actions: [{ id: "a1", triggers: ["new"] }] }), tpl(), "l", ref(0), "slide")
         expect(result.layouts.l.slides[0].actions!.slideActions!.map((a: any) => a.id)).toEqual(["keep", "a1"])
     })
