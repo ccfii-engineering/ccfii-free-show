@@ -101,9 +101,9 @@ All configs live under `config/`:
 ## TypeScript Toolchain
 
 Two TypeScript versions are installed on purpose:
-- `typescript` (6.0.3) is the tooling API: `tsc` for main-process emit (`build:electron:*`), svelte-preprocess, typescript-eslint, `@rollup/plugin-typescript`, cosmiconfig. `svelte-check` is v4 and uses it too.
-- `typescript7` (npm alias for `typescript@7.0.2`, the native Go compiler) runs type-checking only: `npm run typecheck` (or `typecheck:electron|server|frontend`, via `scripts/typecheck.mjs`). It has no classic compiler API and its `tsc` bin clashes with TS 6's, so it is invoked by path, never through `node_modules/.bin`.
-- Main-process emit stays on TS 6 (TS 7 emit has the same file list and `require()` semantics, but no Electron startup smoke test was run).
+- `typescript` (6.0.3) is the tooling API: svelte-preprocess, typescript-eslint, `@rollup/plugin-typescript`, cosmiconfig. `svelte-check` is v4 and uses it too.
+- `typescript7` (npm alias for `typescript@7.0.2`, the native Go compiler) type-checks (`npm run typecheck` or `typecheck:electron|server|frontend`, via `scripts/typecheck.mjs`) and emits the main process (`build:electron:*`). It has no classic compiler API and its `tsc` bin clashes with TS 6's, so it is invoked by path, never through `node_modules/.bin`.
+- Main-process emit uses TS 7 (checked: same file list as TS 6, `start.test.ts` launches the app from the TS 7 build). The `build:electron:*` scripts call `node node_modules/typescript7/bin/tsc`.
 - `svelte-preprocess` (6.x) only transpiles; it reads `config/typescript/tsconfig.svelte-preprocess*.json`, not the main tsconfigs. That config sets `verbatimModuleSyntax: true`, so type-only imports in `.svelte` files must use `import { type X }`.
 - tsconfigs must stay valid for both 6 and 7: no `moduleResolution: node10`, no `importsNotUsedAsValues`, explicit `strict`, explicit `rootDir` for emit. `typecheck` reports existing errors in the server and frontend configs; compare counts, do not assume a clean run.
 

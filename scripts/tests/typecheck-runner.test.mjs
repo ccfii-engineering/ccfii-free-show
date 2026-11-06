@@ -2,6 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { createRequire } from "node:module"
 import { spawnSync } from "node:child_process"
+import { readFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -28,4 +29,11 @@ test("typecheck covers the electron, server and frontend configs", () => {
 test("electron config type-checks cleanly with TypeScript 7", () => {
     const result = spawnSync(process.execPath, [path.join(root, "scripts/typecheck.mjs"), "electron"], { cwd: root, encoding: "utf8" })
     assert.equal(result.status, 0, result.stdout + result.stderr)
+})
+
+test("main-process emit scripts use the TypeScript 7 compiler", () => {
+    const scripts = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")).scripts
+    for (const name of ["build:electron:dev", "build:electron:dev:watch", "build:electron:prod:tsc"]) {
+        assert.match(scripts[name], /node node_modules\/typescript7\/bin\/tsc /, name)
+    }
 })
