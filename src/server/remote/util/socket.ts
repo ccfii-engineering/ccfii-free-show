@@ -1,5 +1,5 @@
 import type { RemoteApiChannel, RemoteProtocol, RemoteRequestKey, RemoteResponseKey, RemoteResponses } from "../../../types/remote/protocol"
-import { isRemoteReplayRequest, REMOTE_PRE_AUTH_KEYS } from "../../../types/remote/protocol"
+import { toRemoteReplayRequest, REMOTE_PRE_AUTH_KEYS } from "../../../types/remote/protocol"
 import type { WebSendArgs } from "../../../types/WebProtocol"
 import { createWebClient } from "../../common/util/webClient"
 import { receiver } from "./receiver"
@@ -12,7 +12,7 @@ const client = createWebClient<RemoteProtocol, RemoteResponses>({
     event: "REMOTE",
     preAuthKeys: REMOTE_PRE_AUTH_KEYS,
     gateInbound: true,
-    replay: isRemoteReplayRequest,
+    replay: toRemoteReplayRequest,
     onConnect: () => {
         // try accessing with saved password
         const SAVED_PASSWORD = localStorage.password

@@ -100,8 +100,15 @@ export function isStageRequestKey(channel: string): channel is StageRequestKey {
     return Object.prototype.hasOwnProperty.call(STAGE_REQUEST_KEY_MAP, channel)
 }
 
-/** data requests the Stage re-issues after a reconnect, once its layout is open again */
+/**
+ * Data requests the Stage re-issues after a reconnect, once its layout is open again. All three are side-effect-free
+ * reads on the main app (they only push data to the asking client; no operator state changes). LAYOUT is not replayed:
+ * the Stage reopens its layout through LAYOUTS, and RUN_ACTION / STREAM_* are live actions.
+ */
 export const STAGE_REPLAY_KEYS: readonly string[] = ["OUT", "SHOW_DATA", "REQUEST_PROGRESS"]
+export function toStageReplayRequest(channel: string, data: unknown): { channel: StageRequestKey; data: unknown } | null {
+    return STAGE_REPLAY_KEYS.includes(channel) ? { channel: channel as StageRequestKey, data } : null
+}
 
 /** Compile-time check that StageProtocol satisfies the generic protocol constraint. */
 export type StageProtocolCheck = WebProtocolDef<StageProtocol>

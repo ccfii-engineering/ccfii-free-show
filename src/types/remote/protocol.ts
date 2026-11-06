@@ -197,6 +197,8 @@ export interface RemoteProtocol {
     PASSWORD: { request: null; replies: Reply<"PASSWORD" | "SHOWS"> }
     ACCESS: { request: string; replies: Reply<"ERROR" | "SHOWS"> }
     SHOW: { request: string; replies: Reply<"SHOW"> }
+    /** read-only twin of SHOW: answers the show without the main app opening it (used when replaying after a reconnect) */
+    GET_SHOW: { request: string; replies: Reply<"SHOW"> }
     OUT: { request: RemoteOutRequest; replies: Reply<"OUT"> }
     OUT_DATA: { request: null; replies: Reply<"OUT_DATA"> }
     PROJECTS: { request: null; replies: Reply<"PROJECTS"> }
@@ -217,6 +219,7 @@ const REMOTE_REQUEST_KEY_MAP: { [K in RemoteRequestKey]: true } = {
     PASSWORD: true,
     ACCESS: true,
     SHOW: true,
+    GET_SHOW: true,
     OUT: true,
     OUT_DATA: true,
     PROJECTS: true,
@@ -240,10 +243,26 @@ export const REMOTE_MEDIA_REQUEST_KEYS: readonly string[] = ["MEDIA_LIST", "MEDI
 /** requests and responses allowed before the connection is authorized */
 export const REMOTE_PRE_AUTH_KEYS: readonly string[] = ["PASSWORD", "ACCESS", "ERROR", "LANGUAGE"]
 
-/** data requests the Remote re-issues after a reconnect, once access is granted again (live actions are never replayed) */
-export function isRemoteReplayRequest(channel: string, data: unknown): boolean {
-    if (channel === "OUT") return data === null || data === undefined
-    return ["SHOW", "OUT_DATA", "GET_FUNCTIONS", "GET_OVERLAYS", "GET_TEMPLATES"].includes(channel)
+/**
+ * What the Remote re-issues after a reconnect, once access is granted again, for a request it made earlier.
+ * Replay must never change operator state, so only side-effect-free reads are replayed: SHOW becomes the read-only
+ * GET_SHOW (SHOW opens the show in the main window), OUT only as the `null` state query (any other OUT shows,
+ * changes or clears a slide). Everything else is not replayed. Returns null when the request is not replayed.
+ */
+export function toRemoteReplayRequest(channel: string, data: unknown): { channel: RemoteRequestKey; data: unknown } | null {
+    switch (channel) {
+        case "SHOW":
+            return { channel: "GET_SHOW", data }
+        case "OUT":
+            return data === null || data === undefined ? { channel: "OUT", data: null } : null
+        case "OUT_DATA":
+        case "GET_FUNCTIONS":
+        case "GET_OVERLAYS":
+        case "GET_TEMPLATES":
+            return { channel, data: null }
+        default:
+            return null
+    }
 }
 
 /** Compile-time check that RemoteProtocol satisfies the generic protocol constraint. */

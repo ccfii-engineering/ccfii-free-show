@@ -23,7 +23,7 @@ vi.mock("./stageTalk", () => ({ receiveSTAGE: state.stage }))
 
 import { CONTROLLER, STAGE } from "../../types/Channels"
 import { CONTROLLER_REQUEST_KEYS, isControllerRequestKey } from "../../types/controller/protocol"
-import { isStageRequestKey, STAGE_REQUEST_KEYS } from "../../types/stage/protocol"
+import { isStageRequestKey, STAGE_REQUEST_KEYS, toStageReplayRequest } from "../../types/stage/protocol"
 import type { ClientMessage } from "../../types/Socket"
 import { sendData } from "./sendData"
 
@@ -40,6 +40,15 @@ describe("protocol keys", () => {
         expect([...CONTROLLER_REQUEST_KEYS].sort()).toEqual(["ACTION", "FOCUS", "GET_OUTPUT_ID", "PRESENTER_SUBSCRIBE", "PRESENTER_THUMBNAIL", "PRESENTER_UNSUBSCRIBE"])
         expect(isStageRequestKey("toString")).toBe(false)
         expect(isControllerRequestKey("OUTPUT_FRAME")).toBe(false)
+    })
+})
+
+describe("Stage reconnect replay", () => {
+    it("replays only the reads that push data to the asking client; layout and live actions are never replayed", () => {
+        const replayed = STAGE_REQUEST_KEYS.filter((key) => toStageReplayRequest(key, null))
+        expect(replayed.sort()).toEqual(["OUT", "REQUEST_PROGRESS", "SHOW_DATA"])
+        expect(toStageReplayRequest("RUN_ACTION", { id: "a" })).toBeNull()
+        expect(toStageReplayRequest("LAYOUT", { id: "a" })).toBeNull()
     })
 })
 

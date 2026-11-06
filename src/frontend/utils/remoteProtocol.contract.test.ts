@@ -12,6 +12,9 @@ const state = vi.hoisted(() => ({
     playMedia: vi.fn(),
     playAudio: vi.fn(),
     loadShows: vi.fn(),
+    setOutput: vi.fn(),
+    updateOut: vi.fn(),
+    clearAll: vi.fn(),
     sent: [] as { id?: string; channel: string; data: unknown }[]
 }))
 
@@ -37,12 +40,12 @@ vi.mock("../components/helpers/array", () => ({
     removeDeleted: (array: { deleted?: boolean }[]) => array.filter((item) => !item.deleted)
 }))
 vi.mock("../components/helpers/media", () => ({ getThumbnailPath: (path: string) => path, mediaSize: { slideSize: 0 } }))
-vi.mock("../components/helpers/output", () => ({ getFirstActiveOutput: () => undefined, setOutput: vi.fn(), checkWindowCapture: vi.fn() }))
+vi.mock("../components/helpers/output", () => ({ getFirstActiveOutput: () => undefined, setOutput: state.setOutput, checkWindowCapture: vi.fn() }))
 vi.mock("../components/helpers/setShow", () => ({ loadShows: state.loadShows }))
 vi.mock("../components/helpers/show", () => ({ getLayoutRef: () => [] }))
-vi.mock("../components/helpers/showActions", () => ({ updateOut: vi.fn() }))
+vi.mock("../components/helpers/showActions", () => ({ updateOut: state.updateOut }))
 vi.mock("../components/helpers/shows", () => ({ _show: vi.fn() }))
-vi.mock("../components/output/clear", () => ({ clearAll: vi.fn() }))
+vi.mock("../components/output/clear", () => ({ clearAll: state.clearAll }))
 vi.mock("../components/actions/api", () => ({ API_ACTIONS: { play_media: state.playMedia, play_audio: state.playAudio } }))
 vi.mock("../IPC/main", () => ({ requestMainResult: state.requestMainResult, sendMain: state.sendMain }))
 vi.mock("./common", () => ({ isMainWindow: () => true, lastClickTime: 0 }))
@@ -55,9 +58,9 @@ import { get } from "svelte/store"
 import { REMOTE } from "../../types/Channels"
 import { Main } from "../../types/IPC/Main"
 import type { ClientMessage } from "../../types/Socket"
-import { isRemoteRequestKey, REMOTE_REQUEST_KEYS, type RemoteProtocol, type RemoteRequestKey, type RemoteResponseKey, type RemoteResponses } from "../../types/remote/protocol"
+import { isRemoteRequestKey, REMOTE_REQUEST_KEYS, toRemoteReplayRequest, type RemoteProtocol, type RemoteRequestKey, type RemoteResponseKey, type RemoteResponses } from "../../types/remote/protocol"
 import type { WebSendArgs } from "../../types/WebProtocol"
-import { connections, outLocked, projects, remotePassword, shows, showsCache } from "../stores"
+import { activePage, activeProject, activeShow, connections, outLocked, projects, remotePassword, shows, showsCache } from "../stores"
 import { receiveREMOTE } from "./remoteTalk"
 import { sendData } from "./sendData"
 
@@ -83,6 +86,9 @@ beforeEach(() => {
     state.playMedia.mockReset()
     state.playAudio.mockReset()
     state.loadShows.mockReset()
+    state.setOutput.mockReset()
+    state.updateOut.mockReset()
+    state.clearAll.mockReset()
     ;(globalThis as { window?: unknown }).window = { api: { send: (_id: string, message: Reply) => state.sent.push(message) } }
     connections.set({ REMOTE: { c1: { entered: true } } } as never)
     remotePassword.set("")
@@ -264,5 +270,70 @@ describe("access, show and project messages", () => {
     it("ignores an unknown channel", async () => {
         await sendData(REMOTE, { id: "c1", channel: "_remoteMediaOperation", data: { x: 1 } } as unknown as ClientMessage)
         expect(state.sent).toEqual([])
+    })
+})
+
+describe("reconnect replay never changes operator state", () => {
+    // everything a Remote may have asked for before a reconnect, with a representative payload
+    const earlierRequests: [string, unknown][] = [
+        ["SHOW", "s1"],
+        ["OUT", null],
+        ["OUT", 3],
+        ["OUT", "clear"],
+        ["OUT", { id: "s1", index: 0 }],
+        ["OUT_DATA", null],
+        ["GET_FUNCTIONS", null],
+        ["GET_OVERLAYS", null],
+        ["GET_TEMPLATES", null],
+        ["GET_SCRIPTURE", { id: "b1" }],
+        ["SEARCH_SCRIPTURE", { id: "b1", searchTerm: "x" }],
+        ["MEDIA_LIST", { requestId: "r", path: "", page: 0 }],
+        ["MEDIA_THUMBNAIL", { requestId: "r", path: "/m/a.png" }],
+        ["MEDIA_PLAY", { requestId: "r", path: "/m/a.png" }],
+        ["PASSWORD", null],
+        ["ACCESS", "secret"]
+    ]
+
+    function seed() {
+        const show = { name: "Song", settings: { activeLayout: "default" }, media: {}, slides: {}, layouts: { default: { slides: [] } } }
+        showsCache.set({ s1: show } as never)
+        shows.set({ s1: { name: "Song" } } as never)
+        activePage.set("show" as never)
+        activeShow.set({ id: "operator-show" } as never)
+        activeProject.set("operator-project" as never)
+    }
+    const operatorState = () => ({ activeShow: get(activeShow), activeProject: get(activeProject), activePage: get(activePage), outLocked: get(outLocked) })
+
+    it("sends only side-effect-free reads, and the handlers of those reads leave operator state alone", async () => {
+        seed()
+        const before = operatorState()
+        const replayed = earlierRequests.map(([channel, data]) => toRemoteReplayRequest(channel, data)).filter((message) => message !== null)
+
+        // only state queries and the read-only show twin come back; live actions and the opening SHOW do not
+        expect(replayed.map((message) => message.channel).sort()).toEqual(["GET_FUNCTIONS", "GET_OVERLAYS", "GET_SHOW", "GET_TEMPLATES", "OUT", "OUT_DATA"])
+        expect(replayed.find((message) => message.channel === "OUT")?.data).toBeNull()
+
+        for (const message of replayed) {
+            await sendData(REMOTE, { id: "c1", channel: message.channel, data: message.data } as ClientMessage)
+        }
+
+        expect(replayed.length).toBeGreaterThan(0)
+        expect(only("SHOW").data).toMatchObject({ id: "s1", name: "Song" })
+        expect(operatorState()).toEqual(before)
+        expect(state.setOutput).not.toHaveBeenCalled()
+        expect(state.updateOut).not.toHaveBeenCalled()
+        expect(state.clearAll).not.toHaveBeenCalled()
+        expect(state.sendMain).not.toHaveBeenCalled()
+        expect(state.requestMainResult).not.toHaveBeenCalled()
+    })
+
+    it("is sensitive to the mutation it guards against: a plain SHOW does open the show", async () => {
+        seed()
+        await request("SHOW", "s1")
+        expect(get(activeShow)).toEqual({ id: "s1" })
+    })
+
+    it("does not replay a request unknown to the protocol", () => {
+        expect(toRemoteReplayRequest("RUN_ACTION", { id: "x" })).toBeNull()
     })
 })

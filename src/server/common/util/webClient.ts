@@ -30,8 +30,11 @@ export interface WebClientOptions<R extends object> {
     gateInbound?: boolean
     /** the connection is ready as soon as it connects (no password or layout handshake) */
     autoReady?: boolean
-    /** data requests to re-issue after a reconnect: the latest payload per key */
-    replay?: (channel: string, data: unknown) => boolean
+    /**
+     * Data requests to re-issue after a reconnect: the latest payload per key. Return the side-effect-free read to send
+     * (it may differ from the request, e.g. SHOW -> GET_SHOW), or null to never replay it. Replay must not change operator state.
+     */
+    replay?: (channel: string, data: unknown) => { channel: string; data: unknown } | null
     onConnect?: (info: { reconnect: boolean; id: string }) => void
     onDisconnect?: (reason: string) => void
     onConnectError?: (error: unknown) => void
@@ -52,6 +55,7 @@ export interface WebWireMessage {
 }
 
 interface Remembered {
+    channel: string
     data: unknown
     pending: boolean
 }
@@ -77,7 +81,8 @@ export function createWebClient<P extends WebProtocolDef<P>, R extends object>(o
 
     function sendRaw(channel: string, data: unknown = null) {
         const payload = data ?? null
-        if (options.replay?.(channel, payload)) remembered.set(channel, { data: payload, pending: !(socket.connected && ready) })
+        const replayAs = options.replay?.(channel, payload)
+        if (replayAs) remembered.set(channel, { channel: replayAs.channel, data: replayAs.data ?? null, pending: !(socket.connected && ready) })
 
         // never buffer a live action while offline: Socket.IO would replay it after reconnect
         if (!socket.connected && !preAuthKeys.includes(channel)) return
@@ -85,10 +90,10 @@ export function createWebClient<P extends WebProtocolDef<P>, R extends object>(o
     }
 
     function flushReplay() {
-        remembered.forEach((entry, channel) => {
+        remembered.forEach((entry) => {
             if (!entry.pending) return
             entry.pending = false
-            emit(channel, entry.data)
+            emit(entry.channel, entry.data)
         })
     }
 

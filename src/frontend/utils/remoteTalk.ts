@@ -75,6 +75,21 @@ export const receiveREMOTE: WebHandlerTable<RemoteProtocol> = {
         openShow(showID)
         return { id: msg.id, channel: "SHOW", data }
     },
+    // read-only twin of SHOW: loads and answers the show, but never opens it in the main window (replay after reconnect)
+    GET_SHOW: async (msg) => {
+        const showID = msg.data
+
+        if (msg.id) setConnectedState("REMOTE", msg.id, "active", showID)
+
+        loadingShow = showID
+        await loadShows([showID])
+
+        const data: RemoteShow = clone({ ...((await convertBackgrounds(get(showsCache)[showID])) as Show), id: showID })
+
+        if (loadingShow !== showID) return
+
+        return { id: msg.id, channel: "SHOW", data }
+    },
     OUT: async (msg) => {
         if (get(outLocked)) return
         // set id because convertBackgrounds might use a long time

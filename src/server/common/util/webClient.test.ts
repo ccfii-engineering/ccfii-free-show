@@ -62,7 +62,8 @@ function setup(options: { autoReady?: boolean; gateInbound?: boolean } = {}) {
         event: "REMOTE",
         connect: () => socket,
         preAuthKeys: ["PASSWORD", "ACCESS", "ERROR"],
-        replay: (channel, data) => ["SHOW", "OUT_DATA"].includes(channel) || (channel === "OUT" && data === null),
+        // SHOW is replayed as the read-only GET_SHOW; OUT only as the null query
+        replay: (channel, data) => (channel === "SHOW" ? { channel: "GET_SHOW", data } : channel === "OUT_DATA" || (channel === "OUT" && data === null) ? { channel, data: null } : null),
         onConnect: ({ reconnect }) => {
             connects.push(reconnect)
             client.send("PASSWORD")
@@ -126,7 +127,7 @@ describe("shared web client", () => {
 
         client.setReady(true)
         expect(sent().slice(1)).toEqual([
-            { channel: "SHOW", data: "c" },
+            { channel: "GET_SHOW", data: "c" },
             { channel: "OUT", data: null }
         ])
         expect(sent().some((a) => a.channel === "OUT" && a.data === 4)).toBe(false)
@@ -137,7 +138,9 @@ describe("shared web client", () => {
         socket.connect()
         client.setReady(true)
         client.setReady(true)
-        expect(sent().filter((a) => a.channel === "SHOW")).toEqual([{ channel: "SHOW", data: "c" }])
+        expect(sent().filter((a) => a.channel === "GET_SHOW")).toEqual([{ channel: "GET_SHOW", data: "c" }])
+        // the state-changing SHOW itself is never re-sent
+        expect(sent().some((a) => a.channel === "SHOW")).toBe(false)
     })
 
     it("only accepts pre-auth responses until ready when the inbound gate is on", () => {

@@ -1,5 +1,5 @@
 import type { StageProtocol, StageResponses } from "../../../types/stage/protocol"
-import { STAGE_REPLAY_KEYS } from "../../../types/stage/protocol"
+import { toStageReplayRequest } from "../../../types/stage/protocol"
 import type { WebSendArgs } from "../../../types/WebProtocol"
 import { createWebClient } from "../../common/util/webClient"
 import { receiver } from "./receiver"
@@ -8,7 +8,7 @@ import { receiver } from "./receiver"
 // layout it showed; once the app confirms the layout (markReady) the output/show/progress requests are re-issued.
 const client = createWebClient<StageProtocol, StageResponses>({
     event: "STAGE",
-    replay: (channel) => STAGE_REPLAY_KEYS.includes(channel),
+    replay: toStageReplayRequest,
     onConnect: () => client.send("LAYOUTS")
 })
 
