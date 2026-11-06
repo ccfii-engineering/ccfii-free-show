@@ -118,20 +118,33 @@
     }
 
     .info {
-        padding: 6px 30px 0;
+        flex-shrink: 0;
+        padding: 8px 30px 6px;
         font-size: 0.8em;
         opacity: 0.8;
+        border-bottom: 1px solid var(--primary-lighter);
     }
 
+    /* global p styles truncate to one line; the help text must wrap */
     .info p {
         margin: 0;
+        white-space: normal;
+        overflow: visible;
     }
 
     .warnings {
+        max-height: 6.5em;
+        overflow-y: auto;
         margin: 4px 0 0;
         padding: 0;
         list-style: none;
         color: var(--secondary);
+    }
+
+    /* the notes editor sets height: 100%; let it take only the space left under the info block */
+    .editor :global(.paper) {
+        height: auto;
+        min-height: 0;
     }
 
     .preview {
