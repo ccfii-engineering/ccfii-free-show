@@ -11,7 +11,7 @@ test("remote PowerPoint media requests and renders thumbnails in the slide grid 
         root: process.cwd(),
         plugins: [
             svelte({
-                preprocess: sveltePreprocess({ typescript: { tsconfigFile: "config/typescript/tsconfig.svelte.json" } })
+                preprocess: sveltePreprocess({ typescript: { tsconfigFile: "config/typescript/tsconfig.svelte-preprocess.json" } })
             }),
             {
                 name: "remote-thumbnail-test-api",

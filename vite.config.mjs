@@ -9,7 +9,7 @@ export default defineConfig({
         svelte({
             preprocess: sveltePreprocess({
                 typescript: {
-                    tsconfigFile: "config/typescript/tsconfig.svelte.json"
+                    tsconfigFile: "config/typescript/tsconfig.svelte-preprocess.json"
                 }
             }),
             compilerOptions: {

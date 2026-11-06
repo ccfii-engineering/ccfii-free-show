@@ -1,12 +1,14 @@
 {
     "compilerOptions": {
         "outDir": "../../build",
-        "target": "ES2015",
+        "target": "ES2018",
+        "strict": false,
         "module": "commonjs",
+        "moduleResolution": "bundler",
+        "rootDir": "..",
         "sourceMap": true,
         "stripInternal": true,
         "lib": ["es2015", "esnext", "dom"],
-        "moduleResolution": "node",
         "noImplicitAny": true,
         "strictNullChecks": true,
         "strictFunctionTypes": true,

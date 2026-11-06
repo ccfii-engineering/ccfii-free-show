@@ -143,7 +143,7 @@ export default defineConfig({
     svelte({
       preprocess: sveltePreprocess({
         typescript: serverConfig.typescript ? {
-          tsconfigFile: `./config/typescript/tsconfig.server${production ? '.prod' : ''}.json`,
+          tsconfigFile: `./config/typescript/tsconfig.svelte-preprocess${production ? '.prod' : ''}.json`,
         } : false,
       }),
       compilerOptions: {

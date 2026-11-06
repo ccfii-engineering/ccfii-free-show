@@ -46,7 +46,7 @@ function mainApp() {
             svelte({
                 preprocess: sveltePreprocess({
                     typescript: {
-                        tsconfigFile: `./config/typescript/tsconfig.svelte${production ? ".prod" : ""}.json`,
+                        tsconfigFile: `./config/typescript/tsconfig.svelte-preprocess${production ? ".prod" : ""}.json`,
                     },
                 }),
                 compilerOptions: {
@@ -127,7 +127,7 @@ function webServer(id, options = {}) {
                 preprocess: sveltePreprocess(
                     options.typescript && {
                         typescript: {
-                            tsconfigFile: `./config/typescript/tsconfig.server${production ? ".prod" : ""}.json`,
+                            tsconfigFile: `./config/typescript/tsconfig.svelte-preprocess${production ? ".prod" : ""}.json`,
                         },
                     }
                 ),

@@ -84,6 +84,15 @@ All configs live under `config/`:
 - `testing/` — Playwright config
 - `building/` — electron-builder YAML configs
 
+## TypeScript Toolchain
+
+Two TypeScript versions are installed on purpose:
+- `typescript` (6.0.3) is the tooling API: `tsc` for main-process emit (`build:electron:*`), svelte-check, svelte-preprocess, typescript-eslint, `@rollup/plugin-typescript`, cosmiconfig.
+- `typescript7` (npm alias for `typescript@7.0.2`, the native Go compiler) runs type-checking only: `npm run typecheck` (or `typecheck:electron|server|frontend`, via `scripts/typecheck.mjs`). It has no classic compiler API and its `tsc` bin clashes with TS 6's, so it is invoked by path, never through `node_modules/.bin`.
+- Main-process emit stays on TS 6 (TS 7 emit has the same file list and `require()` semantics, but no Electron startup smoke test was run).
+- `svelte-preprocess` only transpiles; it reads `config/typescript/tsconfig.svelte-preprocess*.json`, not the main tsconfigs. Package `overrides` in `package.json` let svelte-check 2 and svelte-preprocess accept TS 6 (their peer ranges stop at 4/5).
+- tsconfigs must stay valid for both 6 and 7: no `moduleResolution: node10`, no `importsNotUsedAsValues`, explicit `strict`, explicit `rootDir` for emit. `typecheck` reports existing errors in the server and frontend configs; compare counts, do not assume a clean run.
+
 ## Code Style
 
 - Prettier: 4-space indent, no semicolons, double quotes, 500 char print width

@@ -56,6 +56,10 @@
         "test:playwright": "npx playwright test --config config/testing/playwright.config.ts",
         "test:format": "npx prettier --config config/formatting/.prettierrc.yaml --check src scripts",
         "test:svelte": "svelte-check",
+        "typecheck": "node scripts/typecheck.mjs",
+        "typecheck:electron": "node scripts/typecheck.mjs electron",
+        "typecheck:server": "node scripts/typecheck.mjs server",
+        "typecheck:frontend": "node scripts/typecheck.mjs frontend",
         "format:prettier": "npx prettier --config config/formatting/.prettierrc.yaml --write src scripts",
         "lint": "npm-run-all -s lint:electron lint:frontend lint:svelte lint:styles",
         "lint:electron": "eslint -c config/linting/eslint.electron.json --ext .js,.ts src/electron --fix",
@@ -112,12 +116,21 @@
         "svelte": "^3.59.2",
         "svelte-check": "^2.10.3",
         "svelte-inspector": "github:vassbo/svelte-inspector#78307db",
-        "svelte-preprocess": "^4.10.7",
+        "svelte-preprocess": "^5.1.4",
         "tmp": "^0.2.7",
         "tslib": "^2.8.1",
-        "typescript": "^4.9.5",
+        "typescript": "^6.0.3",
+        "typescript7": "npm:typescript@^7.0.2",
         "vite": "^4.5.14",
         "vitest": "^2.1.9"
+    },
+    "overrides": {
+        "svelte-preprocess": {
+            "typescript": "$typescript"
+        },
+        "svelte-check": {
+            "typescript": "$typescript"
+        }
     },
     "dependencies": {
         "@discordjs/opus": "^0.10.0",

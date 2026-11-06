@@ -1,0 +1,20 @@
+{
+    // Used ONLY by svelte-preprocess (transpile-only, never type-checked, never TS 7).
+    // It must not extend the main tsconfigs: svelte-preprocess forces moduleResolution=node10,
+    // so ignoreDeprecations "6.0" is required under TypeScript 6.
+    // verbatimModuleSyntax stays off: the code imports types without `type`, and
+    // svelte-preprocess strips those itself.
+    "compilerOptions": {
+        "ignoreDeprecations": "6.0",
+        "target": "ESNext",
+        "isolatedModules": true,
+        "sourceMap": true,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "stripInternal": true,
+        "emitDecoratorMetadata": true,
+        "experimentalDecorators": true
+    }
+}
