@@ -16,18 +16,15 @@ import { audioExtensions, imageExtensions, mediaExtensions, presentationExtensio
 import type { API_media, API_slide_thumbnail } from "../actions/api"
 import { clone } from "./array"
 import { getFirstActiveOutput, getOutputResolution } from "./output"
+import { getFileName, removeExtension } from "./pureHelpers"
+
+export { getFileName, removeExtension }
 
 export function getExtension(path: string): string {
     if (typeof path !== "string") return ""
     if (path.indexOf(".") < 0) return path
     if (path.includes("?")) path = path.slice(0, path.indexOf("?"))
     return path.substring(path.lastIndexOf(".") + 1).toLowerCase()
-}
-
-export function removeExtension(name: string): string {
-    if (typeof name !== "string" || !name) return ""
-    if (name.indexOf(".") < 0) return name
-    return name.slice(0, name.lastIndexOf("."))
 }
 
 export function isMediaExtension(extension: string, audio = false): boolean {
@@ -42,13 +39,6 @@ export function getMediaType(extension: string): ShowType {
     if (audioExtensions.includes(extension.toLowerCase())) return "audio"
     if (videoExtensions.includes(extension.toLowerCase())) return "video"
     return "image"
-}
-
-export function getFileName(path: string): string {
-    if (typeof path !== "string") return ""
-    if (path.indexOf("\\") > -1) return path.substring(path.lastIndexOf("\\") + 1)
-    if (path.indexOf("/") > -1) return path.substring(path.lastIndexOf("/") + 1)
-    return path
 }
 
 let pathJoiner = ""

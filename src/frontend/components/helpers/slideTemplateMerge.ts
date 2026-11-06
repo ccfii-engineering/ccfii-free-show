@@ -4,6 +4,7 @@
 
 import { uid } from "uid"
 import type { Item, Layout, LayoutRef, Media, Slide, Template } from "../../../types/Show"
+import { areObjectsEqual, clone, getFileName, getItemText, removeExtension } from "./pureHelpers"
 import { getStyles } from "./style"
 
 const DEFAULT_VERSE_NUMBER_COLOR = "#919191"
@@ -13,49 +14,6 @@ export type DynamicValues = { [key: string]: string | [string, string][] }
 export type MergeWithTemplateOptions = {
     /** scripture verse number color (from scripture settings), used when replacing scripture dynamic values */
     scriptureNumberColor?: string
-}
-
-// local pure helpers (kept here so this module never pulls in the store graph)
-function clone<T>(object: T): T {
-    if (object === null || typeof object !== "object") return object
-    try {
-        return structuredClone(object)
-    } catch {
-        try {
-            return JSON.parse(JSON.stringify(object))
-        } catch {
-            return object
-        }
-    }
-}
-
-function areObjectsEqual(a: Record<string, any>, b: Record<string, any>): boolean {
-    return JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort())
-}
-
-function getItemText(item: Item | null): string {
-    let text = ""
-    const lines = item?.lines
-    if (Array.isArray(lines)) {
-        for (const line of lines) {
-            if (!Array.isArray(line.text)) continue
-            for (const t of line.text) if (t.value) text += t.value
-        }
-    }
-    return text
-}
-
-function removeExtension(name: string): string {
-    if (typeof name !== "string" || !name) return ""
-    if (name.indexOf(".") < 0) return name
-    return name.slice(0, name.lastIndexOf("."))
-}
-
-function getFileName(path: string): string {
-    if (typeof path !== "string") return ""
-    if (path.indexOf("\\") > -1) return path.substring(path.lastIndexOf("\\") + 1)
-    if (path.indexOf("/") > -1) return path.substring(path.lastIndexOf("/") + 1)
-    return path
 }
 
 type TextFormatSets = {
