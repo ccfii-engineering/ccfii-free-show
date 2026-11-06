@@ -151,7 +151,7 @@ export default defineConfig({
       },
       onwarn: (warning, handler) => {
         // disable A11y warnings
-        if (warning.code.startsWith('a11y-')) return
+        if (warning.code.startsWith('a11y')) return
         handler(warning)
       },
     }),
