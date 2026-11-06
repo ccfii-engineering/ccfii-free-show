@@ -29,13 +29,13 @@
     "template_use": {
         "whole_show": "Whole show",
         "selected_slides": "Selected slides",
-        "in_use": "Template: {}",
+        "in_use": "Template: $1",
         "source_slide": "slide",
         "source_group": "group",
         "source_first_slide": "first slide",
         "source_category": "category",
         "source_show": "show",
-        "style_override": "Output style template overrides on screen: {}",
+        "style_override": "Output style template overrides on screen: $1",
         "own_template": "This slide has its own template"
     },
     "guide": {
