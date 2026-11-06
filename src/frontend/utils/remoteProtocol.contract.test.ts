@@ -120,21 +120,23 @@ describe("handlers reply with protocol messages", () => {
 })
 
 describe("template apply", () => {
+    const applyMessage = (data: unknown) => ({ id: "c1", channel: "API:set_template", data }) as any
+
     it("answers API:set_template with the applied or blocked result for the Remote", async () => {
         state.setTemplate.mockResolvedValueOnce({ status: "applied", showId: "s1", scope: "slides", count: 2 })
-        await sendData(REMOTE, { id: "c1", channel: "API:set_template", data: { id: "t1", showId: "s1", scope: "slides", slides: [0, 1] } })
+        await sendData(REMOTE, applyMessage({ id: "t1", showId: "s1", scope: "slides", slides: [0, 1] }))
         expect(state.setTemplate).toHaveBeenCalledWith({ id: "t1", showId: "s1", scope: "slides", slides: [0, 1] })
         expect(only("API:set_template")).toMatchObject({ id: "c1", data: { status: "applied", showId: "s1", scope: "slides", count: 2 } })
 
         state.sent = []
         state.setTemplate.mockResolvedValueOnce({ status: "blocked", reason: "category_template", showId: "s1" })
-        await sendData(REMOTE, { id: "c1", channel: "API:set_template", data: { id: "t1", showId: "s1", scope: "show" } })
+        await sendData(REMOTE, applyMessage({ id: "t1", showId: "s1", scope: "show" }))
         expect(only("API:set_template").data).toEqual({ status: "blocked", reason: "category_template", showId: "s1" })
     })
 
     it("sends nothing and applies nothing when the connection is not authorized", async () => {
         connections.set({ REMOTE: { c1: { entered: false } } } as never)
-        await sendData(REMOTE, { id: "c1", channel: "API:set_template", data: { id: "t1" } })
+        await sendData(REMOTE, applyMessage({ id: "t1" }))
         expect(state.setTemplate).not.toHaveBeenCalled()
         expect(state.sent).toEqual([])
     })
