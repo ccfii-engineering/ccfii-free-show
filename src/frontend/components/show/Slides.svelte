@@ -8,6 +8,7 @@
     import { getAccess } from "../../utils/profile"
     import { videoExtensions } from "../../values/extensions"
     import { customActionActivation } from "../actions/actions"
+    import { clone } from "../helpers/array"
     import { loadCustomFonts } from "../helpers/fonts"
     import { history } from "../helpers/history"
     import { encodeFilePath, getExtension } from "../helpers/media"
@@ -203,7 +204,7 @@
         // const regEx = /[^a-zA-Z\s]+/
 
         let capitalized = false
-        let slides = _show(showId).get("slides") || {}
+        let slides = clone(_show(showId).get("slides") || {})
         Object.keys(slides).forEach((slideId) => {
             let slide = slides[slideId]
 

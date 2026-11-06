@@ -61,10 +61,10 @@
         updateShowsCache((a) => {
             if (!a[showId]) return a
             a[showId].locked = shouldBeLocked
-
-            removeTemplatesFromShow(showId)
             return a
         })
+        // not inside the update above: its own write would be replaced by the outer one
+        removeTemplatesFromShow(showId)
         shows.update((a) => {
             if (shouldBeLocked) a[showId].locked = true
             else delete a[showId].locked

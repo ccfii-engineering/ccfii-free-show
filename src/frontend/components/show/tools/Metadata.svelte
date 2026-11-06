@@ -3,6 +3,7 @@
     import { updateShowsCache } from "../../../showsCacheState/showsCache.svelte"
     import { activeShow, customMetadata, dictionary, shows, showsCache } from "../../../stores"
     import { translateText } from "../../../utils/language"
+    import { clone } from "../../helpers/array"
     import { history } from "../../helpers/history"
     import { getCustomMetadata, initializeMetadata } from "../../helpers/show"
     import MaterialTextInput from "../../inputs/MaterialTextInput.svelte"
@@ -46,7 +47,7 @@
     }
 
     function setQuickAccess(key: string, value: string | number, asMetadata = false) {
-        let quickAccess = $showsCache[$activeShow!.id].quickAccess || {}
+        let quickAccess = clone($showsCache[$activeShow!.id].quickAccess || {})
 
         if (asMetadata) {
             if (!quickAccess.metadata) quickAccess.metadata = {}

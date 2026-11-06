@@ -153,7 +153,7 @@ export function history(obj: History, shouldUndo: null | boolean = null) {
 
                 // layout audio
                 const ref = _show(showID).layouts([obj.location.layout!]).ref()[0]?.[obj.location.layoutSlide!]
-                const audio = ref?.data?.audio || []
+                const audio: any[] = [...(ref?.data?.audio || [])]
                 if (!ref) return
 
                 if (shouldUndo) {

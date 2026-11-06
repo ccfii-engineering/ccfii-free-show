@@ -689,7 +689,8 @@ export const historyActions = ({ obj, undo = null }: any) => {
                 data.remember = { showId: get(activeShow)?.id, layout: _show().get("settings.activeLayout") }
             }
 
-            let show = get(showsCache)[data.remember.showId]
+            // work on a copy: the cache hands out its live objects, and changing one in place skips change detection (subscribers are never told)
+            let show = clone(get(showsCache)[data.remember.showId])
             if (!show) return
             const previousShow: string = JSON.stringify(show)
             let slides = show.slides || {}
@@ -714,8 +715,8 @@ export const historyActions = ({ obj, undo = null }: any) => {
                 if (templateId && !slideId && previousTemplateId !== templateId) {
                     _show(data.remember.showId).set({ key: "settings.template", value: slideId ? null : templateId })
 
-                    // the cache hands out copies, so read the show again or the write-back below restores the old template id
-                    show = get(showsCache)[data.remember.showId] || show
+                    // the write above replaced the cached show, so read it again or the write-back below restores the old template id
+                    show = clone(get(showsCache)[data.remember.showId]) || show
                     slides = show.slides || {}
                 }
 
@@ -727,7 +728,7 @@ export const historyActions = ({ obj, undo = null }: any) => {
                 }
                 const brLongLines = template?.settings?.breakLongLines
                 if (brLongLines !== "0" && !isNaN(Number(brLongLines))) {
-                    slides = breakLongLines(data.remember.showId, Number(brLongLines))
+                    slides = breakLongLines(slides, Number(brLongLines))
                     show.slides = slides
                 }
                 updateSlidesWithTemplate(template)

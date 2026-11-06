@@ -289,7 +289,7 @@
             midiInListen()
         } else if ($activeShow) {
             // WIP move this from show to action
-            let showMidi = _show().get("midi") || {}
+            let showMidi = clone(_show().get("midi") || {})
             if (showMidi[id]) {
                 if (JSON.stringify(showMidi[id] || {}) === JSON.stringify(action)) return
                 showMidi[id] = action

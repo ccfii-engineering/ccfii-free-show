@@ -11,7 +11,7 @@
     import { getFirstActiveOutput, getResolution } from "../../helpers/output"
     import { deselect } from "../../helpers/select"
     import { getLayoutRef } from "../../helpers/show"
-    import { _show } from "../../helpers/shows"
+    import { _show, getSlideSettings } from "../../helpers/shows"
     import T from "../../helpers/T.svelte"
     import FloatingInputs from "../../input/FloatingInputs.svelte"
     import MaterialButton from "../../inputs/MaterialButton.svelte"
@@ -142,11 +142,9 @@
                     .get()[0]
                 if (groupSlide?.locked) return
 
-                let slideSettings = _show(showId || "active")
-                    .slides([slideId])
-                    .get("settings")
+                let slideSettings = getSlideSettings(slideId, showId || "active")
                 let oldData = { style: clone(slideSettings) }
-                let newData = { style: { ...clone(slideSettings), template: templateId } }
+                let newData = { style: { ...slideSettings, template: templateId } }
 
                 // WIP apply to all slides at once...
                 history({

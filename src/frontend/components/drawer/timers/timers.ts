@@ -51,7 +51,8 @@ export function getTimer(ref: any) {
 export function createGlobalTimerFromLocalTimer(showId: string | undefined) {
     if (!showId) return
 
-    const currentShow = _show(showId).get()
+    // a copy: editing the cached show in place would hide the change from the cache (no notification, never marked unsaved)
+    const currentShow = clone(_show(showId).get())
     if (!currentShow?.slides) return
 
     let timerCreated = false

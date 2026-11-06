@@ -1,6 +1,7 @@
 <script lang="ts">
     import { activeShow, globalTags, selected } from "../../stores"
     import { triggerClickOnEnterSpace } from "../../utils/clickable"
+    import { clone } from "../helpers/array"
     import { history } from "../helpers/history"
     import { _show } from "../helpers/shows"
     import HiddenInput from "../inputs/HiddenInput.svelte"
@@ -37,7 +38,7 @@
     function toggleTag(tagId: string) {
         if (editActive) return
 
-        let quickAccess = _show().get("quickAccess") || {}
+        let quickAccess = clone(_show().get("quickAccess") || {})
 
         let tags = quickAccess.tags || []
         let existingIndex = tags.indexOf(tagId)
