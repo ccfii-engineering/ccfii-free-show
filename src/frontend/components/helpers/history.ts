@@ -1,6 +1,6 @@
 import { get } from "svelte/store"
 import type { History, HistoryNew, HistoryTypes } from "../../../types/History"
-import { activePage, historyCacheCount, isDev, undoHistory } from "../../stores"
+import { activePage, activeShow, historyCacheCount, isDev, undoHistory } from "../../stores"
 import { redoHistory } from "./../../stores"
 import { areObjectsEqual, clone } from "./array"
 import { historyActions } from "./historyActions"
@@ -12,6 +12,19 @@ import { _show } from "./shows"
 
 // override previous history
 const override = ["textAlign", "textStyle", "deleteItem", "setItems", "setStyle", "slideStyle", "STAGE"]
+
+// a slide's own template only changes its items when the template is applied, so re-apply the show template to that one slide (it uses its own template)
+function refreshSlideTemplate(showId: string | undefined, slideId: string, before: string | undefined, after: string | undefined) {
+    if (!slideId || (before || "") === (after || "")) return
+    const activeId = get(activeShow)?.id
+    if (!activeId || (showId && showId !== activeId)) return
+
+    const index = (_show(activeId).layouts("active").ref()[0] || []).findIndex((a) => a.id === slideId)
+    if (index < 0) return
+
+    const showTemplateId: string = _show(activeId).get("settings.template") || ""
+    history({ id: "TEMPLATE", save: false, newData: { id: showTemplateId, indexes: [index], data: { createItems: false } }, location: { page: "none" } })
+}
 
 export function historyAwait(s: string[], obj: History) {
     loadShows(s)
@@ -94,6 +107,7 @@ export function history(obj: History, shouldUndo: null | boolean = null) {
                         .slides([obj.location?.slide || ""])
                         .set({ key: "settings", value: obj.newData.style })
                 }
+                refreshSlideTemplate(showID, obj.location?.slide || "", old.style[0]?.template, obj.newData.style?.template)
                 break
             case "slide":
                 old = {

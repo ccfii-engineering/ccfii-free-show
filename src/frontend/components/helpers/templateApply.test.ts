@@ -73,3 +73,19 @@ describe("whole-show TEMPLATE apply", () => {
         expect((getShowsCache().sh.slides.s1.items[0] as any).lines.length).toBeGreaterThan(1)
     })
 })
+
+describe("selected-slide template apply", () => {
+    it("restyles only the slide that got its own template", () => {
+        templates.update((a: any) => ({ ...a, other: { ...a.tpl, name: "other", items: [{ ...a.tpl.items[0], lines: [{ align: "", text: [{ value: "", style: "font-size: 11px;" }] }] }] } }))
+        setShowsCache({ sh: makeShow("tpl") })
+        history({ id: "TEMPLATE", save: false, newData: { id: "tpl", data: { createItems: true } }, location: { page: "none", override: "show#sh" } })
+        expect(JSON.stringify(getShowsCache().sh.slides.s2.items)).toContain(TEMPLATE_STYLE)
+
+        history({ id: "slideStyle", oldData: { style: {} }, newData: { style: { template: "other" } }, location: { page: "edit", show: get(activeShow)!, slide: "s2" } })
+        const slides = getShowsCache().sh.slides
+        expect(JSON.stringify(slides.s2.items)).toContain("font-size: 11px;")
+        expect(JSON.stringify(slides.s2.items)).not.toContain(TEMPLATE_STYLE)
+        expect(JSON.stringify(slides.s1.items)).toContain(TEMPLATE_STYLE)
+        expect(slides.s2.settings.template).toBe("other")
+    })
+})
