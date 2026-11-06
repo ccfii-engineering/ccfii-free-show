@@ -4,7 +4,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Project Overview
 
-FreeShow is a free, open-source presentation application built with **Electron + Svelte 3 + TypeScript**. It displays song lyrics, media, and slideshows on external screens for churches and venues. Licensed under GPL-3.0.
+FreeShow is a free, open-source presentation application built with **Electron + Svelte 5 (legacy mode) + TypeScript**. It displays song lyrics, media, and slideshows on external screens for churches and venues. Licensed under GPL-3.0.
 
 ## Common Commands
 
@@ -42,7 +42,7 @@ npm run format:prettier   # Auto-format src and scripts
 
 1. **Electron Main Process** (`src/electron/`) — Node.js backend: window management, file I/O, native integrations (NDI, Blackmagic, MIDI/LTC timecode, audio capture), output window lifecycle, cloud sync, content providers.
 
-2. **Svelte Frontend** (`src/frontend/`) — Renderer process: main UI with Svelte 3 components. Entry point `main.ts` → `App.svelte`. Global state lives in `stores.ts` as Svelte writable stores (not a state management library).
+2. **Svelte Frontend** (`src/frontend/`) — Renderer process: main UI with Svelte 5 components in legacy mode (`$:`, `export let`, `on:`; no runes in components yet). Entry point `main.ts` mounts `App.svelte` with `mount()`. Global state lives in `stores.ts` as Svelte stores; `outputs`, `media` and `showsCache` are read-only store faces over rune domain modules (`outputState/outputs.svelte.ts`, `mediaState/media.svelte.ts`, `showsCacheState/showsCache.svelte.ts`) built on `createRuneRecordStore`. Write through the module functions (`patchOutput`, `updateOutputs`, ...), never `outputs.set/update`.
 
 3. **Server Apps** (`src/server/`) — Standalone Svelte mini-apps served over HTTP via Express for external access:
    - `remote/` — Mobile remote control
@@ -87,10 +87,10 @@ All configs live under `config/`:
 ## TypeScript Toolchain
 
 Two TypeScript versions are installed on purpose:
-- `typescript` (6.0.3) is the tooling API: `tsc` for main-process emit (`build:electron:*`), svelte-check, svelte-preprocess, typescript-eslint, `@rollup/plugin-typescript`, cosmiconfig.
+- `typescript` (6.0.3) is the tooling API: `tsc` for main-process emit (`build:electron:*`), svelte-preprocess, typescript-eslint, `@rollup/plugin-typescript`, cosmiconfig. `svelte-check` is v4 and uses it too.
 - `typescript7` (npm alias for `typescript@7.0.2`, the native Go compiler) runs type-checking only: `npm run typecheck` (or `typecheck:electron|server|frontend`, via `scripts/typecheck.mjs`). It has no classic compiler API and its `tsc` bin clashes with TS 6's, so it is invoked by path, never through `node_modules/.bin`.
 - Main-process emit stays on TS 6 (TS 7 emit has the same file list and `require()` semantics, but no Electron startup smoke test was run).
-- `svelte-preprocess` only transpiles; it reads `config/typescript/tsconfig.svelte-preprocess*.json`, not the main tsconfigs. Package `overrides` in `package.json` let svelte-check 2 and svelte-preprocess accept TS 6 (their peer ranges stop at 4/5).
+- `svelte-preprocess` (6.x) only transpiles; it reads `config/typescript/tsconfig.svelte-preprocess*.json`, not the main tsconfigs. That config sets `verbatimModuleSyntax: true`, so type-only imports in `.svelte` files must use `import { type X }`.
 - tsconfigs must stay valid for both 6 and 7: no `moduleResolution: node10`, no `importsNotUsedAsValues`, explicit `strict`, explicit `rootDir` for emit. `typecheck` reports existing errors in the server and frontend configs; compare counts, do not assume a clean run.
 
 ## Code Style
