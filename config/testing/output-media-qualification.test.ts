@@ -234,6 +234,17 @@ test("ordinary output media playback across supported formats", async () => {
         const operatorLoopBefore = (await queryAPI(apiUrl, "get_playing_video_state")).loop
         const operatorLoop = mainWindow.locator('#previewArea button[data-title^="Loop"]')
         await operatorLoop.click()
+        // Toggling loop must keep the playback position. setOutput used to resend startAt (0) 600ms later and restart the video.
+        const toggleDuration = await queryAPI(apiUrl, "get_playing_video_duration")
+        expect(toggleDuration, "clip is long enough to observe a restart").toBeGreaterThan(1.6)
+        {
+            let lowestAfterToggle = Infinity
+            for (let attempt = 0; attempt < 9; attempt++) {
+                await delay(100)
+                lowestAfterToggle = Math.min(lowestAfterToggle, await queryAPI(apiUrl, "get_playing_video_time"))
+            }
+            expect(lowestAfterToggle, "operator loop toggle keeps the playback position").toBeGreaterThan(0.25)
+        }
         await expect.poll(async () => (await queryAPI(apiUrl, "get_playing_video_state")).loop, { message: "operator loop reaches the active video" }).toBe(!operatorLoopBefore)
         await expect(operatorLoop).toHaveAttribute("data-title", operatorLoopBefore ? "Loop" : "Loop: Enabled")
         await operatorLoop.click()
