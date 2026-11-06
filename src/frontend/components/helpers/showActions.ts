@@ -23,6 +23,7 @@ import { getDynamicValue } from "../edit/scripts/itemHelpers"
 import { getTextLines } from "../edit/scripts/textStyle"
 import { clearBackground, clearOverlays, clearTimers } from "../output/clear"
 import { updateOutputs } from "../../outputState/outputs.svelte"
+import { updateShowsCache } from "../../showsCacheState/showsCache.svelte"
 import {
     activeEdit,
     activeFocus,
@@ -133,7 +134,7 @@ export function swichProjectItem(pos: number, id: string) {
     // set active layout from project if it exists
     if (projectLayout) {
         if (!get(showsCache)[id].layouts[projectLayout]) projectLayout = Object.keys(get(showsCache)[id].layouts)[0]
-        showsCache.update((a) => {
+        updateShowsCache((a) => {
             if (!a[id].settings) a[id].settings = { activeLayout: "", template: null }
             a[id].settings.activeLayout = projectLayout
             return a

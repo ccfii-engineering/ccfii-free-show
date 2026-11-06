@@ -1,5 +1,6 @@
 import { get } from "svelte/store"
-import { activeEdit, activeProject, activeShow, projects, projectView, saved, showRecentlyUsedProjects, shows, showsCache } from "../../stores"
+import { updateShowsCache } from "../../showsCacheState/showsCache.svelte"
+import { activeEdit, activeProject, activeShow, projects, projectView, saved, showRecentlyUsedProjects, shows } from "../../stores"
 import { keysToID, sortByTimeNew } from "../helpers/array"
 import { history } from "../helpers/history"
 import { generateScriptureShowFromReference } from "../drawer/bible/scripture"
@@ -44,7 +45,7 @@ export function openProjectItem(id: string, index: number = 0) {
     if ((item.type || "show") === "show" && item.layout) {
         // wait until loaded
         setTimeout(() => {
-            showsCache.update((a) => {
+            updateShowsCache((a) => {
                 if (!a[item.id]?.settings) return a
                 a[item.id].settings.activeLayout = item.layout!
                 return a

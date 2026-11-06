@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte"
     import type { MediaStyle } from "../../../../types/Main"
+    import { updateShowsCache } from "../../../showsCacheState/showsCache.svelte"
     import { activeEdit, activePopup, activeShow, alertMessage, editMode, focusMode, media, outputs, overlays, playerVideos, refreshEditSlide, resized, showsCache, slideNotesActive, special, styles } from "../../../stores"
     import { transposeText } from "../../../utils/chordTranspose"
     import { DEFAULT_WIDTH } from "../../../utils/common"
@@ -167,7 +168,7 @@
         updateTimeout = setTimeout(resetAutoSize, 3000)
 
         function resetAutoSize() {
-            showsCache.update((a) => {
+            updateShowsCache((a) => {
                 if (!a[currentShowId]?.slides?.[slideId]?.items?.[activeItems[0] || 0]?.autoFontSize) return a
 
                 delete a[currentShowId].slides[slideId].items[activeItems[0] || 0].autoFontSize
@@ -313,7 +314,7 @@
         // add behind all other items
         addItem("media", null, { src: currentBackgroundPath }, "", { left: "0px", top: "0px", width: "1920px", height: "1080px" }, 0)
 
-        showsCache.update((a) => {
+        updateShowsCache((a) => {
             const currentRef = ref[$activeEdit.slide ?? -1]
             if (!currentRef) return a
 

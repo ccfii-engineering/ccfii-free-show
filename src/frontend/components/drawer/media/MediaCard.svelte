@@ -4,6 +4,7 @@
     import type { MediaStyle } from "../../../../types/Main"
     import type { ShowType } from "../../../../types/Show"
     import { addProjectItem } from "../../../converters/project"
+    import { updateMedia } from "../../../mediaState/media.svelte"
     import { activeShow, customMessageCredits, media, mediaOptions, mediaTags, outLocked, outputs, photoApiCredits, styles } from "../../../stores"
     import { translateText } from "../../../utils/language"
     import { mediaEntry } from "../../../utils/perEntryStores"
@@ -38,7 +39,7 @@
 
     // Store ContentFile object and display name for later use (license check, convert to show, etc.)
     $: if (contentFileData && contentProvider && path) {
-        media.update((m) => {
+        updateMedia((m) => {
             if (!m[path]) m[path] = {}
             m[path].contentFile = { ...contentFileData, providerId: contentProvider }
             m[path].name = name
@@ -186,7 +187,7 @@
     function removeStyle(key: string) {
         iconClicked = setTimeout(() => (iconClicked = null), 50)
 
-        media.update((a) => {
+        updateMedia((a) => {
             if (!a[path]) return a
 
             if (key === "filters") {

@@ -3,6 +3,7 @@
     import { AudioAnalyser } from "../../audio/audioAnalyser"
     import { clearAudio } from "../../audio/audioFading"
     import { AudioPlayer } from "../../audio/audioPlayer"
+    import { updateMedia } from "../../mediaState/media.svelte"
     import { focusMode, media, outLocked, playingAudio } from "../../stores"
     import { triggerClickOnEnterSpace } from "../../utils/clickable"
     import Icon from "../helpers/Icon.svelte"
@@ -232,7 +233,7 @@
                 title={"media._loop" + ($media[path]?.loop ? ": settings.enabled" : "")}
                 on:click={() => {
                     let loop = !$media[path]?.loop
-                    media.update((a) => {
+                    updateMedia((a) => {
                         if (!a[path]) a[path] = {}
                         a[path].loop = loop
 

@@ -21,8 +21,9 @@ const state = vi.hoisted(() => ({
 vi.mock("../stores", async () => {
     const { writable } = await import("svelte/store")
     const stores: Record<string, unknown> = {}
-    const names = ["actions", "actionTags", "activePage", "activeProject", "activeShow", "activeTimers", "categories", "connections", "dictionary", "folders", "language", "openedFolders", "outLocked", "overlayCategories", "overlays", "playerVideos", "projects", "remotePassword", "runningActions", "scriptures", "shows", "showsCache", "styles", "templateCategories", "templates", "timers", "variables", "variableTags"]
+    const names = ["actions", "actionTags", "activePage", "activeProject", "activeShow", "activeTimers", "categories", "connections", "dictionary", "folders", "language", "openedFolders", "outLocked", "overlayCategories", "overlays", "playerVideos", "projects", "remotePassword", "runningActions", "scriptures", "shows", "styles", "templateCategories", "templates", "timers", "variables", "variableTags"]
     names.forEach((name) => (stores[name] = writable({})))
+    stores.showsCache = (await import("../showsCacheState/showsCache.svelte")).showsCache
     stores.connections = writable({ REMOTE: { c1: { entered: true } } })
     stores.remotePassword = writable("")
     stores.outLocked = writable(false)
@@ -60,7 +61,8 @@ import { Main } from "../../types/IPC/Main"
 import type { ClientMessage } from "../../types/Socket"
 import { isRemoteRequestKey, REMOTE_REQUEST_KEYS, toRemoteReplayRequest, type RemoteProtocol, type RemoteRequestKey, type RemoteResponseKey, type RemoteResponses } from "../../types/remote/protocol"
 import type { WebSendArgs } from "../../types/WebProtocol"
-import { activePage, activeProject, activeShow, connections, outLocked, projects, remotePassword, shows, showsCache } from "../stores"
+import { setShowsCache } from "../showsCacheState/showsCache.svelte"
+import { activePage, activeProject, activeShow, connections, outLocked, projects, remotePassword, shows } from "../stores"
 import { receiveREMOTE } from "./remoteTalk"
 import { sendData } from "./sendData"
 
@@ -254,7 +256,7 @@ describe("access, show and project messages", () => {
 
     it("SHOW answers the loaded show with its id", async () => {
         const show = { name: "Song", settings: { activeLayout: "default" }, media: {}, slides: {}, layouts: { default: { slides: [] } } }
-        showsCache.set({ s1: show } as never)
+        setShowsCache({ s1: show } as never)
         shows.set({ s1: { name: "Song" } } as never)
         await request("SHOW", "s1")
         expect(state.loadShows).toHaveBeenCalledWith(["s1"])
@@ -296,7 +298,7 @@ describe("reconnect replay never changes operator state", () => {
 
     function seed() {
         const show = { name: "Song", settings: { activeLayout: "default" }, media: {}, slides: {}, layouts: { default: { slides: [] } } }
-        showsCache.set({ s1: show } as never)
+        setShowsCache({ s1: show } as never)
         shows.set({ s1: { name: "Song" } } as never)
         activePage.set("show" as never)
         activeShow.set({ id: "operator-show" } as never)

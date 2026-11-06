@@ -1,6 +1,7 @@
 import { get } from "svelte/store"
 import type { Item, ItemType } from "../../../../types/Show"
-import { activeEdit, activeShow, showsCache } from "../../../stores"
+import { updateShowsCache } from "../../../showsCacheState/showsCache.svelte"
+import { activeEdit, activeShow } from "../../../stores"
 import { wait } from "../../../utils/common"
 import { clone } from "../../helpers/array"
 import { history } from "../../helpers/history"
@@ -149,7 +150,7 @@ export async function setBoxStyle(styles: StyleClipboard[], slides: any, type: I
             //     newData: { style: { key: "align", values: [style.linesAlign] } },
             //     location: { page: "edit", show: get(activeShow)!, slide: slide.id, items },
             // })
-            showsCache.update((a) => {
+            updateShowsCache((a) => {
                 const showId = get(activeShow)?.id
                 if (!showId || !a[showId]?.slides) return a
                 ;(a[showId].slides[slide.id || ""]?.items || [])

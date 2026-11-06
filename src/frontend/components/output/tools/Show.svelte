@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { Output } from "../../../../types/Output"
     import type { LayoutRef } from "../../../../types/Show"
+    import { updateShowsCache } from "../../../showsCacheState/showsCache.svelte"
     import { activeFocus, activeShow, focusMode, outLocked, playingVideoState, presentationData, showsCache } from "../../../stores"
     import { triggerClickOnEnterSpace } from "../../../utils/clickable"
     import { translateText } from "../../../utils/language"
@@ -25,7 +26,7 @@
         if (!slide || slide.id === "temp") return
 
         if (slide?.layout && $showsCache[slide.id]) {
-            showsCache.update((a) => {
+            updateShowsCache((a) => {
                 if (!a[slide.id].settings) a[slide.id].settings = { activeLayout: "", template: null }
                 a[slide.id].settings.activeLayout = slide.layout!
                 return a

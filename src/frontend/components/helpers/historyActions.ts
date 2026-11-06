@@ -2,6 +2,7 @@ import { get } from "svelte/store"
 import { uid } from "uid"
 import type { Item, Slide, SlideData, Template } from "../../../types/Show"
 import { breakLongLines, removeItemValues } from "../../show/slides"
+import { setShowsCache, updateShowsCache } from "../../showsCacheState/showsCache.svelte"
 import { activeEdit, activePage, activePopup, activeProject, activeShow, alertMessage, cachedShowsData, deletedShows, groups, notFound, overlays, projects, refreshEditSlide, renamedShows, scriptureSettings, shows, showsCache, templates } from "../../stores"
 import { save } from "../../utils/save"
 import { EMPTY_SHOW_SLIDE } from "../../values/empty"
@@ -243,7 +244,7 @@ export const historyActions = ({ obj, undo = null }: any) => {
                 )
             }
 
-            showsCache.update((a) => {
+            updateShowsCache((a) => {
                 showsList.forEach(({ show, id }, i: number) => {
                     if (deleting) {
                         if (replace && show) {
@@ -365,7 +366,7 @@ export const historyActions = ({ obj, undo = null }: any) => {
                 if (initializing) save()
                 // delete showsCache (to reduce lag)
                 setTimeout(() => {
-                    showsCache.set({})
+                    setShowsCache({})
                     activeShow.set(null)
                 }, 2000)
             }
@@ -454,7 +455,7 @@ export const historyActions = ({ obj, undo = null }: any) => {
 
                 if (deleting) {
                     // update layout
-                    showsCache.update((a) => {
+                    updateShowsCache((a) => {
                         if (!a[showId]?.layouts?.[layout]) return a
 
                         const layoutSlides = a[showId].layouts[layout].slides
@@ -906,7 +907,7 @@ export const historyActions = ({ obj, undo = null }: any) => {
                 // don't update if show has not changed
                 if (obj.save === false && JSON.stringify(show) === previousShow) return
 
-                showsCache.update((a) => {
+                updateShowsCache((a) => {
                     a[data.remember.showId] = show
                     return a
                 })
@@ -940,7 +941,7 @@ export const historyActions = ({ obj, undo = null }: any) => {
             else obj.newData = clone(data)
 
             function updateLayoutSlides() {
-                showsCache.update((a) => {
+                updateShowsCache((a) => {
                     if (!a[data.remember.showId]) return a
                     const layoutSlides: SlideData[] = a[data.remember.showId].layouts?.[data.remember.layout].slides || []
 

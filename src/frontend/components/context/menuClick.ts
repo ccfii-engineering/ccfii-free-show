@@ -11,6 +11,8 @@ import { sendMain } from "../../IPC/main"
 import { cameraManager } from "../../media/cameraManager"
 import { changeSlideGroups, mergeSlides, mergeTextboxes, splitItemInTwo, VIRTUAL_BREAK_CHAR } from "../../show/slides"
 import { updateOutputs } from "../../outputState/outputs.svelte"
+import { updateMedia } from "../../mediaState/media.svelte"
+import { setShowsCache, updateShowsCache } from "../../showsCacheState/showsCache.svelte"
 import {
     $,
     actions,
@@ -169,7 +171,7 @@ const clickActions = {
         focusMode.set(!get(focusMode))
 
         if (!get(focusMode) && get(cloudSyncData).enabled) {
-            showsCache.set({})
+            setShowsCache({})
         }
     },
     fullscreen: () => sendMain(Main.FULLSCREEN),
@@ -434,7 +436,7 @@ const clickActions = {
         if (!groupId || !showId) return
 
         // WIP history
-        showsCache.update((a) => {
+        updateShowsCache((a) => {
             if (!a[showId]?.slides) return a
 
             const newId = uid()
@@ -526,7 +528,7 @@ const clickActions = {
                     return a
                 })
                 if (get(showsCache)[id]) {
-                    showsCache.update((a) => {
+                    updateShowsCache((a) => {
                         a[id].quickAccess = quickAccess
                         return a
                     })
@@ -555,7 +557,7 @@ const clickActions = {
             disable: !!disable,
             getTags: ({ path }) => get(media)[path]?.tags,
             applyTags: ({ path }, tags) => {
-                media.update((a) => {
+                updateMedia((a) => {
                     if (!a[path]) a[path] = {}
                     a[path].tags = tags
                     return a
@@ -756,7 +758,7 @@ const clickActions = {
         const currentShow = get(showsCache)[showId]
         const shouldBeLocked = !currentShow?.slides?.[slideIds[0]]?.locked
 
-        showsCache.update((a) => {
+        updateShowsCache((a) => {
             if (!a[showId]) return a
 
             slideIds.forEach((slideId) => {
@@ -1035,7 +1037,7 @@ const clickActions = {
     private: (obj: ObjData) => {
         if (!obj.sel) return
 
-        showsCache.update((a) => {
+        updateShowsCache((a) => {
             obj.sel!.data.forEach((b) => {
                 if (!a[b.id]) return
                 a[b.id].private = !a[b.id].private
@@ -1054,7 +1056,7 @@ const clickActions = {
     unlink_pco: (obj: ObjData) => {
         if (!obj.sel) return
 
-        showsCache.update((a) => {
+        updateShowsCache((a) => {
             obj.sel!.data.forEach((b) => {
                 if (!a[b.id]) return
                 delete a[b.id].quickAccess.pcoLink
@@ -1135,7 +1137,7 @@ const clickActions = {
             const shouldBeDisabled = !obj.enabled
             const disableGroups = get(slidesOptions).mode === "groups"
 
-            showsCache.update((a) => {
+            updateShowsCache((a) => {
                 obj.sel!.data.forEach((b) => {
                     if (!b) return
                     const ref = getLayoutRef()?.[b.index] || {}
@@ -1449,7 +1451,7 @@ const clickActions = {
             //     newData: { style: { key: id, values: [newState] } },
             //     location: { page: "edit", show: get(activeShow)!, slide: slideRef.id, items, override: "itemaction_" + slideRef.id + "_items_" + items.join(",") }
             // })
-            showsCache.update((a) => {
+            updateShowsCache((a) => {
                 if (!a[get(activeShow)?.id || ""]?.slides?.[slideRef.id]?.items) return a
 
                 items.forEach((itemIndex) => {
@@ -1636,7 +1638,7 @@ const clickActions = {
         }
 
         const favourite: boolean = get(media)[obj.sel.data[0]?.path || obj.sel.data[0]?.id]?.favourite !== true
-        media.update((a) => {
+        updateMedia((a) => {
             obj.sel!.data.forEach((card) => {
                 const path = card.path || card.id
                 if (!a[path]) a[path] = { filter: "" }

@@ -1,6 +1,8 @@
 import { setEqualizerEnabled, updateEqualizerBands } from "../audio/audioEqualizer"
 import { setOutputs } from "./outputs.svelte"
-import { activeProject, activeTimers, audioChannelsData, categories, colorbars, customMessageCredits, customMetadata, draw, drawSettings, drawTool, effects, equalizerConfig, events, gain, groups, livePrepare, media, metronome, metronomeTimer, outputSlideCache, overlays, playerVideos, playingAudioPaths, projects, shows, showsCache, slideTimelineSpeedMultiplier, special, stageShows, styles, templates, timeFormat, timers, transitionData, variables, videosData, videosTime, volume } from "../stores"
+import { setMedia } from "../mediaState/media.svelte"
+import { setShowsCache } from "../showsCacheState/showsCache.svelte"
+import { activeProject, activeTimers, audioChannelsData, categories, colorbars, customMessageCredits, customMetadata, draw, drawSettings, drawTool, effects, equalizerConfig, events, gain, groups, livePrepare, metronome, metronomeTimer, outputSlideCache, overlays, playerVideos, playingAudioPaths, projects, shows, slideTimelineSpeedMultiplier, special, stageShows, styles, templates, timeFormat, timers, transitionData, variables, videosData, videosTime, volume } from "../stores"
 import { setLanguage } from "../utils/language"
 import type { OutputTopicSnapshot } from "../../types/OutputState"
 
@@ -21,7 +23,7 @@ export async function applyOutputTopicSnapshot(snapshot: OutputTopicSnapshot, ou
             transitionData.set(payload)
             return
         case "shows":
-            showsCache.set(payload)
+            setShowsCache(payload)
             return
         case "categories":
             categories.set(payload)
@@ -48,7 +50,7 @@ export async function applyOutputTopicSnapshot(snapshot: OutputTopicSnapshot, ou
             drawSettings.set(payload)
             return
         case "media":
-            media.set(payload)
+            setMedia(payload)
             return
         case "outputSlideCache":
             outputSlideCache.set(payload)

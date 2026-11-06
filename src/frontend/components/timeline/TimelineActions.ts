@@ -1,6 +1,7 @@
 import { get, Unsubscriber } from "svelte/store"
 import { uid } from "uid"
 import type { TimelineAction } from "../../../types/Show"
+import { updateShowsCache } from "../../showsCacheState/showsCache.svelte"
 import { activeEdit, activeProject, activeShow, projects, selected, shows, showsCache } from "../../stores"
 import { hasNewerUpdate, waitUntilValueIsDefined } from "../../utils/common"
 import { clone } from "../helpers/array"
@@ -126,7 +127,7 @@ export class TimelineActions {
             const showId = this.ref.id
             const layoutId = this.ref.layoutId || ""
 
-            showsCache.update((a) => {
+            updateShowsCache((a) => {
                 if (!a[showId]?.layouts?.[layoutId]) return a
 
                 if (!a[showId].layouts[layoutId].timeline) a[showId].layouts[layoutId].timeline = { actions: [] }
@@ -149,7 +150,7 @@ export class TimelineActions {
             const showId = this.ref?.id
             const slideId = this.ref?.slideId || ""
 
-            showsCache.update((a) => {
+            updateShowsCache((a) => {
                 if (!a[showId]?.slides?.[slideId]) return a
 
                 if (!a[showId].slides[slideId].timeline) a[showId].slides[slideId].timeline = { actions: [] }

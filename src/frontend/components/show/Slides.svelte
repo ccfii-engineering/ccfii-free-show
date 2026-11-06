@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
     import type { Outputs } from "../../../types/Output"
+    import { updateShowsCache } from "../../showsCacheState/showsCache.svelte"
     import { activeEdit, activeFocus, activePage, activePopup, alertMessage, cachedShowsData, categories, focusMode, lessonsLoaded, notFound, outLocked, outputs, outputSlideCache, showsCache, slidesOptions, special, templates } from "../../stores"
     import { showEntry } from "../../utils/perEntryStores"
     import { hasNewerUpdate, wait } from "../../utils/common"
@@ -55,7 +56,7 @@
     $: if (showId) fixBrokenMedia()
     function fixBrokenMedia() {
         if (!currentShow) return
-        showsCache.update((a) => {
+        updateShowsCache((a) => {
             if (!a[showId]) return a
             Object.entries(currentShow.layouts || {}).forEach(([layoutId, layout]) => {
                 if (Array.isArray(layout.slides)) {
@@ -223,7 +224,7 @@
 
         if (!capitalized) return
 
-        showsCache.update((a) => {
+        updateShowsCache((a) => {
             a[showId].slides = slides
             return a
         })

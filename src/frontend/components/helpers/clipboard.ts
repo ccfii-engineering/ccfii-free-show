@@ -6,6 +6,7 @@ import type { Folder, Project } from "../../../types/Projects"
 import type { Item } from "../../../types/Show"
 import { getProjectsInFolder } from "../../converters/project"
 import { sendMain } from "../../IPC/main"
+import { updateMedia } from "../../mediaState/media.svelte"
 import {
     actions,
     activeDays,
@@ -975,7 +976,7 @@ const deleteActions = {
         const id = get(activeShow)?.id || ""
         if (!id) return
 
-        media.update((a) => {
+        updateMedia((a) => {
             if (a[id]?.tracks?.[index]) {
                 a[id].tracks!.splice(index, 1)
                 // reset tracks if all deleted, so any embedded tracks can be readded
@@ -1341,7 +1342,7 @@ function mediaPaste(data: any) {
     const selectedMedia = get(selected).data || []
     const multipleTypes = new Set(selectedMedia.map((a) => a.type)).size > 1
 
-    media.update((a) => {
+    updateMedia((a) => {
         selectedMedia.forEach(({ path, type }) => {
             // only paste on media with same type (if mixed selection) & don't paste back on itself
             if ((multipleTypes && type !== data.type) || path === data.path) return

@@ -5,6 +5,7 @@
     import { requestMain } from "../../../IPC/main"
     import { AudioMicrophone } from "../../../audio/audioMicrophone"
     import { AudioPlayer } from "../../../audio/audioPlayer"
+    import { updateShowsCache } from "../../../showsCacheState/showsCache.svelte"
     import { activePopup, activeShow, alertMessage, media, outLocked, outputs, playingAudio, showsCache, styles } from "../../../stores"
     import { translateText } from "../../../utils/language"
     import { getAccess } from "../../../utils/profile"
@@ -126,7 +127,7 @@
             return
         }
 
-        showsCache.update((a) => {
+        updateShowsCache((a) => {
             let bgs = a[$activeShow!.id].media
             if (!bgs[id]) return a // old media
             if (value) delete bgs[id][key]

@@ -19,7 +19,9 @@
 import { readable, type Readable } from "svelte/store"
 import type { Output } from "../../types/Output"
 import { selectOutput } from "../outputState/outputs.svelte"
-import { media, showsCache, styles, templates } from "../stores"
+import { selectMediaEntry } from "../mediaState/media.svelte"
+import { selectCachedShow } from "../showsCacheState/showsCache.svelte"
+import { styles, templates } from "../stores"
 import { createEntryAccessor, createRefEntryAccessor } from "./perEntryStoresFactory"
 
 export { createEntryAccessor, createRefEntryAccessor } from "./perEntryStoresFactory"
@@ -30,24 +32,28 @@ export { createEntryAccessor, createRefEntryAccessor } from "./perEntryStoresFac
 // Element types are inferred from each store's index-signature — no manual widening.
 // ============================================================================
 
-/** Subscribe to a single entry in $media by path. */
-export const mediaEntry = createEntryAccessor(media)
-
-// Outputs are backed by the rune record store (outputState/outputs.svelte.ts): each output has its own signal,
-// so these readables wake only for that output, with no per-write JSON gate. Missing/empty ids emit null like
-// the other accessors.
-const noOutput: Readable<Output> = readable(null as unknown as Output)
-const outputReadables = new Map<string, Readable<Output>>()
-function outputEntryReadable(id: string): Readable<Output> {
-    if (!id) return noOutput
-    let entry = outputReadables.get(id)
-    if (!entry) {
-        const source = selectOutput(id)
-        entry = { subscribe: (run) => source.subscribe((output) => run((output ?? null) as unknown as Output)) }
-        outputReadables.set(id, entry)
+// Outputs, media and the shows cache are backed by rune record stores (outputState/, mediaState/, showsCacheState/):
+// each entry has its own listener set, so these readables wake only for that entry, with no per-write JSON gate.
+// Missing/empty ids emit null like the other accessors.
+function createSelectAccessor<T>(select: (id: string) => Readable<T | undefined>): (id: string) => Readable<T> {
+    const none: Readable<T> = readable(null as unknown as T)
+    const cache = new Map<string, Readable<T>>()
+    return (id) => {
+        if (!id) return none
+        let entry = cache.get(id)
+        if (!entry) {
+            const source = select(id)
+            entry = { subscribe: (run) => source.subscribe((value) => run((value ?? null) as unknown as T)) }
+            cache.set(id, entry)
+        }
+        return entry
     }
-    return entry
 }
+
+/** Subscribe to a single entry in $media by path. */
+export const mediaEntry = createSelectAccessor(selectMediaEntry)
+
+const outputEntryReadable = createSelectAccessor<Output>(selectOutput)
 
 /** Subscribe to a single entry in $outputs by output id. */
 export const outputEntry = outputEntryReadable
@@ -56,7 +62,7 @@ export const outputEntry = outputEntryReadable
 export const outputEntryRef = outputEntryReadable
 
 /** Subscribe to a single entry in $showsCache by show id. */
-export const showEntry = createEntryAccessor(showsCache)
+export const showEntry = createSelectAccessor(selectCachedShow)
 
 /** Subscribe to a single entry in $styles by style id. */
 export const styleEntry = createEntryAccessor(styles)

@@ -43,6 +43,8 @@ import { convertSongbeamerFiles } from "../converters/songbeamer"
 import { convertTexts } from "../converters/txt"
 import { convertVerseVIEW } from "../converters/verseview"
 import { convertVideopsalm } from "../converters/videopsalm"
+import { setMedia } from "../mediaState/media.svelte"
+import { updateShowsCache } from "../showsCacheState/showsCache.svelte"
 import {
     activeEdit,
     activePage,
@@ -59,7 +61,6 @@ import {
     events,
     folders,
     lessonsLoaded,
-    media,
     mediaDownloads,
     rtmpStatus,
     outputs,
@@ -137,7 +138,7 @@ export const mainResponses: MainResponses = {
     [Main.OVERLAYS]: (a) => overlays.set(a),
     [Main.TEMPLATES]: (a) => templates.set(a),
     [Main.EVENTS]: (a) => events.set(a),
-    [Main.MEDIA]: (a) => media.set(a),
+    [Main.MEDIA]: (a) => setMedia(a),
     [Main.THEMES]: (a) => {
         themes.set(Object.keys(a).length ? a : clone(defaultThemes))
 
@@ -381,7 +382,7 @@ export const mainResponses: MainResponses = {
             })
 
             // update showsCache directly in case it's not yet saved to a local file
-            showsCache.update((a) => {
+            updateShowsCache((a) => {
                 if (!a[showId]) return a
 
                 // we should not set link when requesting to use local show, that way it will ask next time as well

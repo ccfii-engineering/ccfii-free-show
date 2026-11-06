@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte"
+    import { updateShowsCache } from "../../../showsCacheState/showsCache.svelte"
     import { activeShow, customMetadata, dictionary, shows, showsCache } from "../../../stores"
     import { translateText } from "../../../utils/language"
     import { history } from "../../helpers/history"
@@ -54,7 +55,7 @@
             quickAccess[key] = value
         }
 
-        showsCache.update((a) => {
+        updateShowsCache((a) => {
             a[$activeShow!.id].quickAccess = quickAccess
             return a
         })

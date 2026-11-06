@@ -66,7 +66,39 @@ export function isDeepEqual(a: unknown, b: unknown): boolean {
     return aKeys.every((key) => Object.prototype.hasOwnProperty.call(b, key) && isDeepEqual((a as any)[key], (b as any)[key]))
 }
 
-export function createRuneRecordStore<T>(initial: RecordOf<T> = {}): RuneRecordStore<T> {
+export interface RuneRecordStoreOptions {
+    /**
+     * `update()` hands the updater a copy-on-read draft instead of a deep copy of the whole record: an entry is copied the
+     * first time the updater reads it. Use for records with many or large entries (shows cache, media).
+     */
+    lazyDraft?: boolean
+}
+
+/** Draft record that deep-copies an entry on first read. `commit` receives the materialised record. */
+function createLazyDraft<T>(record: RecordOf<T>): { draft: RecordOf<T>; materialised: RecordOf<T> } {
+    const materialised: RecordOf<T> = { ...record }
+    const copied = new Set<string>()
+    const draft = new Proxy(materialised, {
+        get(target, key, receiver) {
+            if (typeof key === "string" && !copied.has(key) && Object.prototype.hasOwnProperty.call(target, key)) {
+                copied.add(key)
+                target[key] = copy(target[key])
+            }
+            return Reflect.get(target, key, receiver)
+        },
+        set(target, key, value) {
+            if (typeof key === "string") copied.add(key)
+            return Reflect.set(target, key, value)
+        },
+        deleteProperty(target, key) {
+            if (typeof key === "string") copied.delete(key)
+            return Reflect.deleteProperty(target, key)
+        }
+    })
+    return { draft, materialised }
+}
+
+export function createRuneRecordStore<T>(initial: RecordOf<T> = {}, options: RuneRecordStoreOptions = {}): RuneRecordStore<T> {
     // reactive side: one signal per entry. Only ever read through getEntry/select.
     const entries = new SvelteMap<string, T>()
     // plain side: the record handed to store subscribers and get(). Rebuilt (new identity) on every real change.
@@ -150,6 +182,12 @@ export function createRuneRecordStore<T>(initial: RecordOf<T> = {}): RuneRecordS
         set: (next) => commit(next),
 
         update(updater) {
+            if (options.lazyDraft) {
+                const { draft, materialised } = createLazyDraft(record)
+                const result = updater(draft)
+                commit(result === undefined || result === draft ? materialised : result)
+                return
+            }
             const draft = copy(record)
             const result = updater(draft)
             commit(result ?? draft)

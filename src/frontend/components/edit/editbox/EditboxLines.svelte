@@ -3,6 +3,7 @@
     import { uid } from "uid"
     import type { Item, Line } from "../../../../types/Show"
     import { splitCustomDynamicValues } from "../../../show/slides"
+    import { updateShowsCache } from "../../../showsCacheState/showsCache.svelte"
     import { activeEdit, activeShow, activeStage, overlays, redoHistory, refreshListBoxes, showsCache, stageShows, templates } from "../../../stores"
     import { newToast } from "../../../utils/common"
     import { getNormalizedKey, isComposing, isFormattingKey } from "../../../utils/shortcuts"
@@ -214,7 +215,7 @@
             const firstDV = buildDV(firstLines)
             const secondDV = buildDV(secondLines)
 
-            showsCache.update((a) => {
+            updateShowsCache((a) => {
                 const showId = ref.showId || $activeShow?.id || ""
                 if (a[showId]?.slides?.[ref.id]) a[showId].slides[ref.id].customDynamicValues = firstDV
                 return a
@@ -321,7 +322,7 @@
 
             // update stored scripture custom dynamic values
             if ($showsCache[ref.showId || ""]?.slides?.[ref.id]?.customDynamicValues) {
-                showsCache.update((a) => {
+                updateShowsCache((a) => {
                     if (!a[ref.showId || ""]?.slides?.[ref.id]?.customDynamicValues) return a
                     newLines.forEach((line) => {
                         line.text?.forEach((text) => {

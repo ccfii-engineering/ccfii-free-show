@@ -1,7 +1,8 @@
 <script lang="ts">
     import { onMount } from "svelte"
     import type { LayoutRef } from "../../../../types/Show"
-    import { activePopup, activeProject, activeShow, popupData, projects, showsCache } from "../../../stores"
+    import { updateShowsCache } from "../../../showsCacheState/showsCache.svelte"
+    import { activePopup, activeProject, activeShow, popupData, projects } from "../../../stores"
     import T from "../../helpers/T.svelte"
     import { history } from "../../helpers/history"
     import { getLayoutRef } from "../../helpers/show"
@@ -62,7 +63,7 @@
                 let showId = $activeShow?.id || ""
                 if (showId) {
                     let layoutId = _show(showId).get("settings.activeLayout")
-                    showsCache.update((a) => {
+                    updateShowsCache((a) => {
                         const ref = goToStartRefs[0]
                         const show = a[showId]
                         if (!ref || !show) return a

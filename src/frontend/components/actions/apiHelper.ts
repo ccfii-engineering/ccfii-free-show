@@ -7,6 +7,7 @@ import { clearAudio } from "../../audio/audioFading"
 import { AudioPlayer } from "../../audio/audioPlayer"
 import { AudioPlaylist } from "../../audio/audioPlaylist"
 import { updateOutputs } from "../../outputState/outputs.svelte"
+import { updateShowsCache } from "../../showsCacheState/showsCache.svelte"
 import { activeDrawerTab, activeEdit, activePage, activeProject, activeShow, activeTimers, audioChannelsData, audioPlaylists, draw, drawSettings, drawTool, folders, groupNumbers, groups, media, openScripture, outLocked, outputs, overlays, pdfImports, playingAudio, playingMetronome, projects, refreshEditSlide, selected, shows, showsCache, sortedShowsList, special, styles, timers, variables } from "../../stores"
 import { newToast } from "../../utils/common"
 import { send } from "../../utils/request"
@@ -498,7 +499,7 @@ export function stopTimerByName(name: string) {
 
 export async function changeShowLayout(data: API_layout) {
     await loadShows([data.showId])
-    showsCache.update((a) => {
+    updateShowsCache((a) => {
         if (!a[data.showId]?.layouts[data.layoutId]) return a
 
         a[data.showId].settings.activeLayout = data.layoutId
@@ -568,7 +569,7 @@ export function setNextSlideTimer(time: number) {
         const showId = get(activeShow)?.id || ""
         const layoutId = _show().get("settings.activeLayout")
 
-        showsCache.update((a) => {
+        updateShowsCache((a) => {
             const ref = goToStartRefs[0]
             const show = a[showId]
             if (!ref || !show) return a

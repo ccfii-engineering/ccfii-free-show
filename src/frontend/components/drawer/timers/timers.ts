@@ -1,10 +1,10 @@
 import { get } from "svelte/store"
 import { uid } from "uid"
 import type { Timer } from "../../../../types/Show"
+import { updateShowsCache } from "../../../showsCacheState/showsCache.svelte"
 import { activeTimers, events, timers } from "../../../stores"
 import { clone, keysToID, sortByName } from "../../helpers/array"
 import { _show } from "../../helpers/shows"
-import { showsCache } from "./../../../stores"
 import { customActionActivation } from "../../actions/actions"
 import { joinTimeBig } from "../../helpers/time"
 import { getDynamicValue } from "../../edit/scripts/itemHelpers"
@@ -87,7 +87,7 @@ export function createGlobalTimerFromLocalTimer(showId: string | undefined) {
 
     if (!timerCreated) return
 
-    showsCache.update((a) => {
+    updateShowsCache((a) => {
         a[showId] = currentShow
         return a
     })

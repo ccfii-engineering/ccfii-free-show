@@ -19,7 +19,8 @@ vi.mock("../actions/actions", () => ({ runActionId: vi.fn() }))
 
 import { OutputHelper } from "./OutputHelper"
 import { setOutputs, updateOutputs } from "../../outputState/outputs.svelte"
-import { activeFocus, activeProject, activeShow, focusMode, outLocked, outputSlideCache, projects, showsCache, special, styles } from "../../stores"
+import { setShowsCache } from "../../showsCacheState/showsCache.svelte"
+import { activeFocus, activeProject, activeShow, focusMode, outLocked, outputSlideCache, projects, special, styles } from "../../stores"
 
 function show(id: string) {
     return {
@@ -69,7 +70,7 @@ describe("presenter next follows OutputHelper navigation", () => {
         activeShow.set({ id: "show-a", index: 0 })
         activeFocus.set({ id: "show-a", index: 0 })
         focusMode.set(false)
-        showsCache.set({ "show-a": show("show-a"), "show-b": show("show-b") } as any)
+        setShowsCache({ "show-a": show("show-a"), "show-b": show("show-b") } as any)
         outputSlideCache.set({})
         special.set({})
         styles.set({})

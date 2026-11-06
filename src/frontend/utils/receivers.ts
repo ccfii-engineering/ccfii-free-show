@@ -15,6 +15,8 @@ import { receiveMainGlobal } from "../IPC/main"
 import { updateMappedEntries } from "./mapStoreEntries"
 import { getOutputReceiverSignature } from "./outputSignatures"
 import { setOutputs, updateOutputs } from "../outputState/outputs.svelte"
+import { setMedia } from "../mediaState/media.svelte"
+import { setShowsCache } from "../showsCacheState/showsCache.svelte"
 import {
     actions,
     activePopup,
@@ -41,7 +43,6 @@ import {
     gain,
     groups,
     livePrepare,
-    media,
     metronome,
     metronomeTimer,
     ndiData,
@@ -58,7 +59,6 @@ import {
     previewBuffers,
     projects,
     shows,
-    showsCache,
     slideTimelineSpeedMultiplier,
     slideVideoData,
     special,
@@ -281,7 +281,7 @@ export const receiveOUTPUTasOUTPUT: any = {
     // OVERLAY: (a: any) => overlays.set(a),
     // COLOR: (a: any) => backgroundColor.set(a),
     // SCREEN: (a: any) => screen.set(a),
-    SHOWS: (a: any) => showsCache.set(a),
+    SHOWS: (a: any) => setShowsCache(a),
     CATEGORIES: (a: any) => categories.set(a),
 
     TEMPLATES: (a: any) => templates.set(a),
@@ -293,7 +293,7 @@ export const receiveOUTPUTasOUTPUT: any = {
     DRAW_TOOL: (a: any) => drawTool.set(a.data),
     DRAW_SETTINGS: (a: any) => drawSettings.set(a),
     VISUALIZER_DATA: (a: any) => visualizerData.set(a),
-    MEDIA: (a: any) => media.set(a),
+    MEDIA: (a: any) => setMedia(a),
     OUT_SLIDE_CACHE: (a: any) => outputSlideCache.set(a),
     CUSTOM_METADATA: (a: any) => customMetadata.set(a),
     CUSTOM_CREDITS: (a: any) => customMessageCredits.set(a),
@@ -440,7 +440,7 @@ const receiveCLOUD = {
         }
 
         // reload shows cache (because there could be some changes)
-        showsCache.set({})
+        setShowsCache({})
         activeShow.set(null)
 
         // show completed toast

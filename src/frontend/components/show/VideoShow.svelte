@@ -5,6 +5,7 @@
     import { Main } from "../../../types/IPC/Main"
     import type { MediaStyle } from "../../../types/Main"
     import { requestMain, sendMain } from "../../IPC/main"
+    import { updateMedia } from "../../mediaState/media.svelte"
     import { activeProject, activeRename, audioChannelsData, focusMode, media, outLocked, outputs, playingVideos, projects, videoMarkers } from "../../stores"
     import { translateText } from "../../utils/language"
     import Icon from "../helpers/Icon.svelte"
@@ -234,7 +235,7 @@
         let value = e.detail.value
         if (subtitleIndex === undefined || !value) return
 
-        media.update((a) => {
+        updateMedia((a) => {
             if (!a[mediaPath]?.tracks?.[subtitleIndex]) return a
             a[mediaPath].tracks![subtitleIndex].name = value
             if (a[mediaPath].tracks![subtitleIndex].lang.length !== 2) a[mediaPath].tracks![subtitleIndex].lang = value.replaceAll(" ", "_").toLowerCase()
@@ -255,7 +256,7 @@
 
         content = formatVTT(content)
 
-        media.update((a) => {
+        updateMedia((a) => {
             if (!a[mediaPath]) a[mediaPath] = {}
             if (!a[mediaPath].tracks) a[mediaPath].tracks = []
 
@@ -272,7 +273,7 @@
     function setActiveSubtitle(e: any, lang: string) {
         if (e.target?.closest?.(".edit")) return
 
-        media.update((a) => {
+        updateMedia((a) => {
             if (!a[mediaPath]) a[mediaPath] = {}
             if (a[mediaPath].subtitle === lang) {
                 a[mediaPath].subtitle = ""
