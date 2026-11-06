@@ -2,19 +2,21 @@
     import { fade } from "svelte/transition"
     import { Main } from "../../../types/IPC/Main"
     import { sendMain } from "../../IPC/main"
-    import { updateShowsCache } from "../../showsCacheState/showsCache.svelte"
-    import { activePopup, openToolsTab, outputs, showNotesActive, shows, showsCache, special, styles, templates } from "../../stores"
+    import { selectCachedShow, updateShowsCache } from "../../showsCacheState/showsCache.svelte"
+    import { activePopup, categories, labelsDisabled, openToolsTab, outputs, showNotesActive, shows, special, styles, templates } from "../../stores"
     import { translateText } from "../../utils/language"
     import Icon from "../helpers/Icon.svelte"
     import { allOutputsHasStyleTemplate, getFirstActiveOutput } from "../helpers/output"
     import { removeTemplatesFromShow } from "../helpers/show"
+    import { resolveTemplateInUse, type TemplateSource } from "../../../common/templates/templateInUse"
     import T from "../helpers/T.svelte"
     import MaterialButton from "../inputs/MaterialButton.svelte"
 
     export let showId: string
     export let hideOptions = false
 
-    $: currentShow = $showsCache[showId]
+    $: myShow = selectCachedShow(showId)
+    $: currentShow = $myShow
     $: layouts = currentShow?.layouts
 
     let notes: { text: string; id: string; title: string; icon: string; tab: string } | null = null
@@ -22,7 +24,7 @@
     function updateNotes() {
         notes = null
 
-        const metadataValues = Object.values(currentShow.meta || {}).filter((a) => a !== currentShow?.name)
+        const metadataValues = Object.values(currentShow?.meta || {}).filter((a) => a !== currentShow?.name)
         const metadataText = metadataValues.reduce((v, a) => (v += a), "")
         if (metadataText.length) {
             const divider = "; "
@@ -77,9 +79,27 @@
     $: outputStyleTemplate = allOutputsHasStyleTemplate(referenceType === "scripture") ? $styles[outputStyleId]?.[referenceType === "scripture" ? "templateScripture" : "template"] || "" : ""
     $: enableStylePreview = !!(outputStyleTemplate && $special.styleTemplatePreview !== false && $templates[outputStyleTemplate])
 
-    $: showTemplateId = currentShow?.settings?.template || ""
+    $: templateInUse = resolveTemplateInUse({
+        showTemplateId: currentShow?.settings?.template,
+        categoryTemplateId: $categories[currentShow?.category || ""]?.template,
+        outputStyleTemplateId: enableStylePreview ? outputStyleTemplate : null,
+        isKnownTemplate: (id) => !!$templates[id]
+    })
+    $: showTemplateId = templateInUse.templateId || ""
     $: showTemplateIcon = !!(showTemplateId && $templates[showTemplateId])
     $: enableShowTemplate = showTemplateIcon && (!referenceType || referenceType === "scripture" || open)
+
+    const sourceKeys: Record<TemplateSource, string> = {
+        slide: "template_use.source_slide",
+        group: "template_use.source_group",
+        "first-slide": "template_use.source_first_slide",
+        category: "template_use.source_category",
+        show: "template_use.source_show"
+    }
+    $: templateName = $templates[showTemplateId]?.name || ""
+    $: templateSourceText = templateInUse.source ? translateText(sourceKeys[templateInUse.source]) : ""
+    $: styleOverrideText = templateInUse.outputStyleOverride ? translateText("template_use.style_override", null, [$templates[templateInUse.outputStyleOverride]?.name || ""]) : ""
+    $: templateLabel = showTemplateIcon ? translateText("template_use.in_use", null, [templateName]) + (templateSourceText ? " (" + templateSourceText + ")" : "") : ""
 </script>
 
 <svelte:window on:mousedown={mousedown} />
@@ -98,6 +118,12 @@
             <span class="notes" role="none" data-title={translateText(notes.title)} on:click={(e) => openTab(e, notes?.tab || "")}>
                 <Icon id={notes.icon} size={0.8} right white />
                 <p>{@html notes.text}</p>
+            </span>
+        {/if}
+
+        {#if templateLabel && !$labelsDisabled}
+            <span class="template-use" data-title={styleOverrideText ? templateLabel + ". " + styleOverrideText : templateLabel}>
+                {templateLabel}{#if styleOverrideText}<Icon id="styles" size={0.7} white right />{/if}
             </span>
         {/if}
     </div>
@@ -223,6 +249,21 @@
     .name-notes .name {
         flex-shrink: 0;
         max-width: 90%;
+
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* template in use */
+
+    .template-use {
+        flex-shrink: 1;
+        min-width: 0;
+
+        opacity: 0.7;
+        font-size: 0.75em;
+        font-weight: normal;
 
         white-space: nowrap;
         overflow: hidden;

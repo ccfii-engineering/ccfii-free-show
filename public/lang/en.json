@@ -26,6 +26,18 @@
         "clipboard": "Clipboard",
         "text": "Text file"
     },
+    "template_use": {
+        "whole_show": "Whole show",
+        "selected_slides": "Selected slides",
+        "in_use": "Template: {}",
+        "source_slide": "slide",
+        "source_group": "group",
+        "source_first_slide": "first slide",
+        "source_category": "category",
+        "source_show": "show",
+        "style_override": "Output style template overrides on screen: {}",
+        "own_template": "This slide has its own template"
+    },
     "guide": {
         "start": "Quick start guide",
         "skip": "Skip"

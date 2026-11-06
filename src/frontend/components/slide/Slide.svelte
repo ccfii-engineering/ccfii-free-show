@@ -257,6 +257,11 @@
         return setTemplateStyle(null, currentStyle, baseItems, outputId, slide?.customDynamicValues)
     }
 
+    // slides with their own template (the automatic first slide template does not count)
+    $: ownTemplateId = slide?.settings?.template || ""
+    $: firstSlideTemplateId = $templates[show?.settings?.template || ""]?.settings?.firstSlideTemplate || ""
+    $: hasOwnTemplate = !!(ownTemplateId && $templates[ownTemplateId] && !(index === 0 && ownTemplateId === firstSlideTemplateId))
+
     // $: styleTemplate = getStyleTemplate(null, currentStyle)
     // || styleTemplate.settings?.backgroundColor
 
@@ -437,6 +442,11 @@
                                 <div class="fill" style="width: {(slideTimer.time / slideTimer.max) * 100}%;background-color: {getOutputColor(output.color)};"></div>
                             </div>
                         {/if}
+                        {#if hasOwnTemplate}
+                            <span class="ownTemplate" data-title={translateText("template_use.own_template") + ": " + ($templates[ownTemplateId]?.name || "")}>
+                                <Icon id="templates" size={0.7} white />
+                            </span>
+                        {/if}
                         {#if slide.notes && icons}
                             <button class="notes" data-title={slide.notes} on:click={openNotes}>
                                 <Icon id="notes" white right />
@@ -593,6 +603,13 @@
 
         /* border-bottom-left-radius: 4px;
         border-bottom-right-radius: 4px; */
+    }
+
+    .label .ownTemplate {
+        display: flex;
+        align-items: center;
+        margin-right: 4px;
+        opacity: 0.7;
     }
 
     .label .text {
