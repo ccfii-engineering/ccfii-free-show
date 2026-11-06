@@ -216,6 +216,9 @@
             loop: sameItem ? previous.loop : false,
             muted: sameItem ? previous.muted : false
         }
+        // Leaving the library tab cancels browsing. Cancel before the preview page mounts: Svelte 5 runs the new page's
+        // thumbnail request before this component's own tab-change reaction, which would queue it behind the browse.
+        if (!tablet) cancelBrowse()
         activeContent.set({
             id: item.path,
             type: item.kind,
