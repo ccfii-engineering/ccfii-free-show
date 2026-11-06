@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
+    import type { Outputs } from "../../../types/Output"
     import { activeEdit, activeFocus, activePage, activePopup, alertMessage, cachedShowsData, categories, focusMode, lessonsLoaded, notFound, outLocked, outputs, outputSlideCache, showsCache, slidesOptions, special, templates } from "../../stores"
     import { showEntry } from "../../utils/perEntryStores"
     import { hasNewerUpdate, wait } from "../../utils/common"
@@ -80,13 +81,13 @@
 
     let scrollElem: HTMLElement | undefined
     let offset = -1
-    $: setTimeout(() => updateOffset({ $outputs, showId }))
-    async function updateOffset(_updater: any) {
+    $: setTimeout(() => updateOffset($outputs, showId))
+    async function updateOffset(outputsData: Outputs, currentShowId: string) {
         if (!scrollElem) return
         if (await hasNewerUpdate("SHOWS_SCROLL_OFFSET", 10)) return
 
-        let output = $outputs[activeOutputs[0]]
-        if (output?.out?.slide && showId === output.out.slide.id && activeLayout === output.out.slide.layout) {
+        let output = outputsData[activeOutputs[0]]
+        if (output?.out?.slide && currentShowId === output.out.slide.id && activeLayout === output.out.slide.layout) {
             let columns = mode === "grid" ? ($slidesOptions.columns > 2 ? $slidesOptions.columns : 0) : 1
             let index = Math.max(0, (output.out.slide.index || 0) - columns)
             offset = ((scrollElem?.querySelector(".grid")?.children[index] as HTMLElement)?.offsetTop || 5) - 5

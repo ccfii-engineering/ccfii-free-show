@@ -6,6 +6,7 @@ import { get } from "svelte/store"
 import { uid } from "uid"
 import { sanitizeVerseText } from "../../../../common/scripture/sanitizeVerseText"
 import { Main } from "../../../../types/IPC/Main"
+import type { Outputs } from "../../../../types/Output"
 import type { BibleContent } from "../../../../types/Scripture"
 import type { Item, Show } from "../../../../types/Show"
 import { ShowObj } from "../../../classes/Show"
@@ -381,8 +382,8 @@ export async function playScripture() {
     }
 }
 
-export function outputIsScripture(_updater: any = null) {
-    const output = getFirstActiveOutput()
+export function outputIsScripture(outputsData?: Outputs) {
+    const output = getFirstActiveOutput(outputsData)
     return output?.out?.slide?.id === "temp"
 }
 

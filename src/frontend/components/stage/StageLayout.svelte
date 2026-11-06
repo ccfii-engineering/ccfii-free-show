@@ -137,7 +137,7 @@
 
     function checkVisibility(itemIndex: number, _updater: any) {
         const item = stageItems[itemIndex]
-        return shouldItemBeShown(stageItemToItem(item), item.type === "slide_text" ? getSlideTextItems(layout, item, $outputs || $allOutputs) : [], { type: "stage" })
+        return shouldItemBeShown(stageItemToItem(item), item.type === "slide_text" ? getSlideTextItems(layout, item, $currentWindow === "output" ? $allOutputs : $outputs) : [], { type: "stage" })
     }
 
     // stage output

@@ -13,7 +13,7 @@
     export let outputId = ""
     export let style = ""
 
-    $: resolution = getResolution(null, [$outputs, $styles], false, outputId)
+    $: resolution = getResolution(null, { outputs: $outputs, styles: $styles }, outputId)
     let width = 0
     let height = 0
 

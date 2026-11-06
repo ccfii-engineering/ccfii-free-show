@@ -168,7 +168,7 @@
 
     // fixed resolution
     let resolution = { width: 16, height: 9 }
-    // $: resolution = getResolution(null, { $outputs, $styles })
+    // $: resolution = getResolution(null, { outputs: $outputs, styles: $styles })
 
     // Memoized computed properties
     let isFavourite = false

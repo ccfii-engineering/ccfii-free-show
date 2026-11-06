@@ -2,6 +2,7 @@ import { flushSync } from "svelte"
 import { writable } from "svelte/store"
 import { describe, expect, it } from "vitest"
 import type { Output, Outputs } from "../../types/Output"
+import { createEntryAccessor } from "../utils/perEntryStoresFactory"
 import { outputs, patchOutput, selectOutput, setOutputs, updateOutputs } from "./outputs.svelte"
 
 /**
@@ -95,6 +96,23 @@ describe("outputs: subscriber runs for a single-output change", () => {
             expect(after).toBeLessThan(before)
         })
     }
+
+    it("old per-entry derived accessor: 1 subscriber run but every write is re-evaluated (JSON-stringified) once per output", () => {
+        const source = writable<Outputs>(record())
+        let evaluations = 0
+        const counted = { subscribe: (run: (v: Outputs) => void) => source.subscribe((v) => (evaluations++, run(v))), set: source.set, update: source.update }
+        const accessor = createEntryAccessor(counted)
+        let subscriberRuns = 0
+        IDS.forEach((id) => accessor(id).subscribe(() => subscriberRuns++))
+        evaluations = 0
+        subscriberRuns = 0
+        source.update((a) => {
+            a.b.active = true
+            return a
+        })
+        // 4 gate evaluations to wake 1 subscriber; the rune selectors do 0 whole-record evaluations (see test below)
+        expect({ evaluations, subscriberRuns }).toEqual({ evaluations: 4, subscriberRuns: 1 })
+    })
 
     it("a single patchOutput wakes exactly one per-output subscriber", () => {
         setOutputs(record())

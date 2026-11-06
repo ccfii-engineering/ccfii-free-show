@@ -340,14 +340,14 @@ export function clearOverlayTimer(outputId: string, overlayId: string) {
 
 ///
 
-export function getAllOutputs() {
-    if (!Object.keys(get(outputs)).length) return [{ ...clone(defaultOutput), id: "default" }]
+export function getAllOutputs(outputsData: Outputs = get(outputs)) {
+    if (!Object.keys(outputsData).length) return [{ ...clone(defaultOutput), id: "default" }]
     // sort by normal first A-Z, then stage A-Z
-    return sortObject(sortByName(keysToID(get(outputs))), "stageOutput")
+    return sortObject(sortByName(keysToID(outputsData)), "stageOutput")
     // return sortByName(keysToID(get(outputs)))
 }
-export function getAllEnabledOutputs() {
-    const outputsList = getAllOutputs()
+export function getAllEnabledOutputs(outputsData: Outputs = get(outputs)) {
+    const outputsList = getAllOutputs(outputsData)
     const enabled = outputsList.filter((a) => a.enabled)
     if (!enabled.length && isMainWindow()) {
         updateOutputs((a) => updateMappedEntries(a, [Object.keys(a)[0]], (entry) => ({ ...entry, enabled: true })))
@@ -356,8 +356,8 @@ export function getAllEnabledOutputs() {
     return enabled
 }
 
-export function getAllNormalOutputs() {
-    return getAllEnabledOutputs().filter((a) => !a.stageOutput)
+export function getAllNormalOutputs(outputsData: Outputs = get(outputs)) {
+    return getAllEnabledOutputs(outputsData).filter((a) => !a.stageOutput)
 }
 export function getAllStageOutputs() {
     return getAllEnabledOutputs().filter((a) => a.stageOutput)
@@ -374,8 +374,8 @@ export function getWindowOutputId() {
     // return getActiveOutputs(get(allOutputs), false, true, true)[0]
 }
 
-export function getAllActiveOutputs() {
-    const outputsList = getAllNormalOutputs()
+export function getAllActiveOutputs(outputsData: Outputs = get(outputs)) {
+    const outputsList = getAllNormalOutputs(outputsData)
     const active = outputsList.filter((a) => a.active)
     if (!active.length && isMainWindow()) {
         updateOutputs((a) => updateMappedEntries(a, [Object.keys(a)[0]], (entry) => ({ ...entry, active: true })))
@@ -386,26 +386,26 @@ export function getAllActiveOutputs() {
 export function getAllActiveOutputIds() {
     return getAllActiveOutputs().map(({ id }) => id)
 }
-export function getFirstActiveOutput(_updater: any = null) {
-    const firstActive = getAllActiveOutputs()[0]
+export function getFirstActiveOutput(outputsData: Outputs = get(outputs)) {
+    const firstActive = getAllActiveOutputs(outputsData)[0]
     if (firstActive) return firstActive
 
     // create one if none exist
-    if (!getAllOutputs().filter((a) => !a.stageOutput).length && isMainWindow()) addOutput(true)
+    if (!getAllOutputs(outputsData).filter((a) => !a.stageOutput).length && isMainWindow()) addOutput(true)
 
-    // get first regardless of active state
+    // get first regardless of active state (re-read: addOutput may have created one)
     return keysToID(get(outputs)).find((a) => !a.stageOutput)
 }
 
 // DEPRECATED
 let sortedOutputs: (Output & { id: string })[] = []
-export function getActiveOutputs(updater: Outputs = get(outputs), hasToBeActive = true, removeKeyOutput = false, shouldRemoveStageOutput = false) {
+export function getActiveOutputs(outputsData: Outputs = get(outputs), hasToBeActive = true, removeKeyOutput = false, shouldRemoveStageOutput = false) {
     // keyOutput is not in use anymore
     // WIP cache outputs
-    // if (JSON.stringify(sortedOutputs.map(({ id }) => id)) !== JSON.stringify(Object.keys(updater))) {
-    //     sortedOutputs = sortByName(keysToID(updater || {}))
+    // if (JSON.stringify(sortedOutputs.map(({ id }) => id)) !== JSON.stringify(Object.keys(outputsData))) {
+    //     sortedOutputs = sortByName(keysToID(outputsData || {}))
     // }
-    sortedOutputs = sortByName(keysToID(updater || {}))
+    sortedOutputs = sortByName(keysToID(outputsData || {}))
 
     let enabled = sortedOutputs.filter((a) => a.enabled === true && (removeKeyOutput ? !(a as any).isKeyOutput : true) && (shouldRemoveStageOutput ? !a.stageOutput : true))
 
@@ -421,13 +421,13 @@ export function getActiveOutputs(updater: Outputs = get(outputs), hasToBeActive 
     return enabledIds
 }
 
-export function findMatchingOut(id: string, updater: Outputs = get(outputs)): string | null {
+export function findMatchingOut(id: string, outputsData: Outputs = get(outputs)): string | null {
     let match: string | null = null
 
     // TODO: more than one active
 
-    getActiveOutputs(updater, false, true, true).forEach((outputId: string) => {
-        const output = updater[outputId]
+    getActiveOutputs(outputsData, false, true, true).forEach((outputId: string) => {
+        const output = outputsData[outputId]
         if (match === null && output.enabled) {
             // TODO: index & layout: $outSlide?.index === i && $outSlide?.id === $activeShow?.id && $outSlide?.layout === activeLayout
             // slides (edit) + slides
@@ -472,14 +472,14 @@ export function refreshOut(refresh = true) {
 }
 
 // outputs is just for updates
-export function isOutCleared(key: string | null = null, updater: Outputs = get(outputs), checkLocked = false) {
+export function isOutCleared(key: string | null = null, outputsData: Outputs = get(outputs), checkLocked = false) {
     let cleared = true
-    const outputIds = getActiveOutputs(updater, true, true, true)
+    const outputIds = getActiveOutputs(outputsData, true, true, true)
 
     outputIds.forEach((outputId: string) => {
         if (!cleared) return
 
-        const output = updater[outputId]
+        const output = outputsData[outputId]
         if (output.out?.presentationMode === "cleared") return
         const keys: string[] = key ? [key] : Object.keys(output.out || {}).filter((type) => type !== "presentationMode")
         cleared = !keys.find((type: string) => {
@@ -508,9 +508,9 @@ export function isOutCleared(key: string | null = null, updater: Outputs = get(o
     return cleared
 }
 
-export function getOutputContent(outputId = "", updater = get(outputs), key = "slide") {
-    if (!outputId) outputId = getActiveOutputs(updater, false, true, true)[0]
-    return updater[outputId]?.out?.[key] || {}
+export function getOutputContent(outputId = "", outputsData = get(outputs), key = "slide") {
+    if (!outputId) outputId = getActiveOutputs(outputsData, false, true, true)[0]
+    return outputsData[outputId]?.out?.[key] || {}
 }
 
 export function outputSlideHasContent(output) {
@@ -531,15 +531,19 @@ export function outputSlideHasContent(output) {
 // WIP style should override any slide resolution & color ? (it does not)
 
 // this actually gets aspect ratio
-export function getResolution(initial: Resolution | undefined | null = null, _updater: any = null, _getSlideRes = false, outputId = "", styleIdOverride = ""): Resolution {
+// `data` is real input, not a reactivity trigger: pass the store values a reactive statement depends on ({ outputs: $outputs, styles: $styles })
+export function getResolution(initial: Resolution | undefined | null = null, data: { outputs?: Outputs; styles?: { [key: string]: Styles } } | null = null, outputId = "", styleIdOverride = ""): Resolution {
     if (initial) return initial
 
-    if (!outputId) outputId = getFirstActiveOutput()?.id || ""
-    const currentOutput = get(outputs)[outputId]
+    const outputsData = data?.outputs ?? get(outputs)
+    const stylesData = data?.styles ?? get(styles)
+
+    if (!outputId) outputId = getFirstActiveOutput(outputsData)?.id || ""
+    const currentOutput = outputsData[outputId]
 
     if (currentOutput?.stageOutput) return currentOutput.bounds
 
-    const style = styleIdOverride || currentOutput?.style ? get(styles)[(styleIdOverride || currentOutput?.style)!] || null : null
+    const style = styleIdOverride || currentOutput?.style ? stylesData[(styleIdOverride || currentOutput?.style)!] || null : null
     const styleRatio: any = style?.aspectRatio || style?.resolution
 
     const ratio = styleRatio?.outputResolutionAsRatio ? currentOutput?.bounds : styleRatio
@@ -548,21 +552,21 @@ export function getResolution(initial: Resolution | undefined | null = null, _up
 }
 
 // this will get the first available stage output
-export function getStageOutputId(_updater = get(outputs)) {
-    return keysToID(_updater).find((a) => a.stageOutput && a.enabled)?.id || ""
+export function getStageOutputId(outputsData: Outputs = get(outputs)) {
+    return keysToID(outputsData).find((a) => a.stageOutput && a.enabled)?.id || ""
 }
-export function getStageResolution(outputId = "", _updater = get(outputs)): Resolution {
-    if (!outputId) outputId = getStageOutputId()
-    return getOutputResolution(outputId)
+export function getStageResolution(outputId = "", outputsData: Outputs = get(outputs)): Resolution {
+    if (!outputId) outputId = getStageOutputId(outputsData)
+    return getOutputResolution(outputId, outputsData)
 }
 
 // calculate actual output resolution based on style aspect ratio
 export const DEFAULT_BOUNDS = { width: 1920, height: 1080 }
-export function getOutputResolution(outputId: string, _updater = get(outputs), scaled = false, styleIdOverride = "") {
-    const currentOutput = _updater[outputId]
+export function getOutputResolution(outputId: string, outputsData: Outputs = get(outputs), scaled = false, styleIdOverride = "") {
+    const currentOutput = outputsData[outputId]
     const outputRes = clone(currentOutput?.bounds || DEFAULT_BOUNDS)
 
-    const styleRatio = getResolution(null, null, false, outputId, styleIdOverride)
+    const styleRatio = getResolution(null, { outputs: outputsData }, outputId, styleIdOverride)
     const styleAspectRatio = styleRatio.width / styleRatio.height
 
     const defaultRatio = DEFAULT_BOUNDS.width / DEFAULT_BOUNDS.height

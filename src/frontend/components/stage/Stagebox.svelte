@@ -210,7 +210,7 @@
         currentBackground = bg
     }
 
-    // $: resolution = getResolution(resolution, { $outputs, $styles })
+    // $: resolution = getResolution(resolution, { outputs: $outputs, styles: $styles })
 
     $: isDisabledVariable = id.includes("variables") && $variables[id.split("#")[1]]?.enabled === false
 

@@ -1,4 +1,5 @@
 import { get } from "svelte/store"
+import type { Outputs } from "../../../types/Output"
 import type { Item, LayoutRef } from "../../../types/Show"
 import type { StageItem, StageLayout } from "../../../types/Stage"
 import { isOutputWindow } from "../../utils/common"
@@ -86,11 +87,11 @@ export function stageItemToItem(item: StageItem) {
     return { ...item, ...newItem } as Item
 }
 
-export function getSlideTextItems(stageLayout: StageLayout, item: StageItem, _updater: any = null) {
+export function getSlideTextItems(stageLayout: StageLayout, item: StageItem, outputsData?: Outputs) {
     const slideOffset = Number(item.slideOffset || 0)
     const currentShow = stageLayout === null ? (get(activeStage).id ? get(stageShows)[get(activeStage).id!] : null) : stageLayout
     const sourceOutputId = currentShow?.settings?.output
-    const outputStores = isOutputWindow() ? get(allOutputs) : get(outputs)
+    const outputStores = outputsData || (isOutputWindow() ? get(allOutputs) : get(outputs))
     const stageMainOutputId = sourceOutputId && outputStores[sourceOutputId] ? sourceOutputId : getActiveOutputs(outputStores, false, true, true)[0]
     const currentOutput = outputStores[stageMainOutputId] || {}
     const currentSlide = currentOutput.out?.slide || (slideOffset !== 0 ? get(outputSlideCache)[stageMainOutputId] || null : null)

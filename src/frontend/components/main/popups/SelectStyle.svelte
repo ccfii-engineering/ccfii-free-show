@@ -68,13 +68,13 @@
     {#if outputStyles.length}
         <div class="grid">
             {#each outputStyles as style}
-                {@const resolution = getResolution(null, null, false, outputId, style.id)}
+                {@const resolution = getResolution(null, null, outputId, style.id)}
                 <Card width={25} active={active === style.id} label={style.name} {resolution} on:click={() => select(style.id)}>
                     <Output {outputId} style={getStyleResolution(resolution, resolution.width, resolution.height, "fit")} styleIdOverride={style.id} outOverride={outputData?.slide ? outputData : getOverride(style)} mirror />
                 </Card>
             {/each}
 
-            <!-- <Card label="Create new" icon="add" resolution={getResolution(null, null, false, outputId)} on:click={() => select("")} /> -->
+            <!-- <Card label="Create new" icon="add" resolution={getResolution(null, null, outputId)} on:click={() => select("")} /> -->
         </div>
     {:else}
         <Center size={1.2} faded style="height: 100px;padding-top: 20px;">

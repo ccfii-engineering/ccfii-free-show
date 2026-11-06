@@ -7,7 +7,7 @@
     let width = 0
     let height = 0
     // slide?.settings?.resolution
-    $: resolution = getResolution(null, { $outputs, $styles })
+    $: resolution = getResolution(null, { outputs: $outputs, styles: $styles })
 </script>
 
 <div class="main" bind:offsetWidth={width} bind:offsetHeight={height}>

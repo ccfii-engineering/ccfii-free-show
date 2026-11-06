@@ -96,7 +96,7 @@
         })
     }
 
-    let resolution = getResolution(null, { $outputs, $styles })
+    let resolution = getResolution(null, { outputs: $outputs, styles: $styles })
 
     function chooseTemplate(e: any) {
         if (e.key !== "Enter" || !searchValue.length || !searchedTemplates.length) return

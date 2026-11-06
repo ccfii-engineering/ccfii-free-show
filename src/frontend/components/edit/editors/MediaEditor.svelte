@@ -39,7 +39,7 @@
 
     let width = 0
     let height = 0
-    $: resolution = getResolution(null, { $outputs, $styles })
+    $: resolution = getResolution(null, { outputs: $outputs, styles: $styles })
     $: widthOrHeight = getStyleResolution(resolution, width, height, "fit")
 
     $: extension = getExtension(mediaPath)
