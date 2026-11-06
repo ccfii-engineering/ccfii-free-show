@@ -29,7 +29,7 @@
 
 <div class="clear" class:tablet class:expanded={moreOptions && !tablet}>
     {#if moreOptions || tablet}
-        <div class="more" style="display: flex;" in:slide={{ duration: tablet ? 0 : 300 }}>
+        <div class="more" style="display: flex;" in:slide|global={{ duration: tablet ? 0 : 300 }}>
             <!-- WIP get state -->
             {#if type !== "pdf"}
                 <Button

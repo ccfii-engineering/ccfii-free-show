@@ -37,7 +37,7 @@
                         <span>{@html item.text}</span>
                     </div>
                 {:else}
-                    <div class="center" transition:customTick={transition}>
+                    <div class="center" transition:customTick|global={transition}>
                         <span>{@html item.text}</span>
                     </div>
                 {/if}

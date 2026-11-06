@@ -12,7 +12,7 @@
 </script>
 
 {#if visible}
-    <div class="tooltip" class:isOptimized style="top: {y}px; left: {x}px; {style}" transition:fade={{ duration: 150 }}>
+    <div class="tooltip" class:isOptimized style="top: {y}px; left: {x}px; {style}" transition:fade|global={{ duration: 150 }}>
         {#each parsed as part}
             <span class={part.isShortcut ? "shortcut" : ""}>{@html part.text.replaceAll("\n", "<br>")}</span>
         {/each}

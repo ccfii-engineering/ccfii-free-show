@@ -220,7 +220,7 @@
 <svelte:window on:contextmenu={onContextMenu} on:click={click} on:keydown={handleKeydown} />
 
 {#if $contextActive && activeMenu.length}
-    <div class="contextMenu" style="left: {x}px; top: {y}px;transform: translateY(-{translate}%);--background: rgb({rgb.r} {rgb.g} {rgb.b} / 0.97);" class:top class:isOptimized transition:fade={{ duration: 60 }}>
+    <div class="contextMenu" style="left: {x}px; top: {y}px;transform: translateY(-{translate}%);--background: rgb({rgb.r} {rgb.g} {rgb.b} / 0.97);" class:top class:isOptimized transition:fade|global={{ duration: 60 }}>
         {#key update}
             <SpellCheckMenu />
 

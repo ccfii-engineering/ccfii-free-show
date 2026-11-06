@@ -191,7 +191,7 @@
 <svelte:window on:keydown={keydown} />
 
 {#if $quickSearchActive}
-    <div class="quicksearch" class:centered transition:fade={{ duration: 50 }}>
+    <div class="quicksearch" class:centered transition:fade|global={{ duration: 50 }}>
         <div class="box" style="--background: rgb({rgb.r} {rgb.g} {rgb.b} / 0.8);" class:isOptimized>
             <div class="search" style="position: relative;">
                 <div class="icon">
@@ -212,7 +212,7 @@
 
             {#if showValues && actualSearchText.length}
                 {#if values.length}
-                    <div class="values" in:fly={{ y: 10, duration: 150, delay: 50 }}>
+                    <div class="values" in:fly|global={{ y: 10, duration: 150, delay: 50 }}>
                         {#each values as value, i}
                             {#if i === 0 || values[i - 1].category !== value.category}
                                 <div class="category-header" role="none" on:click={() => openCategory(value.category)}>
@@ -243,7 +243,7 @@
                         {/each}
                     </div>
                 {:else}
-                    <div class="values" in:fade>
+                    <div class="values" in:fade|global>
                         <Center faded>
                             <T id="empty.search" />
                         </Center>

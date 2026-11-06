@@ -167,7 +167,7 @@
 
 {#if !isLocked && (isStage ? $activeStage.id : $activeEdit.slide !== undefined || $activeEdit.type === "overlay" || $activeEdit.type === "template")}
     {#if isOpen}
-        <div class="addMenu" transition:fade={{ duration: 80 }} style="overflow: visible;">
+        <div class="addMenu" transition:fade|global={{ duration: 80 }} style="overflow: visible;">
             <div class="menu-content">
                 {#each groupedItems as group, i}
                     {#if group.label}
@@ -223,7 +223,7 @@
             {#if hoveredSubmenu && hoveredSubmenu.length > 0 && hoveredId}
                 <div
                     class="addMenu submenu"
-                    transition:fade={{ duration: 80 }}
+                    transition:fade|global={{ duration: 80 }}
                     style="bottom: {hoveredY - 6}px;"
                     on:mouseenter={() => clearTimeout(hoverTimeout)}
                     on:mouseleave={() => {

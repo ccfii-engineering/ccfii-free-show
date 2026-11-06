@@ -9,7 +9,7 @@
     const currentProfile = isAdmin ? "" : $profiles[$activeProfile]?.name || ""
 </script>
 
-<div class="profile-changer-menu" transition:slide>
+<div class="profile-changer-menu" transition:slide|global>
     <p style="display: flex;align-items: center;gap: 0.5em;">
         <Icon id="profiles" white />
         <span>

@@ -154,7 +154,7 @@
         {/if}
 
         {#if showDropdown && currentShow}
-            <div class="showDropdown" transition:fade={{ duration: 100 }} role="none" on:click={() => (showDropdown = false)}>
+            <div class="showDropdown" transition:fade|global={{ duration: 100 }} role="none" on:click={() => (showDropdown = false)}>
                 <MaterialButton title="tooltip.notes" on:click={() => showNotesActive.set(!$showNotesActive)}>
                     <Icon id="notes" white={!$showNotesActive} />
 

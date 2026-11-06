@@ -77,7 +77,7 @@
 
 {#if active}
     {#if currentStep && currentStyle}
-        <div class="guide" transition:fade>
+        <div class="guide" transition:fade|global>
             <div class="focus" style={currentStyle}>
                 <div class="text" style={currentTextStyle} class:flip>
                     <p style="font-size: 1.5em;font-weight: 600;">
