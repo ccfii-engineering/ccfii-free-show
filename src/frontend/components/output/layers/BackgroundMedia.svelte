@@ -29,6 +29,8 @@
 
     export let data: OutBackground
     export let transition: Transition
+    // current transition, used only for the out side (a non-null out also keeps the transitioner branch fixed after mount)
+    export let liveTransition: Transition | null = null
     export let fadingOut = false
     export let currentStyle: Styles | null = null
     export let animationStyle = ""
@@ -290,7 +292,7 @@
     }
 </script>
 
-<OutputTransition {transition} inTransition={transition.in} outTransition={transition.out} on:outrostart={() => (fadingOut = true)}>
+<OutputTransition {transition} inTransition={transition.in} outTransition={liveTransition ? liveTransition.out || liveTransition : transition.out} on:outrostart={() => (fadingOut = true)}>
     {#if type === "media"}
         <Media {outputId} path={id} {data} {animationStyle} bind:video bind:videoData bind:videoTime {mirror} {mediaStyle} on:loaded on:ended={videoEnded} />
     {:else if type === "screen"}

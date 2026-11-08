@@ -67,8 +67,10 @@
         if (activeId === (data.path || data.id)) {
             if (firstActive) {
                 background1 = newData
+                transition1 = clone(transition)
             } else {
                 background2 = newData
+                transition2 = clone(transition)
             }
             return
         }
@@ -82,8 +84,10 @@
 
                 if (loadingFirst) {
                     background1 = newData
+                    transition1 = clone(transition)
                 } else {
                     background2 = newData
+                    transition2 = clone(transition)
                 }
 
                 // max 2 seconds loading time
@@ -118,6 +122,20 @@
     $: if (background1) background1Data = clone(background1)
     $: if (background2) background2Data = clone(background2)
 
+    // in transition and the transition on/off decision stay fixed per element: changing them would remount the media
+    // the out transition is read live (liveTransition), so content leaves with the transition that applies now
+    let transition1 = transition
+    let transition2 = transition
+
+    // one object with a fixed identity, updated in place: an element that is already leaving does not
+    // receive new props, but reads this when its out transition starts
+    const liveTransition: Transition = { ...transition }
+    $: syncLiveTransition(transition)
+    function syncLiveTransition(current: Transition) {
+        for (const key of Object.keys(liveTransition)) delete liveTransition[key]
+        Object.assign(liveTransition, current)
+    }
+
     // don't "refresh" animation when chaning slide
     let animation1 = ""
     let animation2 = ""
@@ -136,12 +154,12 @@
 <div class="media" {style}>
     {#if background1}
         <div class="media" class:hidden={loading && !firstActive}>
-            <BackgroundMedia data={background1Data} fadingOut={firstFadingOut} {outputId} {transition} {currentStyle} animationStyle={animation1} {duration} {mirror} {styleBackground} on:loaded={() => loaded(true)} />
+            <BackgroundMedia data={background1Data} fadingOut={firstFadingOut} {outputId} transition={transition1} {liveTransition} {currentStyle} animationStyle={animation1} {duration} {mirror} {styleBackground} on:loaded={() => loaded(true)} />
         </div>
     {/if}
     {#if background2}
         <div class="media" class:hidden={loading && firstActive}>
-            <BackgroundMedia data={background2Data} fadingOut={!firstFadingOut} {outputId} {transition} {currentStyle} animationStyle={animation2} {duration} {mirror} {styleBackground} on:loaded={() => loaded(false)} />
+            <BackgroundMedia data={background2Data} fadingOut={!firstFadingOut} {outputId} transition={transition2} {liveTransition} {currentStyle} animationStyle={animation2} {duration} {mirror} {styleBackground} on:loaded={() => loaded(false)} />
         </div>
     {/if}
 </div>
