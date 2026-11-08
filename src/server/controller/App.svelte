@@ -696,6 +696,11 @@
         background: var(--operator-amber, #faa739);
     }
 
+    /* icons are amber by default, which vanishes on the amber button */
+    .action.primary :global(svg) {
+        fill: currentColor;
+    }
+
     .action.clear {
         border-color: var(--operator-crimson, #810e0e);
         background: var(--operator-crimson, #810e0e);

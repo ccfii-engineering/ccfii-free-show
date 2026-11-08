@@ -634,6 +634,11 @@
         font-weight: 650;
     }
 
+    /* icons are amber by default, which vanishes on the amber button */
+    .media-control-row .primary-control :global(svg) {
+        fill: currentColor;
+    }
+
     .video-time-control {
         display: grid;
         grid-template-columns: 52px minmax(48px, 1fr) 52px;
