@@ -40,6 +40,7 @@ test("real desktop remote media and ControlShow socket flow", async () => {
         path.join(settingsFolder.name, "settings.json"),
         JSON.stringify({
             initialized: true,
+            alertUpdates: false,
             disabledServers: { remote: false, stage: true, controller: false, output_stream: true },
             ports: { remote: remotePort, stage: 5611, controller: controllerPort, output_stream: 5613 },
             maxConnections: 10,
