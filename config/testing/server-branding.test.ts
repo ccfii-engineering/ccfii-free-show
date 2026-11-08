@@ -282,7 +282,7 @@ test("the production service worker removes only its own legacy caches", async (
 
     const cacheNames = await page.evaluate(() => caches.keys())
     expect(cacheNames).toContain("unrelated-app-cache")
-    expect(cacheNames).toContain("freeshow-ccfii-1.0.3-fundamentals")
+    expect(cacheNames).toContain("freeshow-ccfii-1.0.4-fundamentals")
     expect(cacheNames).not.toContain("1.0.0fundamentals")
     expect(cacheNames).not.toContain("1.0.0pages")
     expect(cacheNames).not.toContain("freeshow-ccfii-1.0.0-fundamentals")
