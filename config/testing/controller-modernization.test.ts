@@ -307,3 +307,94 @@ test("controller keeps previews and actions usable across phone, desktop, draw, 
     await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled()
     await page.close()
 })
+
+const footerViewports = [
+    { name: "ipad-landscape", width: 1024, height: 768 },
+    { name: "ipad-portrait", width: 768, height: 1024 },
+    { name: "phone", width: 390, height: 844 }
+]
+
+for (const viewport of footerViewports) {
+    test(`controller bottom bar keeps one-line buttons of equal height at ${viewport.name}`, async () => {
+        const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, hasTouch: true })
+        const page = await context.newPage()
+        await page.goto(`http://127.0.0.1:${controllerPort}`)
+        await expect(page.getByRole("status")).toHaveText("Connected")
+
+        const buttons = await page.locator(".control-footer button").evaluateAll((nodes) =>
+            nodes.map((node) => {
+                const rect = node.getBoundingClientRect()
+                const label = node.querySelector("span") || node
+                const range = document.createRange()
+                range.selectNodeContents(label)
+                return { text: node.textContent?.trim(), top: rect.top, height: rect.height, lineCount: new Set(Array.from(range.getClientRects()).map((r) => Math.round(r.top))).size }
+            })
+        )
+        expect(buttons.map((button) => button.text)).toEqual(["Previous", "Next", "Clear output", "Show controls", "Draw mode"])
+        for (const button of buttons) {
+            expect(button.height).toBe(buttons[0].height)
+            expect(button.lineCount).toBe(1)
+        }
+        // action row and mode row share a baseline on tablet widths; they stack on the phone
+        if (viewport.width >= 768) for (const button of buttons) expect(Math.abs(button.top - buttons[0].top)).toBeLessThan(1)
+
+        await page.getByRole("button", { name: "Draw mode" }).click()
+        await page.screenshot({ path: `.scratch/controller-fix/bottom-bar-${viewport.name}-${viewport.width}x${viewport.height}.png` })
+        await context.close()
+    })
+}
+
+test("controller drawing surface follows a touch, hides the pointer on release, and never selects text", async () => {
+    const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true })
+    const page = await context.newPage()
+    await page.goto(`http://127.0.0.1:${controllerPort}`)
+    await expect(page.getByRole("status")).toHaveText("Connected")
+    await page.getByRole("button", { name: "Draw mode" }).click()
+    await page.locator("#drawing-tool").selectOption("Pointer")
+
+    // the toolbar and surface must not start text selection or browser gestures
+    const styles = await page.evaluate(() => {
+        const read = (selector: string) => {
+            const style = getComputedStyle(document.querySelector(selector)!)
+            return { userSelect: style.userSelect, touchAction: style.touchAction }
+        }
+        return { surface: read(".draw-surface"), toolbar: read(".draw-toolbar label"), panel: read(".draw-panel") }
+    })
+    expect(styles.surface).toEqual({ userSelect: "none", touchAction: "none" })
+    expect(styles.toolbar.userSelect).toBe("none")
+    expect(styles.panel.userSelect).toBe("none")
+
+    const surface = page.locator(".draw-surface")
+    await surface.scrollIntoViewIfNeeded()
+    const box = (await surface.boundingBox())!
+    const client = await context.newCDPSession(page)
+    const before = currentSocketMessages.length
+    const point = (fx: number, fy: number) => ({ x: box.x + box.width * fx, y: box.y + box.height * fy, id: 1 })
+
+    await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point(0.2, 0.3)] })
+    await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [point(0.6, 0.7)] })
+    await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] })
+    await expect.poll(() => currentSocketMessages.slice(before).filter((message) => message?.channel === "FOCUS").length).toBeGreaterThanOrEqual(3)
+
+    const focus = currentSocketMessages.slice(before).filter((message) => message?.channel === "FOCUS")
+    // the pointer appears at the touch-down point, follows the finger, then hides on release
+    expect(focus[0].data.tool).toBe("pointer")
+    expect(focus[0].data.offset.x).toBeCloseTo(0.2, 2)
+    expect(focus[0].data.offset.y).toBeCloseTo(0.3, 2)
+    const moved = focus.filter((message) => message.data.offset)
+    expect(moved[moved.length - 1].data.offset.x).toBeCloseTo(0.6, 2)
+    expect(moved[moved.length - 1].data.offset.y).toBeCloseTo(0.7, 2)
+    expect(focus[focus.length - 1].data.offset).toBeNull()
+    expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("")
+
+    // other tools use the same path
+    for (const tool of ["Focus", "Zoom", "Particles", "Paint"]) {
+        await page.locator("#drawing-tool").selectOption(tool)
+        const mark = currentSocketMessages.length
+        await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point(0.5, 0.5)] })
+        await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] })
+        await expect.poll(() => currentSocketMessages.slice(mark).filter((message) => message?.channel === "FOCUS").length).toBeGreaterThanOrEqual(2)
+        expect(currentSocketMessages.slice(mark).find((message) => message?.channel === "FOCUS").data.tool).toBe(tool.toLowerCase())
+    }
+    await context.close()
+})

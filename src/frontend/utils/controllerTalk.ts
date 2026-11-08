@@ -11,7 +11,7 @@ import { OutputHelper } from "../components/helpers/OutputHelper"
 import { clone } from "../components/helpers/array"
 import { _show } from "../components/helpers/shows"
 import { requestMainResult } from "../IPC/main"
-import { resolvePresenterStyleLines } from "./controllerPresenter"
+import { getPresenterBackgroundId, resolvePresenterStyleLines } from "./controllerPresenter"
 import { clearAll, clearSlide } from "../components/output/clear"
 import { activeFocus, activeProject, activeShow, connections, focusMode, outputSlideCache, outputs, paintCache, projects, serverData, showsCache, special, styles } from "../stores"
 import { draw, drawSettings, drawTool } from "./../stores"
@@ -212,7 +212,7 @@ function createPresenterPreview(outSlide: OutSlide, styleLines: number): Control
     const slide = clone(_show(outSlide.id).slides([layoutSlide.id]).get()?.[0] || show.slides[layoutSlide.id])
     if (!slide) return null
     const currentSlide: Slide = { ...slide, notes: "" }
-    const backgroundMediaId = (layoutSlide as any).background || ""
+    const backgroundMediaId = getPresenterBackgroundId(layoutSlide)
     const referencedMedia = new Set<string>()
     if (backgroundMediaId && show.media?.[backgroundMediaId]) referencedMedia.add(backgroundMediaId)
     ;(slide.items || []).forEach((item) => {

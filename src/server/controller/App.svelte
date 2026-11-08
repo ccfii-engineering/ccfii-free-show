@@ -33,6 +33,7 @@
     let justCleared: ReturnType<typeof setTimeout> | null = null
     let draw = false
     let pointerDown = false
+    let activePointerId = -1
     let padElem: HTMLElement | undefined
     let tool = "Focus"
 
@@ -152,13 +153,32 @@
     }
 
     function startDrawing(event: PointerEvent) {
-        if (!connected || event.button !== 0) return
+        if (!connected || event.button !== 0 || !padElem) return
+        // a second finger (or a resting palm) must not take the pointer away from the first
+        if (pointerDown && event.pointerId !== activePointerId) {
+            event.preventDefault()
+            return
+        }
+        // touch: stop the browser from starting a text selection, scroll or zoom gesture on the surface
+        event.preventDefault()
+        activePointerId = event.pointerId
+        try {
+            padElem.setPointerCapture(event.pointerId)
+        } catch {
+            // synthetic or already released pointer: the window listeners still follow it
+        }
         pointerDown = true
+        sendPosition(event)
     }
 
-    function stopDrawing() {
-        if (!pointerDown) return
+    function stopDrawing(event?: PointerEvent) {
+        if (!pointerDown || (event && event.pointerId !== activePointerId)) return
         pointerDown = false
+        try {
+            if (event && padElem?.hasPointerCapture(event.pointerId)) padElem.releasePointerCapture(event.pointerId)
+        } catch {
+            // already released
+        }
         if (!connected) return
 
         const data: ControllerFocusRequest = { offset: null }
@@ -167,14 +187,24 @@
     }
 
     function moveDrawing(event: PointerEvent) {
-        if (!pointerDown || !connected || !padElem) return
+        if (!pointerDown || event.pointerId !== activePointerId) return
+        sendPosition(event)
+    }
+
+    function sendPosition(event: PointerEvent) {
+        if (!connected || !padElem) return
 
         const rect = padElem.getBoundingClientRect()
+        if (!rect.width || !rect.height) return
         const offset = {
             x: Math.max(0, Math.min((event.clientX - rect.left) / rect.width, 1)),
             y: Math.max(0, Math.min((event.clientY - rect.top) / rect.height, 1))
         }
         client.send("FOCUS", { offset, tool: tool.toLowerCase() as DrawTools })
+    }
+
+    function blockSelection(event: Event) {
+        if (pointerDown) event.preventDefault()
     }
 
     function changeTool(event: Event) {
@@ -219,7 +249,7 @@
     }
 </script>
 
-<svelte:window on:keydown={keydown} on:pointerup={stopDrawing} on:pointercancel={stopDrawing} on:pointermove={moveDrawing} />
+<svelte:window on:keydown={keydown} on:pointerup={stopDrawing} on:pointercancel={stopDrawing} on:pointermove={moveDrawing} on:selectstart={blockSelection} />
 
 <div class="controller-app">
     <header class="app-header">
@@ -294,7 +324,7 @@
                         <button class="utility-button" disabled={!connected} on:click={() => sendAction("clear_painting")}>Clear drawing</button>
                     {/if}
                 </div>
-                <div bind:this={padElem} class="draw-surface" style={`--draw-aspect-ratio: ${thumbnailBackground ? aspectRatio : 16 / 9}`} aria-label={`Drawing surface. Selected tool: ${tool}. ${thumbnailBackground ? "Output preview available." : "Output preview unavailable."}`} on:pointerdown={startDrawing}>
+                <div bind:this={padElem} class="draw-surface" style={`--draw-aspect-ratio: ${thumbnailBackground ? aspectRatio : 16 / 9}`} on:contextmenu|preventDefault aria-label={`Drawing surface. Selected tool: ${tool}. ${thumbnailBackground ? "Output preview available." : "Output preview unavailable."}`} on:pointerdown={startDrawing}>
                     {#if thumbnailBackground}
                         <img src={thumbnailBackground} alt="Current output behind the drawing surface" draggable="false" />
                     {:else}
@@ -366,6 +396,7 @@
     }
 
     .controller-app {
+        --footer-button-height: 48px;
         --pad-inline: 16px;
         width: min(100%, 1440px);
         height: 100vh;
@@ -536,6 +567,9 @@
         border: 1px solid var(--operator-border, rgb(244 241 237 / 14%));
         border-radius: 12px;
         background: var(--operator-surface, #211e1b);
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
     }
 
     .draw-toolbar {
@@ -581,7 +615,9 @@
         border-radius: 8px;
         background: var(--operator-preview, #070707);
         touch-action: none;
+        -webkit-user-select: none;
         user-select: none;
+        -webkit-touch-callout: none;
     }
 
     .draw-surface img {
@@ -623,8 +659,11 @@
     .action,
     .mode-row button {
         min-width: 0;
-        min-height: 48px;
+        height: var(--footer-button-height);
+        min-height: var(--footer-button-height);
         display: inline-flex;
+        white-space: nowrap;
+        line-height: 1.2;
         align-items: center;
         justify-content: center;
         gap: 9px;
@@ -667,7 +706,6 @@
     }
 
     .mode-row button {
-        min-height: 44px;
         flex: 0 1 240px;
         border-color: var(--operator-border, rgb(244 241 237 / 14%));
         color: var(--operator-muted, rgb(244 241 237 / 72%));
@@ -802,7 +840,6 @@
         }
 
         .action {
-            min-height: 48px;
             flex-direction: column;
             gap: 1px;
             padding: 4px 4px;
@@ -816,7 +853,6 @@
         }
 
         .mode-row button {
-            min-height: 44px;
             flex: 1 1 0;
             padding: 0 8px;
             font-size: 0.82rem;
@@ -840,6 +876,7 @@
 
     @media (max-height: 680px) and (min-width: 601px) {
         .controller-app {
+            --footer-button-height: 44px;
             min-height: 0;
             padding-top: 8px;
             padding-bottom: max(8px, env(safe-area-inset-bottom));
@@ -864,11 +901,6 @@
 
         .control-footer {
             padding: 6px 8px;
-        }
-
-        .action,
-        .mode-row button {
-            min-height: 44px;
         }
 
         .mode-row {
