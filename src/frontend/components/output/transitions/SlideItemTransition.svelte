@@ -27,6 +27,28 @@
     // WIP slide direction from top to bottom is a bit buggy
     // WIP image is flashing a bit in scripture transition none
 
+    // priority: item > slide > style > global (globalTransition also has style & slide transition)
+    function resolveTransitions(itemTransition: Transition | null, global: Transition, between: boolean) {
+        let transition = clone(itemTransition || global)
+        if (transition?.type === "none") transition.duration = 0
+
+        let inTransition = clone(transition.in || transition)
+        let outTransition = clone(transition.out || transition)
+        let betweenTransition = clone(transition.between || transition)
+        if (between) inTransition = clone(betweenTransition)
+        return { inTransition, outTransition, betweenTransition }
+    }
+
+    // content already on screen leaves with the transition that applies now, not the one it appeared with
+    function getOut(state: any, global: Transition, between: boolean): Transition {
+        const resolved = resolveTransitions(state.itemTransition, global, between)
+        let out = between ? resolved.betweenTransition : resolved.outTransition
+        out.delay = state.outDelay
+        // delay won't work if no transition
+        if (state.outDelay && (out.type === "none" || out.duration === 0)) out = { ...out, type: "fade", duration: 1 }
+        return out
+    }
+
     function startTransition() {
         // prevent stacking of the same item on update
         const lastStateId = Object.keys(currentlyTransitioning).pop()
@@ -40,16 +62,9 @@
         let itemTransition = item.actions?.transition ? clone(item.actions.transition) : null
         if (itemTransition?.type === "none") itemTransition.duration = 0
 
-        // SET TRANSITION
-        // globalTransition also has style & slide transition
-        // priority: item > slide > style > global
-        let transition = itemTransition || globalTransition
-        if (transition?.type === "none") transition.duration = 0
-
-        let inTransition = clone(transition.in || transition)
-        let outTransition = clone(transition.out || transition)
-        let transitionBetween = clone(transition.between || transition)
-        if (transitioningBetween) inTransition = clone(transitionBetween)
+        // the in transition is read once when the item appears (slide prop below)
+        // the out transitions are resolved when the item leaves, see resolveTransitions()
+        let { inTransition } = resolveTransitions(itemTransition, globalTransition, transitioningBetween)
 
         let inDelay = 0
         let outDelay = 0
@@ -86,13 +101,10 @@
 
         // SET DELAY
 
-        inTransition.delay = inDelay
-        outTransition.delay = outDelay
-        transitionBetween.delay = outDelay
+        inTransition = { ...inTransition, delay: inDelay }
 
         // delay won't work if no transition
         if (inDelay && (inTransition.type === "none" || inTransition?.duration === 0)) inTransition = { ...inTransition, type: "fade", duration: 1 }
-        if (outDelay && (outTransition.type === "none" || outTransition?.duration === 0)) outTransition = { ...outTransition, type: "fade", duration: 1 }
 
         // console.log(inTransition, outTransition)
 
@@ -105,8 +117,8 @@
             outSlide: clone(outSlide),
             currentSlide: clone(currentSlide),
             inTransition,
-            outTransition,
-            transitionBetween
+            itemTransition,
+            outDelay
         }
 
         currentlyTransitioning[stateId] = state
@@ -124,7 +136,7 @@
 </script>
 
 {#each Object.values(currentOut) as transitioning}
-    <OutputTransition inTransition={transitionEnabled ? transitioning.inTransition : null} outTransition={transitionEnabled ? (transitioningBetween ? transitioning.transitionBetween : transitioning.outTransition) : null}>
+    <OutputTransition inTransition={transitionEnabled ? transitioning.inTransition : null} outTransition={transitionEnabled ? getOut(transitioning, globalTransition, transitioningBetween) : null}>
         <slot customItem={transitioning.item} customLines={transitioning.lines} customOut={transitioning.outSlide} customSlide={transitioning.currentSlide} transition={transitionEnabled ? transitioning.inTransition : null} />
     </OutputTransition>
 {/each}

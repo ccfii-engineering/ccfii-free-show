@@ -67,10 +67,8 @@
         if (activeId === (data.path || data.id)) {
             if (firstActive) {
                 background1 = newData
-                transition1 = clone(transition)
             } else {
                 background2 = newData
-                transition2 = clone(transition)
             }
             return
         }
@@ -84,10 +82,8 @@
 
                 if (loadingFirst) {
                     background1 = newData
-                    transition1 = clone(transition)
                 } else {
                     background2 = newData
-                    transition2 = clone(transition)
                 }
 
                 // max 2 seconds loading time
@@ -122,9 +118,6 @@
     $: if (background1) background1Data = clone(background1)
     $: if (background2) background2Data = clone(background2)
 
-    let transition1 = transition
-    let transition2 = transition
-
     // don't "refresh" animation when chaning slide
     let animation1 = ""
     let animation2 = ""
@@ -143,12 +136,12 @@
 <div class="media" {style}>
     {#if background1}
         <div class="media" class:hidden={loading && !firstActive}>
-            <BackgroundMedia data={background1Data} fadingOut={firstFadingOut} {outputId} transition={transition1} {currentStyle} animationStyle={animation1} {duration} {mirror} {styleBackground} on:loaded={() => loaded(true)} />
+            <BackgroundMedia data={background1Data} fadingOut={firstFadingOut} {outputId} {transition} {currentStyle} animationStyle={animation1} {duration} {mirror} {styleBackground} on:loaded={() => loaded(true)} />
         </div>
     {/if}
     {#if background2}
         <div class="media" class:hidden={loading && firstActive}>
-            <BackgroundMedia data={background2Data} fadingOut={!firstFadingOut} {outputId} transition={transition2} {currentStyle} animationStyle={animation2} {duration} {mirror} {styleBackground} on:loaded={() => loaded(false)} />
+            <BackgroundMedia data={background2Data} fadingOut={!firstFadingOut} {outputId} {transition} {currentStyle} animationStyle={animation2} {duration} {mirror} {styleBackground} on:loaded={() => loaded(false)} />
         </div>
     {/if}
 </div>

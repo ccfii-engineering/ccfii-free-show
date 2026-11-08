@@ -19,6 +19,8 @@
 
     let currentItems: Item[] = []
     let show = false
+    // unique per show cycle: Svelte 5 resumes a still fading-out branch when a key returns to a previous value
+    let showCycle = 0
 
     $: if (overlay?.items !== undefined && JSON.stringify(overlay.items) !== JSON.stringify(currentItems)) updateItems()
 
@@ -31,6 +33,7 @@
         if (timeout) clearTimeout(timeout)
         timeout = setTimeout(() => {
             currentItems = clone(overlay.items || [])
+            showCycle++
             show = true
         })
     }
@@ -54,7 +57,7 @@
     onDestroy(() => clearInterval(updaterInterval))
 </script>
 
-{#key show}
+{#key showCycle}
     {#each currentItems as item}
         {#if show && shouldItemBeShown(item, [], showItemRef, conditionsUpdater)}
             <SlideItemTransition {transitionEnabled} globalTransition={transition} {item} let:customItem>
