@@ -8,10 +8,40 @@ on:
 permissions:
     contents: write
 
+# one release run at a time, so two pushes cannot both create the same draft release
+concurrency:
+    group: release
+    cancel-in-progress: false
+
 jobs:
+    # electron-builder uploads several files in parallel. If the release does not exist yet,
+    # each upload creates its own release, and the Windows files end up in a stray draft.
+    # Creating the draft once here makes every upload find the same release.
+    create_release:
+        name: "Create Draft Release"
+        runs-on: blacksmith-4vcpu-ubuntu-2404
+
+        steps:
+            - name: Check out Git repository
+              uses: actions/checkout@v4
+
+            - name: Create draft release if missing
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  APP_VERSION=$(node -p 'require("./package.json").version')
+                  TAG="v${APP_VERSION}"
+                  EXISTING=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq ".[] | select(.tag_name == \"${TAG}\") | .id")
+                  if [ -n "${EXISTING}" ]; then
+                    echo "Release ${TAG} already exists (id ${EXISTING})"
+                  else
+                    gh release create "${TAG}" --draft --title "${APP_VERSION}" --target "${GITHUB_SHA}" --notes ""
+                  fi
+
     publish_windows:
         name: "Publish Windows"
         runs-on: blacksmith-4vcpu-windows-2025
+        needs: create_release
 
         steps:
             - name: Check out Git repository
