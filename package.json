@@ -1,6 +1,6 @@
 {
     "name": "freeshow",
-    "version": "1.15.0",
+    "version": "1.15.1",
     "private": true,
     "main": "build/electron/index.js",
     "description": "FreeShow - CCFII Edition: Show song lyrics and more for free!",
@@ -50,7 +50,7 @@
         "test:unit:templates": "vitest run --config config/testing/vitest.config.ts src/frontend/components/helpers/slideTemplateMerge.test.ts src/frontend/components/helpers/pureHelpers.test.ts src/frontend/components/output/tools/mediaControlsBackground.test.ts",
         "test:unit:editor": "vitest run --config config/testing/vitest.config.ts src/common/templates/templateInUse.test.ts src/common/lyrics/analyzeLyricsText.test.ts src/common/fonts/orderFontsForShow.test.ts src/common/fonts/fontsUsedInShow.test.ts src/frontend/components/edit/scripts/layers.test.ts src/frontend/components/edit/scripts/textScope.test.ts src/frontend/components/helpers/textScopeHistory.test.ts src/frontend/components/helpers/templateWriteback.test.ts src/frontend/components/helpers/templateApply.test.ts src/frontend/components/helpers/showsCacheWriteback.test.ts --maxWorkers=1",
         "test:unit:outputs": "vitest run --config config/testing/vitest.config.ts src/frontend/utils/runeRecordStore.test.ts src/frontend/outputState/outputs.test.ts src/frontend/outputState/outputs.measurement.test.ts src/frontend/utils/runeRecordStore.lazyDraft.test.ts src/frontend/mediaState/media.test.ts src/frontend/showsCacheState/showsCache.test.ts src/frontend/utils/recordStores.measurement.test.ts --maxWorkers=1",
-        "test:unit:remote": "vitest run --config config/testing/vitest.config.ts src/electron/utils/remoteMedia.test.ts src/frontend/utils/sendData.remoteMedia.test.ts src/frontend/utils/sendData.remoteTemplate.test.ts src/frontend/utils/sendData.remoteText.test.ts src/frontend/utils/remoteProtocol.contract.test.ts src/frontend/utils/stageControllerProtocol.contract.test.ts src/server/common/util/webClient.test.ts src/frontend/utils/remoteMediaViews.test.ts src/frontend/utils/controllerPresenter.test.ts src/frontend/components/helpers/OutputHelper.presenter.test.ts",
+        "test:unit:remote": "vitest run --config config/testing/vitest.config.ts src/electron/utils/remoteMedia.test.ts src/frontend/utils/sendData.remoteMedia.test.ts src/frontend/utils/sendData.remoteTemplate.test.ts src/frontend/utils/sendData.remoteText.test.ts src/frontend/utils/remoteProtocol.contract.test.ts src/frontend/utils/stageControllerProtocol.contract.test.ts src/server/common/util/webClient.test.ts src/frontend/utils/remoteMediaViews.test.ts src/frontend/utils/controllerPresenter.test.ts src/frontend/utils/controllerTalk.presenter.test.ts src/frontend/components/helpers/OutputHelper.presenter.test.ts",
         "test:electron-runtime": "node scripts/tests/runElectronRuntime.mjs",
         "test:powerpoint-renderer:electron": "npm run build:powerpoint-renderer && npm run build:electron:dev && node scripts/tests/runPowerpointRendererElectron.mjs",
         "test:playwright": "npx playwright test --config config/testing/playwright.config.ts",
