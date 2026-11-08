@@ -158,6 +158,13 @@ export default defineConfig({
     copyServerFilesPlugin(serverId),
   ],
   root: `src/server/${serverId}`,
+  // Dev servers for different apps share one project but have different configs. With the default shared
+  // cache, each start sees a changed config hash, wipes the dep cache and re-optimizes lazily, which can
+  // reload or break the page mid-test. A cache per app plus a fixed dep list keeps it stable.
+  cacheDir: resolve(process.cwd(), `node_modules/.vite/servers/${serverId}`),
+  optimizeDeps: {
+    include: ['socket.io-client', 'uid', 'dayjs', 'dayjs/plugin/localizedFormat'],
+  },
   publicDir: production ? false : '../../../public',
   build: {
     outDir: resolve(process.cwd(), `build/electron/${serverId}`),
