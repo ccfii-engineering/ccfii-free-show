@@ -6,12 +6,12 @@ import type { WebHandlerTable } from "../../types/WebProtocol"
 import { Main } from "../../types/IPC/Main"
 import type { ControllerPresenterPreview, ControllerPresenterSnapshot } from "../../types/remote/control"
 import type { OutSlide, Show, Slide } from "../../types/Show"
-import { defaultLayers, getFirstActiveOutput, getFirstOutput, getOutputResolution } from "../components/helpers/output"
+import { defaultLayers, getFirstActiveOutput, getFirstOutput, getResolution } from "../components/helpers/output"
 import { OutputHelper } from "../components/helpers/OutputHelper"
 import { clone } from "../components/helpers/array"
 import { _show } from "../components/helpers/shows"
 import { requestMainResult } from "../IPC/main"
-import { getPresenterBackgroundId, resolvePresenterStyleLines } from "./controllerPresenter"
+import { getPresenterBackgroundId, resolvePresenterStyleLines, windowOffsetToSlide } from "./controllerPresenter"
 import { clearAll, clearSlide } from "../components/output/clear"
 import { activeFocus, activeProject, activeShow, connections, focusMode, outputSlideCache, outputs, paintCache, projects, serverData, showsCache, special, styles } from "../stores"
 import { draw, drawSettings, drawTool } from "./../stores"
@@ -57,10 +57,9 @@ export const receiveCONTROLLER: WebHandlerTable<ControllerProtocol> = {
             return
         }
 
-        const outputId = getFirstActiveOutput()?.id || ""
-        const resolution = getOutputResolution(outputId, get(outputs), true)
-        data.offset.x *= resolution.width
-        data.offset.y *= resolution.height
+        const output = getFirstActiveOutput()
+        const resolution = getResolution(null, { outputs: get(outputs), styles: get(styles) }, output?.id || "")
+        data.offset = windowOffsetToSlide(data.offset, output?.bounds || resolution, resolution)
 
         const tool = data.tool || "focus"
         const settings = get(drawSettings)[tool]

@@ -95,8 +95,9 @@
 
     // DRAW
 
-    $: drawX = $draw ? ($draw.x / outputRes.width - 0.5) * (drawZoom - 1) * -1 * 100 : 0
-    $: drawY = $draw ? ($draw.y / outputRes.height - 0.5) * (drawZoom - 1) * -1 * 100 : 0
+    // draw points are in the zoomed content space: one unit shows as `ratio` screen pixels
+    $: drawX = $draw && slideWidth ? (($draw.x * ratio) / slideWidth - 0.5) * (drawZoom - 1) * -1 * 100 : 0
+    $: drawY = $draw && slideHeight ? (($draw.y * ratio) / slideHeight - 0.5) * (drawZoom - 1) * -1 * 100 : 0
 
     // base draw on 1920x1080 or %, and not on the output resolution
     // $: originalAspectRatio = 1920 / 1080
