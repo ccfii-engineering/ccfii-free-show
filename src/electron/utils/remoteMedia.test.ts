@@ -509,4 +509,30 @@ describe("RemoteMediaBrowser bounded cursors", () => {
         await expect(browser.page({ connectionId: "root-owner-0", requestId: "root-0", path: "", page: 1, cursor: oldest.nextCursor || "" })).rejects.toMatchObject({ code: "cursor_expired" })
         await browser.closeAll()
     })
+
+    it("serves thumbnails of imported slide images outside the media folders, and nothing else there", async () => {
+        const fixture = createFixture()
+        tempRoot = fixture.tempRoot
+        const imports = path.join(tempRoot, "data", "imports", "PowerPoint", "job")
+        fs.mkdirSync(imports, { recursive: true })
+        fs.writeFileSync(path.join(imports, "page-0001.png"), "png")
+        fs.writeFileSync(path.join(imports, "source.pptx"), "pptx")
+        const unrelated = path.join(tempRoot, "data", "settings.png")
+        fs.writeFileSync(unrelated, "png")
+        const thumb = path.join(tempRoot, "thumb.png")
+        fs.writeFileSync(thumb, "thumb")
+        const browser = new RemoteMediaBrowser({
+            getRoots: () => [{ id: "root", name: "Media", path: fixture.root }],
+            isConnectionActive: () => true,
+            makeThumbnail: async () => thumb,
+            getImportAssetRoots: () => [path.join(tempRoot, "data", "imports", "PowerPoint"), path.join(tempRoot, "data", "imports", "PDF")]
+        })
+
+        const result = await browser.thumbnail("remote", path.join(imports, "page-0001.png"))
+        expect(result.thumbnail).toBe(`data:image/png;base64,${Buffer.from("thumb").toString("base64")}`)
+        await expect(browser.thumbnail("remote", path.join(imports, "source.pptx"))).rejects.toMatchObject({ code: "not_media" })
+        await expect(browser.thumbnail("remote", unrelated)).rejects.toMatchObject({ code: "invalid_path" })
+        // playback stays limited to the media folders
+        await expect(browser.resolve("remote", path.join(imports, "page-0001.png"))).rejects.toMatchObject({ code: "invalid_path" })
+    })
 })

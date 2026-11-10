@@ -51,7 +51,8 @@ const remoteMediaBrowser = new RemoteMediaBrowser({
             path: root?.path || ""
         })),
     isConnectionActive: (connectionId, server) => isServerConnectionActive(server, connectionId),
-    makeThumbnail: async (input) => (await getThumbnail({ input, size: 250 })).output
+    makeThumbnail: async (input) => (await getThumbnail({ input, size: 250 })).output,
+    getImportAssetRoots: () => [path.join(getDataFolderRoot(), "imports", "PowerPoint"), path.join(getDataFolderRoot(), "imports", "PDF")]
 })
 
 // no need to await Promise returns here

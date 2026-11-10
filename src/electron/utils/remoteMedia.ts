@@ -40,6 +40,9 @@ export interface RemoteMediaBrowserOptions {
     isConnectionActive: (connectionId: string, server: "REMOTE" | "CONTROLLER") => boolean
     makeThumbnail: (path: string) => Promise<string>
     openDirectory?: (path: string) => Promise<Dir>
+    // Folders the app itself writes rendered slide images to (PowerPoint/PDF imports). They are not media folders, so they cannot be
+    // browsed or played, but shows reference them as slide backgrounds, so the Remote may request their thumbnails.
+    getImportAssetRoots?: () => string[]
 }
 
 type CachedPage = RemoteMediaPage
@@ -188,9 +191,9 @@ export class RemoteMediaBrowser {
 
     async thumbnail(connectionId: string, inputPath: string): Promise<{ path: string; thumbnail: string }> {
         return this.withThumbnailLimit(connectionId, "REMOTE", async () => {
-            const resolved = await this.resolveMediaPath(inputPath)
+            const resolved = await this.resolveMediaPath(inputPath, undefined, true)
             return this.buildThumbnail(connectionId, "REMOTE", resolved.path, async () => {
-                await this.resolveMediaPath(resolved.path)
+                await this.resolveMediaPath(resolved.path, undefined, true)
             })
         })
     }
@@ -370,7 +373,7 @@ export class RemoteMediaBrowser {
         }
     }
 
-    private async resolveMediaPath(inputPath: string, expectedKind?: RemoteMediaKind): Promise<MediaPath> {
+    private async resolveMediaPath(inputPath: string, expectedKind?: RemoteMediaKind, allowImportAssets = false): Promise<MediaPath> {
         if (typeof inputPath !== "string" || !inputPath || inputPath.length > MAX_PATH_LENGTH || !path.isAbsolute(inputPath)) throw new RemoteMediaError("invalid_path")
         const rootSnapshot = this.captureRootSourceSnapshot()
         const roots = await this.getCanonicalRoots(rootSnapshot.roots)
@@ -382,13 +385,9 @@ export class RemoteMediaBrowser {
             throw new RemoteMediaError("invalid_path")
         }
         this.assertRootSourceVersion(rootSnapshot.fingerprint)
-        if (
-            !this.isWithinAny(
-                canonicalPath,
-                roots.map((root) => root.canonicalPath)
-            )
-        )
-            throw new RemoteMediaError("invalid_path")
+        const allowedRoots = roots.map((root) => root.canonicalPath)
+        if (allowImportAssets) allowedRoots.push(...(await this.getCanonicalImportAssetRoots()))
+        if (!this.isWithinAny(canonicalPath, allowedRoots)) throw new RemoteMediaError("invalid_path")
 
         const stats = await fs.promises.stat(canonicalPath)
         const kind = this.mediaKind(canonicalPath)
@@ -470,6 +469,19 @@ export class RemoteMediaBrowser {
         const stats = await fs.promises.stat(canonicalPath)
         if (!stats.isDirectory()) throw new RemoteMediaError("invalid_path")
         return { path: canonicalPath }
+    }
+
+    private async getCanonicalImportAssetRoots() {
+        const roots: string[] = []
+        for (const root of this.options.getImportAssetRoots?.() || []) {
+            if (!root || root.length > MAX_PATH_LENGTH || !path.isAbsolute(root)) continue
+            try {
+                roots.push(await fs.promises.realpath(root))
+            } catch {
+                // the folder only exists once something was imported
+            }
+        }
+        return roots
     }
 
     private async getCanonicalRoots(sources: RemoteMediaRoot[]) {
