@@ -33,9 +33,11 @@
 
     let ratio = 1
 
-    $: {
-        if (active.length) updateStyles()
-        else newStyles = {}
+    // newStyles is passed in so the statement reruns on every drag update (Svelte 5 legacy mode only tracks values the statement reads)
+    $: applyNewStyles(active, newStyles)
+    function applyNewStyles(activeItems: (number | string)[], _styles: typeof newStyles) {
+        if (activeItems.length) updateStyles()
+        else if (Object.keys(_styles).length) newStyles = {}
     }
 
     function updateStyles() {

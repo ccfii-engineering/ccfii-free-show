@@ -119,9 +119,11 @@
     let mediaStyle: MediaStyle = {}
     $: if (mediaPath) mediaStyle = getMediaStyle($media[bgPath], currentStyle)
 
-    $: {
-        if (active.length) setTimeout(updateStyles)
-        else newStyles = {}
+    // newStyles is passed in so the statement reruns on every drag update (Svelte 5 legacy mode only tracks values the statement reads)
+    $: applyNewStyles(active, newStyles)
+    function applyNewStyles(activeItems: (number | string)[], _styles: typeof newStyles) {
+        if (activeItems.length) setTimeout(updateStyles)
+        else if (Object.keys(_styles).length) newStyles = {}
     }
 
     let updateTimeout: NodeJS.Timeout | null = null
